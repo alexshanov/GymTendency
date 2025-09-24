@@ -15,8 +15,8 @@ from selenium.webdriver.support import expected_conditions as EC
 
 def scrape_raw_data(main_page_url):
     """
-    Scrapes all event data into a single, raw, messy CSV file.
-    Includes the Meet Name in the raw data.
+    Scrapes all event data, correctly handling multiple tables per page,
+    into a single, raw, messy CSV file.
     """
     print("--- Initializing Selenium Browser ---")
     
@@ -40,7 +40,6 @@ def scrape_raw_data(main_page_url):
         html_content = driver.page_source
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Discover Meet Name
         meet_name_element = soup.select_one("div#thHeader.TournamentHeader div div.TournamentHeading")
         meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet"
         print(f"Discovered Meet Name: {meet_name}")
@@ -67,14 +66,24 @@ def scrape_raw_data(main_page_url):
                 data = json.loads(json_text)
                 decoded_html = html.unescape(data['html'])
                 
-                df_list = pd.read_html(io.StringIO(decoded_html), attrs={'id': 'sessionEventResults'})
-                if df_list:
-                    df = df_list[0]
-                    # Add metadata to the raw data before appending
-                    df['Event'] = event_name
-                    df['Meet'] = meet_name
-                    all_raw_dfs.append(df)
-                    print(f"--> Success! Scraped {event_name}")
+                # --- THIS IS THE CORRECTED MULTI-TABLE LOGIC ---
+                event_soup = BeautifulSoup(decoded_html, 'html.parser')
+                # Find all tables with the specific ID
+                tables = event_soup.find_all('table', id='sessionEventResults')
+
+                if tables:
+                    # Loop through each found table and add it to the list
+                    for table_html in tables:
+                        df_list = pd.read_html(io.StringIO(str(table_html)))
+                        if df_list:
+                            df = df_list[0]
+                            df['Event'] = event_name
+                            df['Meet'] = meet_name
+                            all_raw_dfs.append(df)
+                    print(f"--> Success! Scraped {len(tables)} tables for {event_name}")
+                else:
+                    print(f"--> Info: No tables found for {event_name}")
+
 
             except Exception as e:
                 print(f"--> Warning: Could not process {event_name}. Reason: {e}")
