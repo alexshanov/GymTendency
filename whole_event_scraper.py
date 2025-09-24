@@ -1,8 +1,9 @@
 import pandas as pd
-import requests
 import io
+import json
 from bs4 import BeautifulSoup
-import time
+import re
+import html
 
 # --- Selenium Imports ---
 from selenium import webdriver
@@ -11,89 +12,103 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException # Import specific exception
 
-def discover_event_ids_with_selenium(main_page_url):
-    print("--- Phase 1: DEBUG MODE ---")
+def scrape_full_meet(main_page_url):
+    """
+    Handles the entire scraping process.
+    Correctly handles HTML-encoded JSON API responses and pandas logic.
+    """
+    print("--- Initializing Selenium Browser ---")
     
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless') # Re-enabling headless mode as it's more convenient
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+
     driver = None
     try:
-        print("[1/7] Setting up Chrome options...")
-        options = webdriver.ChromeOptions()
-        # --- UNCOMMENT THE NEXT LINE TO SEE THE BROWSER WINDOW ---
-        # options.add_argument('--headless') 
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
-        print("...options set.")
-
-        print("[2/7] Setting up WebDriver service...")
         service = Service(ChromeDriverManager().install())
-        print("...service setup complete.")
-
-        print("[3/7] Initializing Chrome driver...")
         driver = webdriver.Chrome(service=service, options=options)
-        print("...driver initialized successfully.")
-
-        print(f"[4/7] Navigating to URL: {main_page_url}")
+        
+        # --- PHASE 1: DISCOVERY ---
+        print("--- Phase 1: Discovering all event IDs and the active SessionId ---")
         driver.get(main_page_url)
-        print("...navigation complete.")
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "liCategory")))
+        print("Event list loaded.")
 
-        print("[5/7] Waiting for dynamic content (max 15 seconds)...")
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "liCategory"))
-        )
-        print("...dynamic content found!")
-
-        print("[6/7] Getting page source...")
         html_content = driver.page_source
-        print("...page source retrieved.")
+        session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
+        if not session_id_match:
+            print("CRITICAL ERROR: Could not find the active SessionId. Aborting.")
+            return None
+        active_session_id = session_id_match.group(1)
+        print(f"Successfully discovered active SessionId: {active_session_id}")
 
-        debug_filename = 'debug_selenium_page.html'
-        print(f"[7/7] Saving final HTML to '{debug_filename}'...")
-        with open(debug_filename, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        print("...HTML saved successfully.")
-
-        # If we got this far, the rest of the function should work
         soup = BeautifulSoup(html_content, 'html.parser')
         event_elements = soup.find_all('li', class_='liCategory')
-        if not event_elements:
-            print("Error: Could not find any event elements even after waiting.")
-            return None
+        events_to_scrape = {el.get_text(strip=True): el.get('id') for el in event_elements if el.get_text(strip=True) and el.get('id')}
+        print(f"Discovery complete. Found {len(events_to_scrape)} events.")
 
-        events_dict = {}
-        for element in event_elements:
-            event_name = element.get_text(strip=True)
-            division_id = element.get('id')
-            if event_name and division_id:
-                events_dict[event_name] = division_id
+        # --- PHASE 2: SCRAPING ---
+        all_results = []
+        base_data_url = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
+        print("\n--- Phase 2: Scraping data for each event ---")
         
-        print(f"\nDiscovery complete. Found {len(events_dict)} events.")
-        return events_dict
+        for event_name, division_id in events_to_scrape.items():
+            try:
+                data_url = f"{base_data_url}?DivId={division_id}&SessionId={active_session_id}"
+                print(f"Navigating to: {event_name}")
+                driver.get(data_url)
 
-    except TimeoutException:
-        print("\nCRITICAL ERROR: Timed out waiting for the event list to load.")
-        print("This means the page loaded, but the 'liCategory' element never appeared.")
-        # Let's save what we *did* get to see what's wrong.
-        if driver:
-            html_after_timeout = driver.page_source
-            with open('debug_timeout_page.html', 'w', encoding='utf-8') as f:
-                f.write(html_after_timeout)
-            print("Saved the page content at the time of timeout to 'debug_timeout_page.html'")
-        return None
+                WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
+                json_text = driver.find_element(By.TAG_NAME, 'pre').text
+                data = json.loads(json_text)
+                html_from_json = data['html']
+                decoded_html = html.unescape(html_from_json)
+                
+                df = pd.read_html(io.StringIO(decoded_html), 
+                                  attrs={'id': 'sessionEventResults'}, 
+                                  header=[0, 1])[0]
+                
+                # Data Cleaning
+                new_columns = [f"{c1}_{c2}" if 'Unnamed' not in str(c1) and 'Unnamed' not in str(c2) else c1 for c1, c2 in df.columns]
+                df.columns = new_columns
+                
+                # --- THIS IS THE CORRECTED LINE ---
+                if not df.columns.empty and df.columns[0].strip().lower() == 'pl.':
+                    df = df.drop(columns=df.columns[0])
+                
+                df.dropna(how='all', inplace=True)
+                df['Event'] = event_name
+                
+                if not df.empty:
+                    all_results.append(df)
+                    print(f"--> Success! Scraped {len(df)} rows.")
+
+            except Exception as e:
+                print(f"--> Warning: Could not process data for {event_name}. Reason: {e}")
+        
+        return all_results
+
     except Exception as e:
-        print(f"\nCRITICAL ERROR: The script failed during setup or execution.")
-        print(f"Error details: {e}")
+        print(f"An unrecoverable error occurred: {e}")
         return None
     finally:
-        print("--- Finalizing Phase 1: Closing browser ---")
+        print("\n--- Finalizing: Closing browser ---")
         if driver:
             driver.quit()
 
-# The rest of the script is unchanged...
 # --- Main script execution ---
 MAIN_PAGE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id=C5432FCE37715FF3C29F88080A34FDD6"
-BASE_DATA_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
-events_to_scrape = discover_event_ids_with_selenium(MAIN_PAGE_URL)
-# etc.
+final_data = scrape_full_meet(MAIN_PAGE_URL)
+
+if final_data:
+    master_df = pd.concat(final_data, ignore_index=True)
+    print("\n--- All Events Scraped Successfully ---")
+    print("Total athletes found:", len(master_df))
+    output_filename = 'Gymnastics_Meet_Results_SUCCESS.csv'
+    master_df.to_csv(output_filename, index=False)
+    print(f"\nSuccessfully saved all combined results to '{output_filename}'")
+else:
+    print("\nScraping process finished, but no data was retrieved.")
