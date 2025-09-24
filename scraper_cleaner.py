@@ -4,6 +4,8 @@ import json
 from bs4 import BeautifulSoup
 import re
 import html
+import os
+import time
 
 import numpy as np
 
@@ -21,12 +23,11 @@ from selenium.webdriver.support import expected_conditions as EC
 #  LIBRARY OF FUNCTIONS (The "Tool")
 # ==============================================================================
 
-def scrape_raw_data(main_page_url):
+def scrape_raw_data(main_page_url, output_filename):
     """
-    Scrapes all event data into a single, raw, messy CSV file.
-    Includes the Meet Name in the raw data.
+    Scrapes all event data for a single meet into one raw, messy CSV file.
     """
-    print("--- Initializing Selenium Browser ---")
+    print(f"--- STEP 1: Scraping Raw Data for {main_page_url} ---")
     
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')
@@ -40,34 +41,26 @@ def scrape_raw_data(main_page_url):
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         
-        # --- PHASE 1: DISCOVERY ---
-        print("--- Phase 1: Discovering Meet Name, SessionId, and Events ---")
         driver.get(main_page_url)
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "liCategory")))
         
         html_content = driver.page_source
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Discover Meet Name
         meet_name_element = soup.select_one("div#thHeader.TournamentHeader div div.TournamentHeading")
         meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet"
-        print(f"Discovered Meet Name: {meet_name}")
-
+        
         session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
         active_session_id = session_id_match.group(1)
         
         event_elements = soup.find_all('li', class_='liCategory')
         events_to_scrape = {el.get_text(strip=True): el.get('id') for el in event_elements if el.get_text(strip=True) and el.get('id')}
-        print(f"Found {len(events_to_scrape)} events.")
-
-        # --- PHASE 2: SCRAPING ---
+        
         base_data_url = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
-        print("\n--- Phase 2: Scraping raw data for each event ---")
         
         for event_name, division_id in events_to_scrape.items():
             try:
                 data_url = f"{base_data_url}?DivId={division_id}&SessionId={active_session_id}"
-                print(f"Processing: {event_name}")
                 driver.get(data_url)
 
                 WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
@@ -78,19 +71,20 @@ def scrape_raw_data(main_page_url):
                 df_list = pd.read_html(io.StringIO(decoded_html), attrs={'id': 'sessionEventResults'})
                 if df_list:
                     df = df_list[0]
-                    # Add metadata to the raw data before appending
                     df['Event'] = event_name
                     df['Meet'] = meet_name
                     all_raw_dfs.append(df)
-                    print(f"--> Success! Scraped {event_name}")
-
-            except Exception as e:
-                print(f"--> Warning: Could not process {event_name}. Reason: {e}")
+            except Exception:
+                continue # Ignore errors on individual events
         
-        return all_raw_dfs
+        if all_raw_dfs:
+            messy_df = pd.concat(all_raw_dfs)
+            messy_df.to_csv(output_filename, index=False)
+            print(f"--> Success! Raw data saved to '{output_filename}'")
+            return True
+        return False
 
     finally:
-        print("\n--- Finalizing: Closing browser ---")
         if driver:
             driver.quit()
 
@@ -144,6 +138,7 @@ def fix_csv_headers(input_filename, output_filename):
     print("\n--- Header Fixing Complete ---")
     print(f"Processed and standardized {len(rows_to_drop)} header pairs.")
     print(f"Output saved to '{output_filename}'")
+    return True
 
 def unify_and_clean_data(input_filename, output_filename):
     """
@@ -185,8 +180,8 @@ def unify_and_clean_data(input_filename, output_filename):
             print(f"Warning: Header mismatch found at row {index}. This may cause issues.")
             all_headers_match = False
             # For debugging:
-            # print("Master Slice:", master_header_slice)
-            # print("Current Slice:", current_header_slice)
+            #print("Master Slice:", master_header_slice)
+            #print("Current Slice:", current_header_slice)
 
     if all_headers_match:
         print("Verification complete: All core headers are identical.")
@@ -213,8 +208,65 @@ def unify_and_clean_data(input_filename, output_filename):
     print(f"Final clean data saved to '{output_filename}'")
     print("\nFinal Data Preview:")
     print(clean_df.head())
+    return True
 
 # ==============================================================================
 #  MAIN EXECUTION BLOCK (The "Application")
 # ==============================================================================
-# --- Main script execution for scraping ---
+
+if __name__ == "__main__":
+    
+    # --- CONFIGURATION ---
+    MEET_IDS_CSV = "discovered_meet_ids.csv"
+    OUTPUT_SUBFOLDER = "CSVs"
+    BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
+
+    # Create the output subfolder if it doesn't exist
+    if not os.path.exists(OUTPUT_SUBFOLDER):
+        os.makedirs(OUTPUT_SUBFOLDER)
+        print(f"Created subfolder: '{OUTPUT_SUBFOLDER}'")
+
+    # Read the list of Meet IDs from the CSV
+    try:
+        meet_ids_df = pd.read_csv(MEET_IDS_CSV)
+        # Ensure the column name is correct, allowing for variations
+        meet_id_column_name = [col for col in meet_ids_df.columns if 'MeetID' in col][0]
+        meet_ids_to_process = meet_ids_df[meet_id_column_name].tolist()
+        print(f"Found {len(meet_ids_to_process)} meet IDs to process from '{MEET_IDS_CSV}'")
+    except FileNotFoundError:
+        print(f"FATAL ERROR: The input file '{MEET_IDS_CSV}' was not found.")
+        exit()
+    except IndexError:
+        print(f"FATAL ERROR: Could not find a 'MeetID' column in '{MEET_IDS_CSV}'.")
+        exit()
+
+    # --- EXECUTION PIPELINE ---
+    for meet_id in meet_ids_to_process:
+        print(f"\n{'='*20} PROCESSING MEET ID: {meet_id} {'='*20}")
+        
+        meet_url = f"{BASE_URL}{meet_id}"
+        
+        # Define filenames for this specific meet
+        messy_output = os.path.join(OUTPUT_SUBFOLDER, f"{meet_id}_messy.csv")
+        headers_fixed_output = os.path.join(OUTPUT_SUBFOLDER, f"{meet_id}_headers_fixed.csv")
+        final_output = os.path.join(OUTPUT_SUBFOLDER, f"{meet_id}_FINAL.csv")
+        
+        # Run the 3-step pipeline
+        if scrape_raw_data(meet_url, messy_output):
+            if fix_csv_headers(messy_output, headers_fixed_output):
+                if unify_and_clean_data(headers_fixed_output, final_output):
+                    print(f"--- ✅ Successfully processed Meet ID: {meet_id} ---")
+                    # Optional: Clean up intermediate files for this meet
+                    #os.remove(messy_output)
+                    #os.remove(headers_fixed_output)
+                else:
+                    print(f"--- ❌ FAILED at Step 3 (Unifying) for Meet ID: {meet_id} ---")
+            else:
+                print(f"--- ❌ FAILED at Step 2 (Header Fixing) for Meet ID: {meet_id} ---")
+        else:
+            print(f"--- ❌ FAILED at Step 1 (Scraping) for Meet ID: {meet_id} ---")
+        
+        # Add a polite delay between meets
+        time.sleep(3)
+
+    print("\n--- ALL MEETS PROCESSED ---")

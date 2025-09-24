@@ -71,6 +71,10 @@ def unify_and_clean_data(input_filename, output_filename):
     print(clean_df.head())
 
 # --- Main script execution ---
-HEADERS_FIXED_FILENAME = "Gymnastics_Meet_Results_Headers_Fixed.csv"
-FINAL_CLEAN_FILENAME = "Gymnastics_Meet_Results_FINAL.csv"
+#HEADERS_FIXED_FILENAME = "Gymnastics_Meet_Results_Headers_Fixed.csv"
+#FINAL_CLEAN_FILENAME = "Gymnastics_Meet_Results_FINAL.csv"
+
+HEADERS_FIXED_FILENAME = "CSVs/9419463FCFD2313DFBCF9B37253B6CAA_headers_fixed.csv"
+FINAL_CLEAN_FILENAME = "CSVs/9419463FCFD2313DFBCF9B37253B6CAA_FINAL.csv"
+
 unify_and_clean_data(HEADERS_FIXED_FILENAME, FINAL_CLEAN_FILENAME)
