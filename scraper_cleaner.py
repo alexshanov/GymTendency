@@ -17,15 +17,16 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
+from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException
 
 # ==============================================================================
-#  LIBRARY OF FUNCTIONS (The "Tool")
+#  LIBRARY OF FUNCTIONS (The "Tools")
 # ==============================================================================
 
 def scrape_raw_data(main_page_url, output_filename):
     """
     Scrapes all event data for a single meet into one raw, messy CSV file.
+    Now handles both Timeouts and Unexpected Alerts gracefully.
     """
     print(f"--- STEP 1: Scraping Raw Data for {main_page_url} ---")
     
@@ -41,49 +42,64 @@ def scrape_raw_data(main_page_url, output_filename):
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         
+        # --- PHASE 1: DISCOVERY ---
         driver.get(main_page_url)
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "liCategory")))
         
-        html_content = driver.page_source
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        meet_name_element = soup.select_one("div#thHeader.TournamentHeader div div.TournamentHeading")
-        meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet"
-        
-        session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
-        active_session_id = session_id_match.group(1)
-        
-        event_elements = soup.find_all('li', class_='liCategory')
-        events_to_scrape = {el.get_text(strip=True): el.get('id') for el in event_elements if el.get_text(strip=True) and el.get('id')}
-        
-        base_data_url = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
-        
-        for event_name, division_id in events_to_scrape.items():
-            try:
-                data_url = f"{base_data_url}?DivId={division_id}&SessionId={active_session_id}"
-                driver.get(data_url)
+        # --- THIS IS THE ROBUST ERROR HANDLING BLOCK ---
+        try:
+            WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "liCategory")))
+            
+            html_content = driver.page_source
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            meet_name_element = soup.select_one("div#thHeader.TournamentHeader div div.TournamentHeading")
+            meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet"
+            
+            session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
+            active_session_id = session_id_match.group(1)
+            
+            event_elements = soup.find_all('li', class_='liCategory')
+            events_to_scrape = {el.get_text(strip=True): el.get('id') for el in event_elements if el.get_text(strip=True) and el.get('id')}
+            
+            base_data_url = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
+            
+            for event_name, division_id in events_to_scrape.items():
+                try:
+                    data_url = f"{base_data_url}?DivId={division_id}&SessionId={active_session_id}"
+                    driver.get(data_url)
 
-                WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
-                json_text = driver.find_element(By.TAG_NAME, 'pre').text
-                data = json.loads(json_text)
-                decoded_html = html.unescape(data['html'])
-                
-                df_list = pd.read_html(io.StringIO(decoded_html), attrs={'id': 'sessionEventResults'})
-                if df_list:
-                    df = df_list[0]
-                    df['Event'] = event_name
-                    df['Meet'] = meet_name
-                    all_raw_dfs.append(df)
-            except Exception:
-                continue # Ignore errors on individual events
-        
-        if all_raw_dfs:
-            messy_df = pd.concat(all_raw_dfs)
-            messy_df.to_csv(output_filename, index=False)
-            print(f"--> Success! Raw data saved to '{output_filename}'")
-            return True
-        return False
+                    WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
+                    json_text = driver.find_element(By.TAG_NAME, 'pre').text
+                    data = json.loads(json_text)
+                    decoded_html = html.unescape(data['html'])
+                    
+                    df_list = pd.read_html(io.StringIO(decoded_html), attrs={'id': 'sessionEventResults'})
+                    if df_list:
+                        df = df_list[0]
+                        df['Event'] = event_name
+                        df['Meet'] = meet_name
+                        all_raw_dfs.append(df)
+                except Exception:
+                    continue
+            
+            if all_raw_dfs:
+                messy_df = pd.concat(all_raw_dfs)
+                messy_df.to_csv(output_filename, index=False)
+                print(f"--> Success! Raw data for '{meet_name}' saved to '{output_filename}'")
+                return True
+            
+            return False
 
+        except TimeoutException:
+            print(f"--> SKIPPING MEET (Timeout): The page at {main_page_url} does not have the expected structure or failed to load.")
+            return False
+            
+        except UnexpectedAlertPresentException as e:
+            alert_text = e.alert_text
+            print(f"--> SKIPPING MEET (Unexpected Alert): The page produced a server-side error.")
+            print(f"    Alert Text: {alert_text}")
+            return False
+            
     finally:
         if driver:
             driver.quit()
