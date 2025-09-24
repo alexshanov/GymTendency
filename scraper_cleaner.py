@@ -272,17 +272,20 @@ if __name__ == "__main__":
             if fix_csv_headers(messy_output, headers_fixed_output):
                 if unify_and_clean_data(headers_fixed_output, final_output):
                     print(f"--- ✅ Successfully processed Meet ID: {meet_id} ---")
-                    # Optional: Clean up intermediate files for this meet
-                    #os.remove(messy_output)
-                    #os.remove(headers_fixed_output)
+                    try:
+                        print("Cleaning up intermediate files...")
+                        os.remove(messy_output)
+                        os.remove(headers_fixed_output)
+                        print("Cleanup complete.")
+                    except OSError as e:
+                        print(f"Warning: Could not remove intermediate files. Reason: {e}")
                 else:
                     print(f"--- ❌ FAILED at Step 3 (Unifying) for Meet ID: {meet_id} ---")
             else:
                 print(f"--- ❌ FAILED at Step 2 (Header Fixing) for Meet ID: {meet_id} ---")
         else:
-            print(f"--- ❌ FAILED at Step 1 (Scraping) for Meet ID: {meet_id} ---")
+            print(f"--- ❌ FAILED or SKIPPED at Step 1 (Scraping) for Meet ID: {meet_id} ---")
         
-        # Add a polite delay between meets
         time.sleep(3)
 
     print("\n--- ALL MEETS PROCESSED ---")
