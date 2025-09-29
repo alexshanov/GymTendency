@@ -23,16 +23,20 @@ from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentE
 #  LIBRARY OF FUNCTIONS (The "Tools")
 # ==============================================================================
 
-
-def scrape_raw_data(main_page_url, output_filename):
+def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, output_directory="raw_data"):
     """
-    Scrapes all event data for a single meet into one raw, messy CSV file.
-    Now handles both Timeouts and Unexpected Alerts gracefully.
-    
-    --- UPDATED to capture multiple tables (e.g., age groups) on a single page. ---
+    Scrapes all event data, saving each table into its own CSV file.
+    --- CORRECTED to accept the Meet ID as an argument for reliable file naming ---
+    Returns (file_count, meet_id) on success.
     """
     print(f"--- STEP 1: Scraping Raw Data for {main_page_url} ---")
     
+    os.makedirs(output_directory, exist_ok=True)
+    
+    if not meet_id_for_filename:
+        print("--> FATAL ERROR: A valid Meet ID was not provided to the scraper function.")
+        return 0, None
+
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
@@ -40,15 +44,14 @@ def scrape_raw_data(main_page_url, output_filename):
     options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
 
     driver = None
-    all_raw_dfs = []
+    table_counter = 1
+    
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         
-        # --- PHASE 1: DISCOVERY ---
         driver.get(main_page_url)
         
-        # --- THIS IS THE ROBUST ERROR HANDLING BLOCK ---
         try:
             WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "liCategory")))
             
@@ -59,6 +62,9 @@ def scrape_raw_data(main_page_url, output_filename):
             meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet"
             
             session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
+            if not session_id_match:
+                print("--> ERROR: Could not find SessionId needed for data requests.")
+                return 0, None
             active_session_id = session_id_match.group(1)
             
             event_elements = soup.find_all('li', class_='liCategory')
@@ -66,163 +72,151 @@ def scrape_raw_data(main_page_url, output_filename):
             
             base_data_url = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
             
+            print(f"Found {len(events_to_scrape)} event groups for meet '{meet_name}'. Processing...")
+            
             for group_name, division_id in events_to_scrape.items():
                 try:
+                    # (The inner logic for scraping each table is unchanged)
                     data_url = f"{base_data_url}?DivId={division_id}&SessionId={active_session_id}"
                     driver.get(data_url)
-
                     WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
                     json_text = driver.find_element(By.TAG_NAME, 'pre').text
                     data = json.loads(json_text)
                     decoded_html = html.unescape(data['html'])
-                    
-                    # =================================================================
-                    # START: MODIFIED BLOCK TO CAPTURE ALL TABLES
-                    # =================================================================
-                    
-                    # Parse the decoded HTML with BeautifulSoup to find each table's container
                     results_soup = BeautifulSoup(decoded_html, 'html.parser')
-
-                    # Find all the wrapper divs, each containing one results table and its title
                     table_wrappers = results_soup.find_all('div', class_='resultsTableWrapper')
 
-                    # Loop through each wrapper to process the table and its title individually
                     for wrapper in table_wrappers:
-                        # --- Extract the Age Group for this specific table ---
-                        age_group = "N/A"  # Set a default value
+                        age_group = "N/A"
                         title_element = wrapper.select_one(".resultsTitle .rpSubTitle")
                         if title_element and 'Age Group:' in title_element.get_text():
                             age_group_text = title_element.get_text(strip=True)
                             age_group = age_group_text.replace('(Age Group:', '').replace(')', '').strip()
 
-                        # --- Read the HTML table within this wrapper into a DataFrame ---
                         table_element = wrapper.find('table', id='sessionEventResults')
-                        
                         if table_element:
-                            # pd.read_html returns a list, so we take the first item
                             df_list = pd.read_html(io.StringIO(str(table_element)))
                             if df_list:
-                                df = df_list[0]
+                                df = df_list[0].copy()
+                                df['Group'] = group_name
+                                df['Meet'] = meet_name
+                                df['Age Group'] = age_group
                                 
-                                # --- Add all the metadata to the DataFrame ---
-                                df['Group'] = group_name      # The main category, e.g., "Level 6"
-                                df['Meet'] = meet_name        # The name of the meet
-                                df['Age Group'] = age_group   # The specific age group for this table
+                                filename = f"{meet_id_for_filename}_MESSY_{table_counter}.csv"
+                                full_path = os.path.join(output_directory, filename)
                                 
-                                # Append the processed DataFrame to your master list
-                                all_raw_dfs.append(df)
-
-                    # =================================================================
-                    # END: MODIFIED BLOCK
-                    # =================================================================
-
-                except Exception:
-                    # If fetching or processing a single division/group fails, just skip it and continue
+                                df.to_csv(full_path, index=False)
+                                print(f"  -> Saved table {table_counter} to '{full_path}'")
+                                table_counter += 1
+                except Exception as e:
+                    print(f"  -> Skipping a section in '{group_name}' due to an error: {e}")
                     continue
             
-            if all_raw_dfs:
-                messy_df = pd.concat(all_raw_dfs, ignore_index=True)
-                messy_df.to_csv(output_filename, index=False)
-                print(f"--> Success! Raw data for '{meet_name}' saved to '{output_filename}'")
-                return True
-            
-            print(f"--> No dataframes were created for {main_page_url}. Check the structure.")
-            return False
+            if table_counter > 1:
+                files_saved_count = table_counter - 1
+                print(f"\n--> Success! Saved a total of {files_saved_count} tables for '{meet_name}' to the '{output_directory}' directory.")
+                return files_saved_count, meet_id_for_filename
+            else:
+                print(f"--> No data tables were found or saved for {main_page_url}.")
+                return 0, None
 
-        except TimeoutException:
-            print(f"--> SKIPPING MEET (Timeout): The page at {main_page_url} does not have the expected structure or failed to load.")
-            return False
-            
-        except UnexpectedAlertPresentException as e:
-            alert_text = e.alert_text
-            print(f"--> SKIPPING MEET (Unexpected Alert): The page produced a server-side error.")
-            print(f"    Alert Text: {alert_text}")
-            return False
+        except (TimeoutException, UnexpectedAlertPresentException) as e:
+            print(f"--> SKIPPING MEET: The page at {main_page_url} failed to load correctly. Error: {e}")
+            return 0, None
             
     finally:
         if driver:
             driver.quit()
-            
-def fix_csv_headers(input_filename, output_filename):
-    """
-    Reads a CSV with repeated double headers and merges them using a robust,
-    pattern-based approach.
 
-    The logic is:
-    1. Find any group of 3 consecutive columns with the same main header.
-    2. If the 2nd sub-header is 'Score' and the 3rd is 'Rnk',
-    3. Then the 1st sub-header is forced to be 'D'.
-    4. All other columns are treated as single-name columns.
+def fix_and_standardize_headers(input_filename, output_filename):
     """
-    print(f"--- Starting header fixing for '{input_filename}' ---")
+    Reads a raw/messy CSV, builds a single perfect header by combining the two
+    header rows, cleans the data, and saves the final file.
+    --- FINAL VERSION: Forcibly renames the last 3 columns to guarantee consistency. ---
+    """
+    print(f"--- Processing and finalizing '{input_filename}' ---")
 
     try:
-        df = pd.read_csv(input_filename, header=None)
-    except FileNotFoundError:
-        print(f"Error: The input file '{input_filename}' was not found.")
+        df = pd.read_csv(input_filename, header=None, dtype=str, keep_default_na=False)
+    except (FileNotFoundError, pd.errors.EmptyDataError) as e:
+        print(f"Error: Could not read '{input_filename}'. It may be missing or empty. Details: {e}")
         return False
 
-    rows_to_drop = []
-    
-    for i in range(len(df) - 1):
-        current_row = df.iloc[i].astype(str).values
-        next_row = df.iloc[i + 1].astype(str).values
+    if df.empty:
+        print(f"Warning: Input file is empty. Nothing to process.")
+        return True
+        
+    # --- Step 1: Discard the first column ---
+    df = df.iloc[:, 1:].copy()
 
-        if 'Name' in current_row:
-            main_header = pd.Series(current_row).ffill()
-            sub_header = pd.Series(next_row)
+    # --- Step 2: Find the main header row (using 'Name' as the anchor) ---
+    header_row_index = -1
+    for i, row in df.iterrows():
+        if 'Name' in row.values:
+            header_row_index = i
+            break
             
-            new_header = []
-            j = 0
-            while j < len(main_header):
-                # --- THIS IS THE NEW, ROBUST LOGIC YOU REQUESTED ---
-                
-                # Check if a 3-column pattern is possible from the current position
-                if j + 2 < len(main_header):
-                    h1_base = str(main_header[j]).strip().replace(' ', '_')
-                    h1_next1 = str(main_header[j+1]).strip().replace(' ', '_')
-                    h1_next2 = str(main_header[j+2]).strip().replace(' ', '_')
+    if header_row_index == -1:
+        print(f"Error: Could not find the main header row (containing 'Name') in '{input_filename}'.")
+        return False
 
-                    h2_next1 = str(sub_header[j+1]).strip()
-                    h2_next2 = str(sub_header[j+2]).strip()
+    # --- Step 3: Isolate and clean the TRUE data rows ---
+    data_df = df.iloc[:header_row_index].copy()
+    data_df = data_df[~data_df.iloc[:, 0].str.contains('Unnamed', na=False)].copy()
 
-                    # Apply the rule: 3 same headers, with 'Score' and 'Rnk' in positions 2 and 3
-                    if (h1_base == h1_next1 and h1_base == h1_next2 and
-                        h2_next1 == 'Score' and h2_next2 == 'Rnk'):
-                        
-                        # If the pattern matches, create the three corrected column names
-                        new_header.append(f"{h1_base}_D")
-                        new_header.append(f"{h1_base}_Score")
-                        new_header.append(f"{h1_base}_Rnk")
-                        
-                        # Advance the loop counter by 3 to skip past this processed group
-                        j += 3
-                        continue # Move to the next iteration of the while loop
+    if data_df.empty:
+        print(f"Warning: No valid data rows found in '{input_filename}'. Skipping.")
+        return True
 
-                # --- Fallback for all other columns ---
-                # If the 3-column pattern is not found, process this as a single column
-                h1_clean = str(main_header[j]).strip().replace(' ', '_')
-                new_header.append(h1_clean)
-                j += 1 # Advance the loop counter by 1
-            
-            df.iloc[i] = new_header
-            rows_to_drop.append(i + 1)
+    # --- Step 4: Build the single, standardized header ---
+    main_header_row = df.iloc[header_row_index]
+    sub_header_row = df.iloc[header_row_index + 1]
+    main_header = pd.Series(main_header_row).ffill()
+    sub_header = pd.Series(sub_header_row)
+    clean_header = []
+    j = 0
+    while j < len(main_header):
+        is_event_block = False
+        if j + 2 < len(main_header):
+            h1 = str(main_header.iloc[j]).strip()
+            if h1 and h1 == str(main_header.iloc[j+1]).strip() and h1 == str(main_header.iloc[j+2]).strip():
+                if str(sub_header.iloc[j+1]).strip() == 'Score' and str(sub_header.iloc[j+2]).strip() == 'Rnk':
+                    event_name = h1.replace(' ', '_')
+                    clean_header.extend([f"Result_{event_name}_D", f"Result_{event_name}_Score", f"Result_{event_name}_Rnk"])
+                    is_event_block = True
+                    j += 3
+        if not is_event_block:
+            name_from_main = str(main_header.iloc[j]).strip()
+            name_from_sub = str(sub_header.iloc[j]).strip()
+            final_name = name_from_main if name_from_main and 'Unnamed' not in name_from_main else name_from_sub
+            clean_header.append(final_name.replace(' ', '_'))
+            j += 1
 
-    df_cleaned = df.drop(rows_to_drop).reset_index(drop=True)
+    # --- Step 5: Apply the new header and Save ---
+    if len(clean_header) != data_df.shape[1]:
+        print(f"Error: Final header length ({len(clean_header)}) doesn't match data columns ({data_df.shape[1]}).")
+        return False
+
+    data_df.columns = clean_header
     
-    df_cleaned.to_csv(output_filename, index=False, header=False)
-    
-    print("\n--- Header Fixing Complete ---")
-    print(f"Processed and standardized {len(rows_to_drop)} header pairs.")
-    print(f"Output saved to '{output_filename}'")
+    # <<< THIS IS THE NEW LINE YOU REQUESTED >>>
+    # Forcibly rename the last three columns to ensure they are always correct.
+    data_df.columns.values[-3:] = ['Group', 'Meet', 'Age_Group']
+
+    # Reorder for final readability (this now works reliably)
+    cols_to_move = ['Name', 'Club', 'Level', 'Prov', 'Age', 'Meet', 'Group', 'Age_Group']
+    existing_cols = [col for col in cols_to_move if col in data_df.columns]
+    other_cols = [col for col in data_df.columns if col not in existing_cols]
+    final_df = data_df[existing_cols + other_cols]
+
+    final_df.to_csv(output_filename, index=False)
+    print(f"-> Success! Final clean file saved to '{output_filename}'")
     return True
 
-def unify_and_clean_data(input_filename, output_filename):
-    """
-    Reads a file with cleaned-but-repeated headers, identifies the true header,
-    selects only the athlete data rows, and builds a final clean CSV.
-    This version uses a robust method to prevent blank row issues.
-    """
+""" def unify_and_clean_data(input_filename, output_filename)
+    #Reads a file with cleaned-but-repeated headers, identifies the true header,
+    #selects only the athlete data rows, and builds a final clean CSV.
+    #This version uses a robust method to prevent blank row issues.
     print(f"--- Starting final cleaning and unification for '{input_filename}' ---")
 
     try:
@@ -273,6 +267,7 @@ def unify_and_clean_data(input_filename, output_filename):
         print("Warning: No valid athlete data was found after cleaning.")
         return False
   
+ """
 # ==============================================================================
 #  MAIN EXECUTION BLOCK (The "Application")
 # ==============================================================================
@@ -281,21 +276,17 @@ if __name__ == "__main__":
     
     # --- CONFIGURATION ---
     MEET_IDS_CSV = "discovered_meet_ids.csv"
-    OUTPUT_SUBFOLDER = "CSVs"
+    MESSY_FOLDER = "CSVs_messy"
+    FINAL_FOLDER = "CSVs_final" # The destination for clean, finished files
     BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
     
-    # --- THIS IS THE NEW DEBUG LINE ---
-    # Set this to a number (e.g., 3) to process only the first N meets.
-    # Set to 0 or None to process all meets in the CSV.
     DEBUG_LIMIT = 13
-    # --- END OF NEW DEBUG LINE ---
 
-    # Create the output subfolder if it doesn't exist
-    if not os.path.exists(OUTPUT_SUBFOLDER):
-        os.makedirs(OUTPUT_SUBFOLDER)
-        print(f"Created subfolder: '{OUTPUT_SUBFOLDER}'")
+    # --- SETUP ---
+    os.makedirs(MESSY_FOLDER, exist_ok=True)
+    os.makedirs(FINAL_FOLDER, exist_ok=True)
+    print(f"Ensured output directories exist: '{MESSY_FOLDER}' and '{FINAL_FOLDER}'")
 
-    # Read the list of Meet IDs from the CSV
     try:
         meet_ids_df = pd.read_csv(MEET_IDS_CSV)
         meet_id_column_name = [col for col in meet_ids_df.columns if 'MeetID' in col][0]
@@ -305,7 +296,6 @@ if __name__ == "__main__":
         print(f"FATAL ERROR: Could not read '{MEET_IDS_CSV}'. Please create it first. Details: {e}")
         exit()
 
-    # Apply the debug limit if it's set
     if DEBUG_LIMIT and DEBUG_LIMIT > 0:
         print(f"--- DEBUG MODE ON: Processing only the first {DEBUG_LIMIT} meet(s). ---")
         meet_ids_to_process = meet_ids_to_process[:DEBUG_LIMIT]
@@ -315,26 +305,27 @@ if __name__ == "__main__":
         print(f"\n{'='*20} PROCESSING MEET ID: {meet_id} {'='*20}")
         
         meet_url = f"{BASE_URL}{meet_id}"
-        messy_output = os.path.join(OUTPUT_SUBFOLDER, f"{meet_id}_messy.csv")
-        headers_fixed_output = os.path.join(OUTPUT_SUBFOLDER, f"{meet_id}_headers_fixed.csv")
-        final_output = os.path.join(OUTPUT_SUBFOLDER, f"{meet_id}_FINAL.csv")
         
-        # Run the 3-step pipeline
-        if scrape_raw_data(meet_url, messy_output):
-            if fix_csv_headers(messy_output, headers_fixed_output):
-                if unify_and_clean_data(headers_fixed_output, final_output):
-                    print(f"--- ✅ Successfully processed Meet ID: {meet_id} ---")
-                    try:
-                        print("Cleaning up intermediate files...")
-                        #os.remove(messy_output)
-                        #os.remove(headers_fixed_output)
-                        print("Cleanup complete.")
-                    except OSError as e:
-                        print(f"Warning: Could not remove intermediate files. Reason: {e}")
-                else:
-                    print(f"--- ❌ FAILED at Step 3 (Unifying) for Meet ID: {meet_id} ---")
-            else:
-                print(f"--- ❌ FAILED at Step 2 (Header Fixing) for Meet ID: {meet_id} ---")
+        # --- STEP 1: Scrape messy files ---
+        files_saved, file_base_id = scrape_raw_data_to_separate_files(meet_url, meet_id, MESSY_FOLDER)
+        
+        if files_saved > 0:
+            print(f"Scraping complete. Found {files_saved} tables for Meet ID {file_base_id}.")
+            print("--- Starting Step 2: Finalizing Files ---")
+            
+            all_successful = True
+            for i in range(1, files_saved + 1):
+                messy_file_path = os.path.join(MESSY_FOLDER, f"{file_base_id}_MESSY_{i}.csv")
+                final_file_path = os.path.join(FINAL_FOLDER, f"{file_base_id}_FINAL_{i}.csv")
+
+                # --- STEP 2: Call the all-in-one fixer function ---
+                if not fix_and_standardize_headers(messy_file_path, final_file_path):
+                    print(f"--- ❌ FAILED at Step 2 (Finalizing) for: {messy_file_path} ---")
+                    all_successful = False
+                    break 
+
+            if all_successful:
+                print(f"--- ✅ Successfully processed all {files_saved} tables for Meet ID: {meet_id} ---")
         else:
             print(f"--- ❌ FAILED or SKIPPED at Step 1 (Scraping) for Meet ID: {meet_id} ---")
         
