@@ -213,61 +213,6 @@ def fix_and_standardize_headers(input_filename, output_filename):
     print(f"-> Success! Final clean file saved to '{output_filename}'")
     return True
 
-""" def unify_and_clean_data(input_filename, output_filename)
-    #Reads a file with cleaned-but-repeated headers, identifies the true header,
-    #selects only the athlete data rows, and builds a final clean CSV.
-    #This version uses a robust method to prevent blank row issues.
-    print(f"--- Starting final cleaning and unification for '{input_filename}' ---")
-
-    try:
-        # Read the entire file as raw data with no header
-        df = pd.read_csv(input_filename, header=None, dtype=str)
-    except FileNotFoundError:
-        print(f"Error: The input file '{input_filename}' was not found.")
-        return False
-
-    # 1. Identify and extract the master header row
-    header_rows = df[df[0].astype(str).str.strip() == '#']
-    if header_rows.empty:
-        print("Error: Could not find any header rows (containing '#' in the first column).")
-        return False
-        
-    master_header = header_rows.iloc[0].tolist()
-    print(f"Master header identified with {len(master_header)} columns.")
-
-    # 2. Select ONLY the data rows (where the first column is NOT '#')
-    data_df = df[df[0].astype(str).str.strip() != '#'].copy()
-    
-    # 3. Assign the correct headers to the data
-    # This is the most critical step. We align the master header to the data rows.
-    # If data rows have fewer columns, we only use the first part of the header.
-    num_data_cols = data_df.shape[1]
-    data_df.columns = master_header[:num_data_cols]
-    
-    # 4. Filter out any remaining junk rows by keeping only rows with a valid Age
-    # This also removes any all-blank rows that might exist
-    clean_df = data_df[pd.to_numeric(data_df['Age'], errors='coerce').notna()]
-
-    # 5. Final Polishing
-    if '#' in clean_df.columns:
-        clean_df = clean_df.drop(columns=['#'])
-    
-    clean_df = clean_df.reset_index(drop=True)
-    
-    clean_df.to_csv(output_filename, index=False)
-    
-    print("\n--- Final Cleaning Complete ---")
-    if not clean_df.empty:
-        print(f"Processed {len(clean_df)} athlete data rows.")
-        print(f"Final clean data saved to '{output_filename}'")
-        print("\nFinal Data Preview:")
-        print(clean_df.head())
-        return True
-    else:
-        print("Warning: No valid athlete data was found after cleaning.")
-        return False
-  
- """
 # ==============================================================================
 #  MAIN EXECUTION BLOCK (The "Application")
 # ==============================================================================
