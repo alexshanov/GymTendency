@@ -225,7 +225,7 @@ if __name__ == "__main__":
     FINAL_FOLDER = "CSVs_final" # The destination for clean, finished files
     BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
     
-    DEBUG_LIMIT = 100
+    DEBUG_LIMIT = 0
 
     # --- SETUP ---
     os.makedirs(MESSY_FOLDER, exist_ok=True)

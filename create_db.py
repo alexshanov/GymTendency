@@ -5,27 +5,30 @@ DB_FILE = "gym_data.db"
 
 def create_database():
     """
-    Создает или пересоздает базу данных SQLite с необходимой структурой таблиц.
+    Создает или пересоздает базу данных SQLite с обновленной структурой таблиц.
+    Таблица 'Meets' теперь содержит 'start_date_iso' вместо 'dates'.
     """
     if os.path.exists(DB_FILE):
         os.remove(DB_FILE)
-        print(f"Существующий файл базы данных '{DB_FILE}' удален.")
+        print(f"Существующий файл базы данных '{DB_FILE}' удален для создания новой структуры.")
 
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         print(f"База данных '{DB_FILE}' создана, соединение установлено.")
 
+        # --- Таблица Meets (ОБНОВЛЕННАЯ СТРУКТУРА) ---
         cursor.execute("""
             CREATE TABLE Meets (
                 meet_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                dates TEXT,
+                start_date_iso TEXT, -- Наш новый, чистый столбец для даты
                 location TEXT,
                 year INTEGER
             );
         """)
 
+        # --- Остальные таблицы остаются без изменений ---
         cursor.execute("""
             CREATE TABLE Athletes (
                 athlete_id INTEGER PRIMARY KEY,
@@ -62,7 +65,7 @@ def create_database():
         """)
 
         conn.commit()
-        print("Все таблицы ('Meets', 'Athletes', 'Events', 'Results') успешно созданы.")
+        print("Все таблицы ('Meets', 'Athletes', 'Events', 'Results') успешно созданы с новой структурой.")
 
     except sqlite3.Error as e:
         print(f"Произошла ошибка SQLite: {e}")

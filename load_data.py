@@ -11,7 +11,8 @@ FINAL_CSVS_DIR = "CSVs_final"
 
 def load_meets_data():
     """
-    Читает данные о соревнованиях из CSV и полностью перезаписывает таблицу 'Meets'.
+    Читает данные о соревнованиях из CSV и полностью перезаписывает таблицу 'Meets'
+    с использованием новой структуры, включающей 'start_date_iso'.
     """
     if not os.path.exists(DB_FILE) or not os.path.exists(MEETS_CSV_FILE):
         print("Ошибка: Не найден DB_FILE или MEETS_CSV_FILE. Проверьте конфигурацию.")
@@ -20,17 +21,37 @@ def load_meets_data():
     print("--- Запуск загрузки данных о соревнованиях (Meets) ---")
     try:
         df = pd.read_csv(MEETS_CSV_FILE)
-        df.rename(columns={'MeetID': 'meet_id', 'MeetName': 'name', 'Dates': 'dates', 'Location': 'location', 'Year': 'year'}, inplace=True)
+        
+        # <<< ИЗМЕНЕНИЕ 1: Выбираем только нужные столбцы >>>
+        # Мы берем только те столбцы, которые соответствуют нашей новой таблице в БД.
+        columns_to_load = ['MeetID', 'MeetName', 'start_date_iso', 'Location', 'Year']
+        df_for_db = df[columns_to_load]
+
+        # <<< ИЗМЕНЕНИЕ 2: Переименовываем столбцы для соответствия схеме БД >>>
+        df_for_db = df_for_db.rename(columns={
+            'MeetID': 'meet_id',
+            'MeetName': 'name',
+            # 'start_date_iso' уже имеет правильное имя, но для ясности оставим
+            'start_date_iso': 'start_date_iso', 
+            'Location': 'location',
+            'Year': 'year'
+        })
         
         with sqlite3.connect(DB_FILE) as conn:
-            df.to_sql('Meets', conn, if_exists='replace', index=False)
-        print(f"Успешно перезаписано {len(df)} записей в таблицу 'Meets'.")
+            # Загружаем наш подготовленный DataFrame
+            df_for_db.to_sql('Meets', conn, if_exists='replace', index=False)
+            
+        print(f"Успешно перезаписано {len(df_for_db)} записей в таблицу 'Meets'.")
         return True
 
     except Exception as e:
         print(f"Произошла ошибка при загрузке данных о соревнованиях: {e}")
         return False
 
+# ==============================================================================
+# Функция load_results_data остается АБСОЛЮТНО БЕЗ ИЗМЕНЕНИЙ.
+# Она уже идеально спроектирована и не зависит от структуры таблицы Meets.
+# ==============================================================================
 def load_results_data():
     """
     Читает все '*_FINAL_*.csv' файлы и загружает их данные в таблицы
@@ -144,7 +165,5 @@ def load_results_data():
     print("\n--- Загрузка данных завершена ---")
 
 if __name__ == "__main__":
-    # Шаг 1: Загрузить/обновить данные о соревнованиях.
     if load_meets_data():
-        # Шаг 2: Загрузить все данные о результатах, только если шаг 1 успешен.
         load_results_data()
