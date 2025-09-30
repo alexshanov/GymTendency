@@ -26,7 +26,7 @@ from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentE
 def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, output_directory="raw_data"):
     """
     Scrapes all event data, saving each table into its own CSV file.
-    --- CORRECTED to accept the Meet ID as an argument for reliable file naming ---
+    --- UPDATED: Ensures correct line endings ('\n') in the output CSV ---
     Returns (file_count, meet_id) on success.
     """
     print(f"--- STEP 1: Scraping Raw Data for {main_page_url} ---")
@@ -59,7 +59,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             soup = BeautifulSoup(html_content, 'html.parser')
             
             meet_name_element = soup.select_one("div#thHeader.TournamentHeader div div.TournamentHeading")
-            meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet"
+            meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet Name"
             
             session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
             if not session_id_match:
@@ -76,7 +76,6 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             
             for group_name, division_id in events_to_scrape.items():
                 try:
-                    # (The inner logic for scraping each table is unchanged)
                     data_url = f"{base_data_url}?DivId={division_id}&SessionId={active_session_id}"
                     driver.get(data_url)
                     WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
@@ -105,7 +104,8 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 filename = f"{meet_id_for_filename}_MESSY_{table_counter}.csv"
                                 full_path = os.path.join(output_directory, filename)
                                 
-                                df.to_csv(full_path, index=False)
+                                df.to_csv(full_path, index=False, line_terminator='\n')
+                                
                                 print(f"  -> Saved table {table_counter} to '{full_path}'")
                                 table_counter += 1
                 except Exception as e:
@@ -127,7 +127,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
     finally:
         if driver:
             driver.quit()
-
+            
 def fix_and_standardize_headers(input_filename, output_filename):
     """
     Reads a raw/messy CSV, builds a single perfect header by combining the two
