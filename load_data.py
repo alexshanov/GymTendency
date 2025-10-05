@@ -183,6 +183,11 @@ def parse_livemeet_file(filepath, conn, athlete_cache, apparatus_cache, meet_cac
         if not row.get(core_column): continue
         athletes_processed += 1
         athlete_id = get_or_create_athlete(conn, row, gender_heuristic, athlete_cache)
+        athlete_id = get_or_create_athlete(conn, row, gender_heuristic, athlete_cache)
+        # Add this check
+        if athlete_id is None:
+            print(f"Warning: Skipping row {index+2} due to invalid or empty athlete name.")
+            continue
         details_dict = {col: val for col, val in row[dynamic_columns].items() if val}
         details_json = json.dumps(details_dict)
         for clean_name, raw_name in event_bases.items():
@@ -221,14 +226,35 @@ def detect_discipline(df):
     return 99, 'Other', 'Unknown'
 
 def get_or_create_athlete(conn, row, gender_heuristic, athlete_cache):
+    """
+    Finds an athlete in the cache/DB or creates a new one, ensuring the
+    name is standardized to 'First Last' format before any action.
+    """
     cursor = conn.cursor()
-    name = str(row.get('Name')).strip()
-    club = str(row.get('Club')).strip() if 'Club' in row and row.get('Club') else None
+    
+    # --- THIS IS THE NEW PART ---
+    # 1. Get the raw name from the row.
+    raw_name = row.get('Name')
+    
+    # 2. Call your new function to clean and standardize it.
+    name = standardize_athlete_name(raw_name)
+    
+    # 3. If the name is invalid after cleaning (e.g., empty), we can't process it.
+    if not name:
+        return None
+    # --- END OF NEW PART ---
+
+    # We can also standardize the club name for better consistency
+    club_raw = row.get('Club')
+    club = str(club_raw).strip().title() if pd.notna(club_raw) and str(club_raw).strip() else None
+
+    # The rest of the function uses the clean 'name' variable
     athlete_key = (name, club)
 
     if athlete_key in athlete_cache: 
         return athlete_cache[athlete_key]
     
+    # The database lookup now uses the clean 'name'
     if club is None: 
         cursor.execute("SELECT athlete_id FROM Athletes WHERE full_name = ? AND club IS NULL", (name,))
     else: 
@@ -238,11 +264,43 @@ def get_or_create_athlete(conn, row, gender_heuristic, athlete_cache):
     if result: 
         athlete_id = result[0]
     else: 
+        # The database insert now uses the clean 'name'
         cursor.execute("INSERT INTO Athletes (full_name, club, gender) VALUES (?, ?, ?)", (name, club, gender_heuristic))
         athlete_id = cursor.lastrowid
         
     athlete_cache[athlete_key] = athlete_id
     return athlete_id
+
+def standardize_athlete_name(name_str):
+    """
+    Takes a raw athlete name string and standardizes it to 'First Last' format.
+    This version is more careful with capitalization to preserve existing formats.
+    It primarily targets 'LAST, First' and 'LAST First' patterns.
+    """
+    if not isinstance(name_str, str) or not name_str.strip():
+        return None
+
+    name_str = name_str.strip()
+
+    # Case 1: Handle "LAST, First" format
+    if ',' in name_str:
+        parts = [p.strip() for p in name_str.split(',', 1)]
+        if len(parts) == 2:
+            # Reorder to "First Last" and apply title case to each part
+            first_name = parts[1].title()
+            last_name = parts[0].title()
+            return f"{first_name} {last_name}"
+
+    # Case 2: Handle "LAST First" (all caps last name, followed by mixed case first name)
+    words = name_str.split()
+    if len(words) > 1 and words[0].isupper() and all(c.isupper() for c in words[0]) and any(c.islower() for c in ' '.join(words[1:])):
+        last_name = words[0].title()
+        first_names = " ".join(words[1:])
+        return f"{first_names} {last_name}"
+
+    # Default Case: Trust the existing format but clean up whitespace.
+    # We avoid .title() here to preserve names like 'McKinley' or names with multiple caps.
+    return ' '.join(word.capitalize() for word in words)
 
 # ==============================================================================
 #  3. MAIN EXECUTION
