@@ -1,3 +1,7 @@
+gym_data.db
+*.ipynb
+
+
 #csv
 *.csv
 *.html
