@@ -104,7 +104,7 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
     cache[meet_key] = meet_db_id
     return meet_db_id
 
-def process_kscore_files(meet_manifest):
+def process_kscore_files(meet_manifest, club_alias_map):
     """
     Main function to find and process all Kscore result CSV files.
     """
@@ -125,13 +125,14 @@ def process_kscore_files(meet_manifest):
 
             for filepath in csv_files:
                 print(f"\nProcessing file: {os.path.basename(filepath)}")
-                parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest)
+                # Pass the club_alias_map to the parsing function
+                parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
 
     except Exception as e:
         print(f"A critical error occurred during file processing: {e}")
         traceback.print_exc()
 
-def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest):
+def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map):
     """
     Parses a single Kscore CSV and loads its data into the database.
     """
@@ -144,22 +145,15 @@ def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache
         print(f"Warning: Could not read CSV file '{filepath}'. Error: {e}")
         return
 
-    # --- Kscore Specific Logic ---
-    # 1. Get the full ID from filename, e.g., 'kscore_altadore_ev25'
     full_source_id = os.path.basename(filepath).split('_FINAL_')[0]
-    # 2. Clean it for the database, e.g., 'altadore_ev25'
     source_meet_id = full_source_id.replace('kscore_', '', 1)
     
-    # 3. Look up details using the full ID from the manifest
     meet_details = meet_manifest.get(full_source_id, {})
     
-    # Provide a fallback name from the CSV if the manifest lookup fails
     if not meet_details.get('name'):
         meet_details['name'] = df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Kscore {source_meet_id}"
     
-    # 4. Create the meet record with 'kscore' as the source and the cleaned ID
     meet_db_id = get_or_create_meet(conn, 'kscore', source_meet_id, meet_details, meet_cache)
-    # --- End of Kscore Specific Logic ---
 
     discipline_id, discipline_name, gender_heuristic = detect_discipline(df)
     print(f"  Detected Discipline: {discipline_name}")
@@ -173,21 +167,22 @@ def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache
         match = re.search(r'Result_(.*)_(Score|D)$', col)
         if match:
             raw_event_name = match.group(1).replace('_', ' ')
-            # Handle All-Around variations
             if raw_event_name == "All Around": raw_event_name = "AllAround"
             if raw_event_name not in event_bases: event_bases[raw_event_name] = raw_event_name.replace(' ', '_')
 
-    athletes_processed = 0; results_inserted = 0
+    athletes_processed = 0
+    results_inserted = 0
     cursor = conn.cursor()
     for index, row in df.iterrows():
         if not row.get(core_column): continue
         athletes_processed += 1
-        athlete_id = get_or_create_athlete(conn, row, gender_heuristic, athlete_cache)
-        athlete_id = get_or_create_athlete(conn, row, gender_heuristic, athlete_cache)
-        # Add this check
+        
+        # Pass the club_alias_map to the get_or_create_athlete function
+        athlete_id = get_or_create_athlete(conn, row, gender_heuristic, athlete_cache, club_alias_map)
         if athlete_id is None:
             print(f"Warning: Skipping row {index+2} due to invalid or empty athlete name.")
             continue
+
         details_dict = {col: val for col, val in row[dynamic_columns].items() if val}
         details_json = json.dumps(details_dict)
         for clean_name, raw_name in event_bases.items():
@@ -212,7 +207,7 @@ def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache
             results_inserted += 1
     conn.commit()
     print(f"  Processed {athletes_processed} athletes, inserting {results_inserted} result records.")
-
+    
 # --- Helper functions (Unchanged) ---
 def detect_discipline(df):
     column_names = set(df.columns); MAG_INDICATORS = {'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar'}; WAG_INDICATORS = {'Uneven_Bars', 'Beam'}
@@ -221,36 +216,31 @@ def detect_discipline(df):
         if any(indicator in col for indicator in WAG_INDICATORS): return 1, 'WAG', 'F'
     return 99, 'Other', 'Unknown'
 
-def get_or_create_athlete(conn, row, gender_heuristic, athlete_cache):
+def get_or_create_athlete(conn, row, gender_heuristic, athlete_cache, club_alias_map):
     """
-    Finds an athlete in the cache/DB or creates a new one, ensuring the
-    name is standardized to 'First Last' format before any action.
+    Finds an athlete in the cache/DB or creates a new one, ensuring both
+    the name and club are standardized before any action.
     """
     cursor = conn.cursor()
     
-    # --- THIS IS THE NEW PART ---
-    # 1. Get the raw name from the row.
+    # --- Name Standardization (already in place) ---
     raw_name = row.get('Name')
-    
-    # 2. Call your new function to clean and standardize it.
     name = standardize_athlete_name(raw_name)
-    
-    # 3. If the name is invalid after cleaning (e.g., empty), we can't process it.
     if not name:
         return None
+
+    # --- NEW: Club Standardization ---
+    raw_club = row.get('Club')
+    # Call our new function to apply aliases
+    club = standardize_club_name(raw_club, club_alias_map)
     # --- END OF NEW PART ---
 
-    # We can also standardize the club name for better consistency
-    club_raw = row.get('Club')
-    club = str(club_raw).strip().title() if pd.notna(club_raw) and str(club_raw).strip() else None
-
-    # The rest of the function uses the clean 'name' variable
+    # The rest of the function now uses the fully standardized 'name' and 'club'
     athlete_key = (name, club)
 
     if athlete_key in athlete_cache: 
         return athlete_cache[athlete_key]
     
-    # The database lookup now uses the clean 'name'
     if club is None: 
         cursor.execute("SELECT athlete_id FROM Athletes WHERE full_name = ? AND club IS NULL", (name,))
     else: 
@@ -260,7 +250,6 @@ def get_or_create_athlete(conn, row, gender_heuristic, athlete_cache):
     if result: 
         athlete_id = result[0]
     else: 
-        # The database insert now uses the clean 'name'
         cursor.execute("INSERT INTO Athletes (full_name, club, gender) VALUES (?, ?, ?)", (name, club, gender_heuristic))
         athlete_id = cursor.lastrowid
         
@@ -298,14 +287,49 @@ def standardize_athlete_name(name_str):
     # We avoid .title() here to preserve names like 'McKinley' or names with multiple caps.
     return ' '.join(word.capitalize() for word in words)
 
+def load_club_aliases(filepath="club_aliases.json"):
+    """
+    Loads the club alias mapping from a JSON file into a dictionary.
+    """
 
+    try:
+        with open(filepath, 'r') as f:
+            aliases = json.load(f)
+            # Standardize the keys to Title Case for consistent lookups
+            return {key.title(): value for key, value in aliases.items()}
+    except FileNotFoundError:
+        print(f"Warning: '{filepath}' not found. No club aliases will be applied.")
+        return {}
+    except json.JSONDecodeError:
+        print(f"Error: Could not parse '{filepath}'. Please check if it's valid JSON.")
+        return {}
+
+def standardize_club_name(club_str, alias_map):
+    """
+    Cleans a club name and applies an alias from the mapping if one exists.
+    """
+    if not club_str or not isinstance(club_str, str):
+        return None
+    
+    # Standardize to Title Case for lookup
+    cleaned_club = club_str.strip().title()
+    
+    # .get(key, default) is perfect here. If the alias exists, use it.
+    # Otherwise, use the cleaned_club name as the default.
+    return alias_map.get(cleaned_club, cleaned_club)
 
 # ==============================================================================
 #  3. MAIN EXECUTION
 # ==============================================================================
 if __name__ == "__main__":
     if setup_database():
+        # Load the club aliases into memory
+        club_aliases = load_club_aliases()
+        
+        # Load the Kscore meet manifest into memory
         meet_manifest = load_meet_manifest(KSCORE_MEET_MANIFEST_FILE)
-        process_kscore_files(meet_manifest)
+        
+        # Pass the manifest and the aliases to the processing function
+        process_kscore_files(meet_manifest, club_aliases)
         
         print("\n--- Kscore data loading script finished ---")

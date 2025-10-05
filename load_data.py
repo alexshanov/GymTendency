@@ -112,7 +112,7 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
     cache[meet_key] = meet_db_id
     return meet_db_id
 
-def process_livemeet_files(meet_manifest):
+def process_livemeet_files(meet_manifest, club_alias_map):
     """
     Main function to find and process all livemeet result CSV files.
     """
@@ -133,13 +133,14 @@ def process_livemeet_files(meet_manifest):
 
             for filepath in csv_files:
                 print(f"\nProcessing file: {os.path.basename(filepath)}")
-                parse_livemeet_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest)
+                # Pass the club_alias_map to the parsing function
+                parse_livemeet_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
 
     except Exception as e:
         print(f"A critical error occurred during file processing: {e}")
         traceback.print_exc()
 
-def parse_livemeet_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest):
+def parse_livemeet_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map):
     """
     Parses a single livemeet CSV and loads its data into the database.
     """
@@ -182,12 +183,13 @@ def parse_livemeet_file(filepath, conn, athlete_cache, apparatus_cache, meet_cac
     for index, row in df.iterrows():
         if not row.get(core_column): continue
         athletes_processed += 1
-        athlete_id = get_or_create_athlete(conn, row, gender_heuristic, athlete_cache)
-        athlete_id = get_or_create_athlete(conn, row, gender_heuristic, athlete_cache)
-        # Add this check
+        
+        # Pass the club_alias_map to the get_or_create_athlete function
+        athlete_id = get_or_create_athlete(conn, row, gender_heuristic, athlete_cache, club_alias_map)
         if athlete_id is None:
             print(f"Warning: Skipping row {index+2} due to invalid or empty athlete name.")
             continue
+
         details_dict = {col: val for col, val in row[dynamic_columns].items() if val}
         details_json = json.dumps(details_dict)
         for clean_name, raw_name in event_bases.items():
@@ -225,36 +227,31 @@ def detect_discipline(df):
             return 1, 'WAG', 'F'
     return 99, 'Other', 'Unknown'
 
-def get_or_create_athlete(conn, row, gender_heuristic, athlete_cache):
+def get_or_create_athlete(conn, row, gender_heuristic, athlete_cache, club_alias_map):
     """
-    Finds an athlete in the cache/DB or creates a new one, ensuring the
-    name is standardized to 'First Last' format before any action.
+    Finds an athlete in the cache/DB or creates a new one, ensuring both
+    the name and club are standardized before any action.
     """
     cursor = conn.cursor()
     
-    # --- THIS IS THE NEW PART ---
-    # 1. Get the raw name from the row.
+    # --- Name Standardization (already in place) ---
     raw_name = row.get('Name')
-    
-    # 2. Call your new function to clean and standardize it.
     name = standardize_athlete_name(raw_name)
-    
-    # 3. If the name is invalid after cleaning (e.g., empty), we can't process it.
     if not name:
         return None
+
+    # --- NEW: Club Standardization ---
+    raw_club = row.get('Club')
+    # Call our new function to apply aliases
+    club = standardize_club_name(raw_club, club_alias_map)
     # --- END OF NEW PART ---
 
-    # We can also standardize the club name for better consistency
-    club_raw = row.get('Club')
-    club = str(club_raw).strip().title() if pd.notna(club_raw) and str(club_raw).strip() else None
-
-    # The rest of the function uses the clean 'name' variable
+    # The rest of the function now uses the fully standardized 'name' and 'club'
     athlete_key = (name, club)
 
     if athlete_key in athlete_cache: 
         return athlete_cache[athlete_key]
     
-    # The database lookup now uses the clean 'name'
     if club is None: 
         cursor.execute("SELECT athlete_id FROM Athletes WHERE full_name = ? AND club IS NULL", (name,))
     else: 
@@ -264,7 +261,6 @@ def get_or_create_athlete(conn, row, gender_heuristic, athlete_cache):
     if result: 
         athlete_id = result[0]
     else: 
-        # The database insert now uses the clean 'name'
         cursor.execute("INSERT INTO Athletes (full_name, club, gender) VALUES (?, ?, ?)", (name, club, gender_heuristic))
         athlete_id = cursor.lastrowid
         
@@ -302,12 +298,49 @@ def standardize_athlete_name(name_str):
     # We avoid .title() here to preserve names like 'McKinley' or names with multiple caps.
     return ' '.join(word.capitalize() for word in words)
 
+def load_club_aliases(filepath="club_aliases.json"):
+    """
+    Loads the club alias mapping from a JSON file into a dictionary.
+    """
+
+    try:
+        with open(filepath, 'r') as f:
+            aliases = json.load(f)
+            # Standardize the keys to Title Case for consistent lookups
+            return {key.title(): value for key, value in aliases.items()}
+    except FileNotFoundError:
+        print(f"Warning: '{filepath}' not found. No club aliases will be applied.")
+        return {}
+    except json.JSONDecodeError:
+        print(f"Error: Could not parse '{filepath}'. Please check if it's valid JSON.")
+        return {}
+
+def standardize_club_name(club_str, alias_map):
+    """
+    Cleans a club name and applies an alias from the mapping if one exists.
+    """
+    if not club_str or not isinstance(club_str, str):
+        return None
+    
+    # Standardize to Title Case for lookup
+    cleaned_club = club_str.strip().title()
+    
+    # .get(key, default) is perfect here. If the alias exists, use it.
+    # Otherwise, use the cleaned_club name as the default.
+    return alias_map.get(cleaned_club, cleaned_club)
+
 # ==============================================================================
 #  3. MAIN EXECUTION
 # ==============================================================================
 if __name__ == "__main__":
     if setup_database():
+        # Load the club aliases into memory
+        club_aliases = load_club_aliases()
+
+        # Load the meet manifest into memory
         meet_manifest = load_meet_manifest(MEET_MANIFEST_FILE)
-        process_livemeet_files(meet_manifest)
+        
+        # Pass the manifest and the aliases to the processing function
+        process_livemeet_files(meet_manifest, club_aliases)
         
         print("\n--- Livemeet data loading script finished ---")
