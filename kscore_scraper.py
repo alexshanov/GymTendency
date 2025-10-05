@@ -17,7 +17,7 @@ from selenium.webdriver.support import expected_conditions as EC
 # --- CONFIGURATION ---
 KSCORE_MEETS_CSV = "discovered_meet_ids_kscore.csv"
 OUTPUT_DIR_KSCORE = "CSVs_final_kscore"
-DEBUG_LIMIT = 1
+DEBUG_LIMIT = 0
 
 # ==============================================================================
 #  THE PROVEN, WORKING HELPER FUNCTION
