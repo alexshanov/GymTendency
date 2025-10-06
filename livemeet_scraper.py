@@ -104,7 +104,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 filename = f"{meet_id_for_filename}_MESSY_{table_counter}.csv"
                                 full_path = os.path.join(output_directory, filename)
                                 
-                                df.to_csv(full_path, index=False, line_terminator='\n')
+                                df.to_csv(full_path, index=False)
                                 
                                 print(f"  -> Saved table {table_counter} to '{full_path}'")
                                 table_counter += 1
@@ -212,7 +212,22 @@ def fix_and_standardize_headers(input_filename, output_filename):
         return False
 
     data_df.columns = clean_header
-    
+# --- THIS IS THE MISSING PART TO RESTORE ---
+    # The columns 'Group', 'Meet', 'Age_Group' were added to the messy CSV during scraping.
+    # The header logic above doesn't know about them, so they get generic 'Unnamed' names.
+    # We will find them by position (the last 3 columns) and rename them correctly.
+    data_df.rename(columns={
+        data_df.columns[-3]: 'Group',
+        data_df.columns[-2]: 'Meet',
+        data_df.columns[-1]: 'Age_Group'
+    }, inplace=True)
+
+    # Now, reorder the columns to bring the info columns to the front.
+    cols_to_move = ['Name', 'Club', 'Level', 'Prov', 'Age', 'Meet', 'Group', 'Age_Group']
+    existing_cols = [col for col in cols_to_move if col in data_df.columns]
+    other_cols = [col for col in data_df.columns if col not in existing_cols]
+    final_df = data_df[existing_cols + other_cols]
+    # --- END OF MISSING PART ---    
     # This should now work correctly without forcing column names
     # data_df.columns.values[-3:] = ['Group', 'Meet', 'Age_Group'] # No longer needed if logic is correct
 
@@ -233,7 +248,7 @@ def fix_and_standardize_headers(input_filename, output_filename):
 if __name__ == "__main__":
     
     # --- CONFIGURATION ---
-    MEET_IDS_CSV = "discovered_meet_ids.csv"
+    MEET_IDS_CSV = "discovered_meet_ids_livemeet.csv"
     MESSY_FOLDER = "CSVs_Livemeet_messy"
     FINAL_FOLDER = "CSVs_Livemeet_final" # The destination for clean, finished files
     BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
