@@ -23,7 +23,7 @@ from etl_functions import (
 
 # --- CONFIGURATION (Specific to Kscore) ---
 DB_FILE = "gym_data.db"
-KSCORE_CSVS_DIR = "CSVs_final_kscore" 
+KSCORE_CSVS_DIR = "CSVs_kscore_final" 
 KSCORE_MEET_MANIFEST_FILE = "discovered_meet_ids_kscore.csv"
 
 # ==============================================================================
