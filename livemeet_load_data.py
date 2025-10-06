@@ -1,3 +1,5 @@
+# livemeet_load_data.py
+
 import sqlite3
 import pandas as pd
 import os
@@ -15,20 +17,20 @@ from etl_functions import (
     detect_discipline
 )
 
-# --- CONFIGURATION (Specific to Kscore) ---
+# --- CONFIGURATION (Specific to Livemeet) ---
 DB_FILE = "gym_data.db"
-KSCORE_CSVS_DIR = "CSVs_final_kscore" 
-KSCORE_MEET_MANIFEST_FILE = "discovered_meet_ids_kscore.csv"
+LIVEMEET_CSVS_DIR = "CSVs_final" 
+MEET_MANIFEST_FILE = "discovered_meet_ids.csv" 
 
 # ==============================================================================
-#  DATA LOADING FUNCTIONS (Specific to Kscore)
+#  DATA LOADING FUNCTIONS (Specific to Livemeet)
 # ==============================================================================
 
 def load_meet_manifest(manifest_file):
     """
-    Reads the Kscore meet manifest CSV into a dictionary for easy lookups.
+    Reads the Livemeet manifest CSV into a dictionary for easy lookups.
     """
-    print(f"--- Loading Kscore meet manifest from '{manifest_file}' ---")
+    print(f"--- Loading Livemeet manifest from '{manifest_file}' ---")
     try:
         manifest_df = pd.read_csv(manifest_file)
         manifest = {
@@ -40,23 +42,23 @@ def load_meet_manifest(manifest_file):
             }
             for _, row in manifest_df.iterrows()
         }
-        print(f"Successfully loaded details for {len(manifest)} Kscore meets into memory.")
+        print(f"Successfully loaded details for {len(manifest)} Livemeet meets into memory.")
         return manifest
     except (FileNotFoundError, KeyError) as e:
-        print(f"Warning: Could not load Kscore manifest. Meet details will be incomplete. Error: {e}")
+        print(f"Warning: Could not load Livemeet manifest. Meet details will be incomplete. Error: {e}")
         return {} 
 
-def process_kscore_files(meet_manifest, club_alias_map):
+def process_livemeet_files(meet_manifest, club_alias_map):
     """
-    Main function to find and process all Kscore result CSV files.
+    Main function to find and process all Livemeet result CSV files.
     """
-    print("\n--- Starting to process Kscore result files ---")
+    print("\n--- Starting to process Livemeet result files ---")
     
-    search_pattern = os.path.join(KSCORE_CSVS_DIR, "*_FINAL_*.csv")
+    search_pattern = os.path.join(LIVEMEET_CSVS_DIR, "*_FINAL_*.csv")
     csv_files = glob.glob(search_pattern)
 
     if not csv_files:
-        print(f"Warning: No result files found in '{KSCORE_CSVS_DIR}'.")
+        print(f"Warning: No result files found in '{LIVEMEET_CSVS_DIR}'.")
         return
         
     try:
@@ -68,15 +70,15 @@ def process_kscore_files(meet_manifest, club_alias_map):
 
             for filepath in csv_files:
                 print(f"\nProcessing file: {os.path.basename(filepath)}")
-                parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
+                parse_livemeet_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
 
     except Exception as e:
         print(f"A critical error occurred during file processing: {e}")
         traceback.print_exc()
 
-def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map):
+def parse_livemeet_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map):
     """
-    Parses a single Kscore CSV and loads its data into the database using shared functions.
+    Parses a single Livemeet CSV and loads its data into the database using shared functions.
     """
     try:
         df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
@@ -87,22 +89,14 @@ def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache
         print(f"Warning: Could not read CSV file '{filepath}'. Error: {e}")
         return
 
-    # --- Kscore Specific Logic ---
-    # 1. Get the full ID from filename, e.g., 'kscore_altadore_ev25'
-    full_source_id = os.path.basename(filepath).split('_FINAL_')[0]
-    # 2. Clean it for the database, e.g., 'altadore_ev25'
-    source_meet_id = full_source_id.replace('kscore_', '', 1)
+    source_meet_id = os.path.basename(filepath).split('_FINAL_')[0]
     
-    # 3. Look up details using the full ID from the manifest
-    meet_details = meet_manifest.get(full_source_id, {})
+    meet_details = meet_manifest.get(source_meet_id, {})
     
-    # Provide a fallback name from the CSV if the manifest lookup fails
     if not meet_details.get('name'):
-        meet_details['name'] = df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Kscore {source_meet_id}"
+        meet_details['name'] = df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Livemeet {source_meet_id}"
     
-    # 4. Create the meet record with 'kscore' as the source and the cleaned ID
-    meet_db_id = get_or_create_meet(conn, 'kscore', source_meet_id, meet_details, meet_cache)
-    # --- End of Kscore Specific Logic ---
+    meet_db_id = get_or_create_meet(conn, 'livemeet', source_meet_id, meet_details, meet_cache)
 
     discipline_id, discipline_name, gender_heuristic = detect_discipline(df)
     print(f"  Detected Discipline: {discipline_name}")
@@ -115,10 +109,9 @@ def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache
     for col in result_columns:
         match = re.search(r'Result_(.*)_(Score|D)$', col)
         if match:
-            raw_event_name = match.group(1).replace('_', ' ')
-            # Handle All-Around variations
-            if raw_event_name == "All Around": raw_event_name = "AllAround"
-            if raw_event_name not in event_bases: event_bases[raw_event_name] = raw_event_name.replace(' ', '_')
+            raw_event_name = match.group(1)
+            clean_event_name = raw_event_name.replace('_', ' ')
+            if clean_event_name not in event_bases: event_bases[clean_event_name] = raw_event_name
 
     athletes_processed = 0
     results_inserted = 0
@@ -171,16 +164,16 @@ def parse_kscore_file(filepath, conn, athlete_cache, apparatus_cache, meet_cache
 # ==============================================================================
 def main():
     """
-    Main execution block for the Kscore data loader.
+    Main execution block for the Livemeet data loader.
     """
     # Use the shared setup_database function, passing the DB_FILE config
     if setup_database(DB_FILE):
         club_aliases = load_club_aliases()
-        meet_manifest = load_meet_manifest(KSCORE_MEET_MANIFEST_FILE)
+        meet_manifest = load_meet_manifest(MEET_MANIFEST_FILE)
         
-        process_kscore_files(meet_manifest, club_aliases)
+        process_livemeet_files(meet_manifest, club_aliases)
         
-        print("\n--- Kscore data loading script finished ---")
+        print("\n--- Livemeet data loading script finished ---")
 
 if __name__ == "__main__":
     main()
