@@ -23,8 +23,8 @@ from etl_functions import (
 
 # --- CONFIGURATION (Specific to Livemeet) ---
 DB_FILE = "gym_data.db"
-LIVEMEET_CSVS_DIR = "CSVs_final" 
-MEET_MANIFEST_FILE = "discovered_meet_ids.csv" 
+LIVEMEET_CSVS_DIR = "CSVs_Livemeet_final" 
+MEET_MANIFEST_FILE = "discovered_meet_ids_livemeet.csv" 
 
 # ==============================================================================
 #  DATA LOADING FUNCTIONS (Specific to Livemeet)
