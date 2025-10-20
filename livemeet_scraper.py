@@ -1,3 +1,4 @@
+import glob
 import pandas as pd
 import io
 import json
@@ -26,8 +27,8 @@ from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentE
 def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, output_directory="raw_data"):
     """
     Scrapes all event data, saving each table into its own CSV file.
-    --- UPDATED: Ensures correct line endings ('\n') in the output CSV ---
-    Returns (file_count, meet_id) on success.
+    This version uses a more robust file naming scheme to handle multiple
+    tables per page correctly.
     """
     print(f"--- STEP 1: Scraping Raw Data for {main_page_url} ---")
     
@@ -44,7 +45,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
     options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
 
     driver = None
-    table_counter = 1
+    total_files_saved = 0
     
     try:
         service = Service(ChromeDriverManager().install())
@@ -85,6 +86,8 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                     results_soup = BeautifulSoup(decoded_html, 'html.parser')
                     table_wrappers = results_soup.find_all('div', class_='resultsTableWrapper')
 
+                    # Use an inner counter for tables within a single event group page
+                    tables_in_group_counter = 1
                     for wrapper in table_wrappers:
                         age_group = "N/A"
                         title_element = wrapper.select_one(".resultsTitle .rpSubTitle")
@@ -99,23 +102,29 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 df = df_list[0].copy()
                                 df['Group'] = group_name
                                 df['Meet'] = meet_name
-                                df['Age Group'] = age_group
+                                df['Age_Group'] = age_group # Correctly assign the specific age group for this table
                                 
-                                filename = f"{meet_id_for_filename}_MESSY_{table_counter}.csv"
+                                # --- NEW FILENAME LOGIC ---
+                                # Sanitize group and age_group names for use in filenames
+                                safe_group_name = re.sub(r'[\s/\\:*?"<>|]+', '_', group_name)
+                                safe_age_group = re.sub(r'[\s/\\:*?"<>|]+', '_', age_group)
+                                
+                                # Create a unique filename based on the content
+                                filename = f"{meet_id_for_filename}_MESSY_{safe_group_name}_{safe_age_group}_{tables_in_group_counter}.csv"
                                 full_path = os.path.join(output_directory, filename)
                                 
                                 df.to_csv(full_path, index=False)
                                 
-                                print(f"  -> Saved table {table_counter} to '{full_path}'")
-                                table_counter += 1
+                                print(f"  -> Saved table to '{full_path}'")
+                                total_files_saved += 1
+                                tables_in_group_counter += 1
                 except Exception as e:
                     print(f"  -> Skipping a section in '{group_name}' due to an error: {e}")
                     continue
             
-            if table_counter > 1:
-                files_saved_count = table_counter - 1
-                print(f"\n--> Success! Saved a total of {files_saved_count} tables for '{meet_name}' to the '{output_directory}' directory.")
-                return files_saved_count, meet_id_for_filename
+            if total_files_saved > 0:
+                print(f"\n--> Success! Saved a total of {total_files_saved} tables for '{meet_name}' to the '{output_directory}' directory.")
+                return total_files_saved, meet_id_for_filename
             else:
                 print(f"--> No data tables were found or saved for {main_page_url}.")
                 return 0, None
@@ -127,8 +136,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
     finally:
         if driver:
             driver.quit()
-            
-    
+
 def fix_and_standardize_headers(input_filename, output_filename):
     """
     Reads a raw/messy CSV, builds a single perfect header by correctly
@@ -250,10 +258,10 @@ if __name__ == "__main__":
     # --- CONFIGURATION ---
     MEET_IDS_CSV = "discovered_meet_ids_livemeet.csv"
     MESSY_FOLDER = "CSVs_Livemeet_messy"
-    FINAL_FOLDER = "CSVs_Livemeet_final" # The destination for clean, finished files
+    FINAL_FOLDER = "CSVs_Livemeet_final" 
     BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
     
-    DEBUG_LIMIT = 0
+    DEBUG_LIMIT = 0 # Set to 0 to run all
 
     # --- SETUP ---
     os.makedirs(MESSY_FOLDER, exist_ok=True)
@@ -286,19 +294,27 @@ if __name__ == "__main__":
             print(f"Scraping complete. Found {files_saved} tables for Meet ID {file_base_id}.")
             print("--- Starting Step 2: Finalizing Files ---")
             
+            # --- THIS IS THE KEY FIX ---
+            # Instead of guessing filenames with a loop from 1 to N,
+            # we find all the messy files that were actually created for this meet.
+            search_pattern = os.path.join(MESSY_FOLDER, f"{file_base_id}_MESSY_*.csv")
+            messy_files_to_process = glob.glob(search_pattern)
+            
             all_successful = True
-            for i in range(1, files_saved + 1):
-                messy_file_path = os.path.join(MESSY_FOLDER, f"{file_base_id}_MESSY_{i}.csv")
-                final_file_path = os.path.join(FINAL_FOLDER, f"{file_base_id}_FINAL_{i}.csv")
+            for messy_file_path in messy_files_to_process:
+                # Construct the final filename from the messy one
+                messy_filename = os.path.basename(messy_file_path)
+                final_filename = messy_filename.replace('_MESSY_', '_FINAL_')
+                final_file_path = os.path.join(FINAL_FOLDER, final_filename)
 
-                # --- STEP 2: Call the all-in-one fixer function ---
                 if not fix_and_standardize_headers(messy_file_path, final_file_path):
                     print(f"--- ❌ FAILED at Step 2 (Finalizing) for: {messy_file_path} ---")
                     all_successful = False
-                    break 
+                    # We can choose to break or continue with other files
+                    # break 
 
             if all_successful:
-                print(f"--- ✅ Successfully processed all {files_saved} tables for Meet ID: {meet_id} ---")
+                print(f"--- ✅ Successfully processed all {len(messy_files_to_process)} tables for Meet ID: {meet_id} ---")
         else:
             print(f"--- ❌ FAILED or SKIPPED at Step 1 (Scraping) for Meet ID: {meet_id} ---")
         
