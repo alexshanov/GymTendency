@@ -13,7 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # --- CONFIGURATION ---
-DEBUG_LIMIT = 1  # 35631 35486 33704  # Process only 1 meet for testing
+DEBUG_LIMIT = 0
 OUTPUT_FOLDER = "CSVs_mso_final"
 INPUT_MANIFEST = "discovered_meet_ids_mso.csv"
 

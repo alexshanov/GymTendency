@@ -224,16 +224,10 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
     print(f"  Processed {athletes_processed} athletes, inserting {results_inserted} result records.")
 
 def main():
-    if setup_database(DB_FILE): # NOTE: ensure we don't wipe existing DB if we want to append, but usually setup_db is "create if not exists" or we use a separate init script.
-        # etl_functions.setup_database DOES wipe tables currently.
-        # But create_db.py calls it.
-        # Loader scripts usually shouldn't call setup_database(wipe=True).
-        # Let's check etl_functions.py content again.
-        pass
+    if not os.path.exists(DB_FILE):
+        print(f"Database {DB_FILE} not found. Please run create_db.py first.")
+        return
 
-    # Actually, we should NOT call setup_database here as it drops tables.
-    # We should just connect.
-    
     club_aliases = load_club_aliases()
     meet_manifest = load_meet_manifest(MSO_MANIFEST_FILE)
     

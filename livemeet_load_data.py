@@ -204,13 +204,16 @@ def main():
     """
     Main execution block for the Livemeet data loader.
     """
-    if setup_database(DB_FILE):
-        club_aliases = load_club_aliases()
-        meet_manifest = load_meet_manifest(MEET_MANIFEST_FILE)
-        
-        process_livemeet_files(meet_manifest, club_aliases)
-        
-        print("\n--- Livemeet data loading script finished ---")
+    if not os.path.exists(DB_FILE):
+        print(f"Database {DB_FILE} not found. Please run create_db.py first.")
+        return
+
+    club_aliases = load_club_aliases()
+    meet_manifest = load_meet_manifest(MEET_MANIFEST_FILE)
+    
+    process_livemeet_files(meet_manifest, club_aliases)
+    
+    print("\n--- Livemeet data loading script finished ---")
 
 if __name__ == "__main__":
     main()
