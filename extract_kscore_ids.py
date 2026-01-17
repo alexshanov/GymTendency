@@ -2,6 +2,9 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import re
 from dateutil import parser
+import sys
+sys.path.insert(0, '.')
+from etl_functions import is_tt_meet
 
 def extract_kscore_meets_from_html(filename="meets_kscore.html"):
     """
@@ -43,6 +46,11 @@ def extract_kscore_meets_from_html(filename="meets_kscore.html"):
         meet_id = f"kscore_{raw_id}"
 
         meet_name = name_element.get_text(strip=True)
+        
+        # --- T&T EXCLUSION ---
+        if is_tt_meet(meet_name):
+            print(f"  - Skipping T&T meet: {meet_name}")
+            continue
         dates_str = date_element.get_text(strip=True)
         start_date_iso = None
         year = None

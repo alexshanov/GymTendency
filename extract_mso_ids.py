@@ -2,6 +2,9 @@ import bs4
 import csv
 import re
 import os
+import sys
+sys.path.insert(0, '.')
+from etl_functions import is_tt_meet
 
 HTML_FILE = "meets_meetscoreonline.html"
 OUTPUT_FILE = "discovered_meet_ids_mso.csv"
@@ -38,6 +41,10 @@ def extract_ids():
         date_text = date_div.get_text(strip=True) if date_div else ""
 
         if meet_id:
+            # --- T&T EXCLUSION ---
+            if is_tt_meet(meet_name) or is_tt_meet(filter_text):
+                print(f"  - Skipping T&T meet: {meet_name}")
+                continue
             extracted_data.append([meet_id, meet_name, date_text, state, filter_text])
 
     # Write to CSV

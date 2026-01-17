@@ -5,10 +5,40 @@ import pandas as pd
 import os
 import json
 import traceback
+import re
+
+# ==============================================================================
+#  T&T (TRAMPOLINE & TUMBLING) EXCLUSION
+#  These patterns identify non-artistic gymnastics meets to be excluded
+# ==============================================================================
+TT_EXCLUSION_PATTERNS = [
+    r'\bT\s*&\s*T\b',           # T&T, T & T
+    r'\bT\s*N\s*T\b',           # TNT, T N T
+    r'\btrampoline\b',          # trampoline
+    r'\btumbling\b',            # tumbling
+    r'\bdouble\s*mini\b',       # double mini
+    r'\bdmt\b',                 # DMT (Double Mini Trampoline)
+    r'\bpower\s*tumbling\b',    # power tumbling
+    r'\bsynchro\s*tramp',       # synchro trampoline
+]
+
+def is_tt_meet(meet_name):
+    """
+    Check if a meet name indicates a Trampoline & Tumbling meet.
+    Returns True if it should be EXCLUDED from processing.
+    """
+    if not meet_name:
+        return False
+    name_lower = meet_name.lower()
+    for pattern in TT_EXCLUSION_PATTERNS:
+        if re.search(pattern, name_lower, re.IGNORECASE):
+            return True
+    return False
 
 # ==============================================================================
 #  DATABASE SETUP AND DEFINITIONS
 # ==============================================================================
+
 
 def setup_database(db_file):
     """

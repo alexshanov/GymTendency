@@ -2,6 +2,9 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import re 
 from dateutil import parser
+import sys
+sys.path.insert(0, '.')
+from etl_functions import is_tt_meet
 
 def extract_meet_ids_from_html(filename="meets_livemeet.html"):
     """
@@ -35,6 +38,10 @@ def extract_meet_ids_from_html(filename="meets_livemeet.html"):
         meet_name_element = card.find('h4', class_='card-title')
         meet_name = meet_name_element.get_text(strip=True).replace('Register/Login', '').replace('Login', '').replace('Results', '').strip() if meet_name_element else "Unknown Meet Name"
         
+        # --- T&T EXCLUSION ---
+        if is_tt_meet(meet_name):
+            print(f"  - Skipping T&T meet: {meet_name}")
+            continue
         dates = "N/A"
         location = "N/A"
         year = "N/A"
