@@ -66,8 +66,11 @@ def setup_database(db_file):
         """CREATE TABLE IF NOT EXISTS Results (
             result_id INTEGER PRIMARY KEY AUTOINCREMENT,
             meet_db_id INTEGER NOT NULL,
-            athlete_id INTEGER NOT NULL, -- This now links to the new Athletes table
+            athlete_id INTEGER NOT NULL, 
             apparatus_id INTEGER NOT NULL,
+            level TEXT,
+            age REAL,
+            province TEXT,
             score_d REAL,
             score_final REAL,
             score_text TEXT,
@@ -138,8 +141,8 @@ def standardize_athlete_name(name_str):
 
 def detect_discipline(df):
     column_names = set(df.columns)
-    MAG_INDICATORS = {'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar'}
-    WAG_INDICATORS = {'Uneven_Bars', 'Beam'}
+    MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar'}
+    WAG_INDICATORS = {'Uneven_Bars', 'UnevenBars', 'Beam'}
     for col in column_names:
         if any(indicator in col for indicator in MAG_INDICATORS): return 2, 'MAG', 'M'
         if any(indicator in col for indicator in WAG_INDICATORS): return 1, 'WAG', 'F'

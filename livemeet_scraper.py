@@ -212,37 +212,66 @@ def fix_and_standardize_headers(input_filename, output_filename):
             clean_header.append(final_name.replace(' ', '_'))
             j += 1
 
-    # --- End of new logic ---
+    # --- APPARATUS NAME MAPPING ---
+    apparatus_map = {
+        'All_Around': 'AllAround',
+        'All-Around': 'AllAround',
+        'Balance_Beam': 'Beam'
+    }
 
-    if len(clean_header) != data_df.shape[1]:
-        print(f"Error: Final header length ({len(clean_header)}) doesn't match data columns ({data_df.shape[1]}).")
-        print("Constructed Header:", clean_header)
+    # Map the headers based on the map above
+    mapped_header = []
+    for col in clean_header:
+        if col.startswith("Result_"):
+            parts = col.split('_')
+            event_name_in_col = "_".join(parts[1:-1])
+            suffix = parts[-1]
+            mapped_event = apparatus_map.get(event_name_in_col, event_name_in_col)
+            mapped_header.append(f"Result_{mapped_event}_{suffix}")
+        else:
+            mapped_header.append(col)
+
+    if len(mapped_header) != data_df.shape[1]:
+        print(f"Error: Final header length ({len(mapped_header)}) doesn't match data columns ({data_df.shape[1]}).")
+        print("Constructed Header:", mapped_header)
         return False
 
-    data_df.columns = clean_header
-# --- THIS IS THE MISSING PART TO RESTORE ---
-    # The columns 'Group', 'Meet', 'Age_Group' were added to the messy CSV during scraping.
-    # The header logic above doesn't know about them, so they get generic 'Unnamed' names.
-    # We will find them by position (the last 3 columns) and rename them correctly.
+    data_df.columns = mapped_header
+
+    # Rename the trailing standard columns added during scraping
     data_df.rename(columns={
         data_df.columns[-3]: 'Group',
         data_df.columns[-2]: 'Meet',
         data_df.columns[-1]: 'Age_Group'
     }, inplace=True)
 
-    # Now, reorder the columns to bring the info columns to the front.
-    cols_to_move = ['Name', 'Club', 'Level', 'Prov', 'Age', 'Meet', 'Group', 'Age_Group']
-    existing_cols = [col for col in cols_to_move if col in data_df.columns]
-    other_cols = [col for col in data_df.columns if col not in existing_cols]
-    final_df = data_df[existing_cols + other_cols]
-    # --- END OF MISSING PART ---    
-    # This should now work correctly without forcing column names
-    # data_df.columns.values[-3:] = ['Group', 'Meet', 'Age_Group'] # No longer needed if logic is correct
+    # --- APPLY SERVICE COLUMN STANDARDIZATION ---
+    standard_info_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
+    
+    # 1. Ensure all columns exist
+    for col in standard_info_cols:
+        if col not in data_df.columns:
+            data_df[col] = ""
+    
+    # 2. Extract Level from Group if Level is empty
+    def extract_level(row):
+        if row['Level'] and str(row['Level']).strip():
+            return row['Level']
+        group = str(row['Group'])
+        # Common patterns: "Level 4", "P1", "CCP 6", "CPP 1"
+        match = re.search(r'(Level\s*\d+|CCP\s*\d+|P\d+|CPP\s*\d+|Provincial\s*\d+|Junior\s*[A-Z]|Senior\s*[A-Z]|Xcel\s*[a-zA-Z]+)', group, re.I)
+        return match.group(0) if match else ""
 
-    cols_to_move = ['Name', 'Club', 'Level', 'Prov', 'Age', 'Meet', 'Group', 'Age_Group']
-    existing_cols = [col for col in cols_to_move if col in data_df.columns]
-    other_cols = [col for col in data_df.columns if col not in existing_cols]
-    final_df = data_df[existing_cols + other_cols]
+    data_df['Level'] = data_df.apply(extract_level, axis=1)
+
+    # 3. Consolidate Province/Prov
+    if 'Province' in data_df.columns:
+         data_df['Prov'] = data_df.apply(lambda r: r['Province'] if not str(r['Prov']).strip() else r['Prov'], axis=1)
+         data_df.drop(columns=['Province'], inplace=True)
+
+    # 4. Enforce standard order for info columns, then results
+    other_cols = [col for col in data_df.columns if col not in standard_info_cols]
+    final_df = data_df[standard_info_cols + other_cols]
 
     final_df.to_csv(output_filename, index=False)
     print(f"-> Success! Final clean file saved to '{output_filename}'")

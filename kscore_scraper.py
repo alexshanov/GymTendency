@@ -53,9 +53,16 @@ def standardize_kscore_columns(html_content):
     info_column_rename_map = {'Athlete': 'Name', '#': 'Rank'}
     final_columns.extend([info_column_rename_map.get(name, name) for name in info_headers_raw])
     
+    # Apparatus Name Mapping for Consistency
+    apparatus_map = {
+        'Balance Beam': 'Beam',
+        'All Around': 'AllAround',
+        'All-Around': 'AllAround'
+    }
+
     # Add the event triples
     for event in event_names:
-        clean_event = event.replace(' ', '_').replace('-', '_')
+        clean_event = apparatus_map.get(event, event).replace(' ', '_').replace('-', '_')
         final_columns.extend([f"Result_{clean_event}_D", f"Result_{clean_event}_Score", f"Result_{clean_event}_Rnk"])
 
     # --- Step 3: Extract VISIBLE data cells from the <tbody> ---
@@ -171,13 +178,29 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir):
                 if 'Rank' in df.columns:
                     df = df.drop(columns=['Rank'])
                 
+                # --- APPLY SERVICE COLUMN STANDARDIZATION ---
+                # 1. Map 'Category' to 'Level' if it looks like a level
+                extracted_level = ""
+                if "Level" in age_group or "CCP" in age_group:
+                    extracted_level = age_group
+                
                 df['Meet'] = meet_name
                 df['Group'] = group_name
                 df['Age_Group'] = age_group
+                df['Level'] = extracted_level
+                df['Age'] = ""   # Not provided by K-Score
+                df['Prov'] = ""  # Not provided by K-Score
 
-                cols_to_move = ['Name', 'Club', 'Meet', 'Group', 'Age_Group']
-                existing_info_cols = [col for col in cols_to_move if col in df.columns]
+                # Drop 'Category' if it was picked up from the table headers
+                if 'Category' in df.columns:
+                    df = df.drop(columns=['Category'])
+
+                # 2. Enforce the Standard Column Order
+                standard_info_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
+                # filter for columns that actually exist or were just created
+                existing_info_cols = [col for col in standard_info_cols if col in df.columns]
                 result_cols = [col for col in df.columns if col not in existing_info_cols]
+                
                 df = df[existing_info_cols + result_cols]
                 
                 output_filename = f"{meet_id}_FINAL_{session['id']}_{cat_id}.csv"

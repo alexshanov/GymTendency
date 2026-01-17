@@ -1,4 +1,3 @@
-# kscore_load_data.py
 
 import sqlite3
 import pandas as pd
@@ -21,53 +20,54 @@ from etl_functions import (
     get_or_create_meet
 )
 
-# --- CONFIGURATION (Specific to Kscore) ---
+# --- CONFIGURATION (Specific to MSO) ---
 DB_FILE = "gym_data.db"
-KSCORE_CSVS_DIR = "CSVs_kscore_final" 
-KSCORE_MEET_MANIFEST_FILE = "discovered_meet_ids_kscore.csv"
+MSO_CSVS_DIR = "CSVs_mso_final" 
+MSO_MANIFEST_FILE = "discovered_meet_ids_mso.csv"
 
 # ==============================================================================
-#  DATA LOADING FUNCTIONS (Specific to Kscore)
+#  DATA LOADING FUNCTIONS (Specific to MSO)
 # ==============================================================================
 
 def load_meet_manifest(manifest_file):
     """
-    Reads the Kscore meet manifest CSV into a dictionary for easy lookups.
+    Reads the MSO meet manifest CSV into a dictionary.
     """
-    print(f"--- Loading Kscore meet manifest from '{manifest_file}' ---")
+    print(f"--- Loading MSO meet manifest from '{manifest_file}' ---")
     try:
         manifest_df = pd.read_csv(manifest_file)
         manifest = {
-            row['MeetID']: {
+            str(row['MeetID']): {
                 'name': row['MeetName'],
-                'start_date_iso': row['start_date_iso'],
-                'location': row['Location'],
-                'year': row['Year']
+                'start_date_iso': row['Date'], # MSO scraper saved raw date string here
+                'location': row['State'], # Or we could parse filter text
+                'year': None # Not explicit in manifest unless we parse date
             }
             for _, row in manifest_df.iterrows()
         }
-        print(f"Successfully loaded details for {len(manifest)} Kscore meets into memory.")
+        print(f"Successfully loaded details for {len(manifest)} MSO meets into memory.")
         return manifest
     except (FileNotFoundError, KeyError) as e:
-        print(f"Warning: Could not load Kscore manifest. Meet details will be incomplete. Error: {e}")
+        print(f"Warning: Could not load MSO manifest. Meet details will be incomplete. Error: {e}")
         return {} 
 
-def process_kscore_files(meet_manifest, club_alias_map):
+def process_mso_files(meet_manifest, club_alias_map):
     """
-    Main function to find and process all Kscore result CSV files.
+    Main function to find and process all MSO result CSV files.
     """
-    print("\n--- Starting to process Kscore result files ---")
+    print("\n--- Starting to process MSO result files ---")
     
-    search_pattern = os.path.join(KSCORE_CSVS_DIR, "*_FINAL_*.csv")
+    # MSO scraper output matches: {meet_id}_mso.csv
+    search_pattern = os.path.join(MSO_CSVS_DIR, "*_mso.csv")
     csv_files = glob.glob(search_pattern)
 
     if not csv_files:
-        print(f"Warning: No result files found in '{KSCORE_CSVS_DIR}'.")
+        print(f"Warning: No result files found in '{MSO_CSVS_DIR}'.")
         return
         
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            # --- Caches now map to the new schema ---
+            # --- Caches ---
             person_cache = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
             club_cache = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
             athlete_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
@@ -76,16 +76,15 @@ def process_kscore_files(meet_manifest, club_alias_map):
 
             for filepath in csv_files:
                 print(f"\nProcessing file: {os.path.basename(filepath)}")
-                # Pass all the new caches to the parsing function
-                parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
+                parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
 
     except Exception as e:
         print(f"A critical error occurred during file processing: {e}")
         traceback.print_exc()
 
-def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map):
+def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map):
     """
-    Parses a single Kscore CSV and loads its data into the database using the new schema.
+    Parses a single MSO CSV and loads its data into the database.
     """
     try:
         df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
@@ -96,12 +95,15 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
         print(f"Warning: Could not read CSV file '{filepath}'. Error: {e}")
         return
 
-    full_source_id = os.path.basename(filepath).split('_FINAL_')[0]
-    source_meet_id = full_source_id.replace('kscore_', '', 1)
-    meet_details = meet_manifest.get(full_source_id, {})
+    # Filename: {meet_id}_mso.csv
+    filename = os.path.basename(filepath)
+    source_meet_id = filename.split('_mso.csv')[0]
+    
+    meet_details = meet_manifest.get(source_meet_id, {})
     if not meet_details.get('name'):
-        meet_details['name'] = df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Kscore {source_meet_id}"
-    meet_db_id = get_or_create_meet(conn, 'kscore', source_meet_id, meet_details, meet_cache)
+        meet_details['name'] = df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"MSO {source_meet_id}"
+        
+    meet_db_id = get_or_create_meet(conn, 'mso', source_meet_id, meet_details, meet_cache)
 
     discipline_id, discipline_name, gender_heuristic = detect_discipline(df)
     print(f"  Detected Discipline: {discipline_name}")
@@ -113,25 +115,35 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
     service_columns = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
     dynamic_columns = [col for col in df.columns if col not in service_columns and not col.startswith('Result_')]
     
+    # Map raw event columns to clean names
+    # Scraper output: Result_Floor_Score, Result_Floor_D_Score, Result_Floor_Rank
     event_bases = {}
     for col in result_columns:
-        match = re.search(r'Result_(.*)_(Score|D)$', col)
-        if match:
-            raw_event_name = match.group(1).replace('_', ' ')
-            if raw_event_name == "All Around": raw_event_name = "AllAround"
-            if raw_event_name not in event_bases: event_bases[raw_event_name] = raw_event_name.replace(' ', '_')
+        # Match 'Result_{Apparatus}_{Metric}'
+        # Metric can be Score, D_Score, Rank
+        parts = col.split('_')
+        # Result, Part1, [Part2...], Metric
+        if len(parts) >= 3:
+            metric = parts[-1]
+            if metric in ['Score', 'Rank']:
+                raw_event_name = "_".join(parts[1:-1])
+                # Handle D_Score case (metric=Score, but penultimate is D)
+                if parts[-2] == 'D':
+                    raw_event_name = "_".join(parts[1:-2])
+            else:
+                 continue
+            
+            clean_name = raw_event_name.replace('_', ' ')
+            if clean_name not in event_bases: event_bases[clean_name] = raw_event_name
 
     athletes_processed = 0
     results_inserted = 0
     cursor = conn.cursor()
 
     for index, row in df.iterrows():
-        # --- NEW LOGIC FOR ATHLETE/PERSON/CLUB ---
-        
         # 1. Standardize the name
         person_name = standardize_athlete_name(row.get(core_column))
         if not person_name:
-            print(f"Warning: Skipping row {index+2} due to invalid or empty athlete name.")
             continue
             
         athletes_processed += 1
@@ -143,21 +155,29 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
         club_name = standardize_club_name(row.get('Club'), club_alias_map)
         club_id = get_or_create_club(conn, club_name, club_cache)
         
-        # 4. Get the unique Athlete ID that links this Person and Club
+        # 4. Get the unique Athlete ID
         athlete_id = get_or_create_athlete_link(conn, person_id, club_id, athlete_cache)
-        
-        # --- END OF NEW LOGIC ---
         
         details_dict = {col: val for col, val in row[dynamic_columns].items() if val}
         details_json = json.dumps(details_dict)
         
         for clean_name, raw_name in event_bases.items():
             apparatus_key = (clean_name, discipline_id)
-            if apparatus_key not in apparatus_cache: apparatus_key = (clean_name, 99) 
-            if apparatus_key not in apparatus_cache: continue
+            if apparatus_key not in apparatus_cache: 
+                # Try fallback (e.g. AllAround is usually universal)
+                apparatus_key = (clean_name, 99)
+                 
+            if apparatus_key not in apparatus_cache: 
+                # print(f"Warning: Apparatus '{clean_name}' not found in cache for discipline {discipline_id}")
+                continue
             
             apparatus_id = apparatus_cache[apparatus_key]
-            d_col, score_col, rank_col = f'Result_{raw_name}_D', f'Result_{raw_name}_Score', f'Result_{raw_name}_Rnk'
+            
+            # Construct column names based on scraper output
+            score_col = f'Result_{raw_name}_Score'
+            d_col = f'Result_{raw_name}_D_Score'
+            rank_col = f'Result_{raw_name}_Rank'
+            
             d_val, score_val, rank_val = row.get(d_col), row.get(score_col), row.get(rank_col)
             
             score_numeric = pd.to_numeric(score_val, errors='coerce')
@@ -180,6 +200,10 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
             
             age_numeric = pd.to_numeric(age_raw, errors='coerce') if age_raw else None
 
+            # Check if result is valid (has score or rank)
+            if pd.isna(score_numeric) and not score_text and not rank_val:
+                continue
+
             cursor.execute("""
                 INSERT INTO Results (
                     meet_db_id, athlete_id, apparatus_id, 
@@ -199,20 +223,23 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
     conn.commit()
     print(f"  Processed {athletes_processed} athletes, inserting {results_inserted} result records.")
 
-# ==============================================================================
-#  MAIN EXECUTION
-# ==============================================================================
 def main():
-    """
-    Main execution block for the Kscore data loader.
-    """
-    if setup_database(DB_FILE):
-        club_aliases = load_club_aliases()
-        meet_manifest = load_meet_manifest(KSCORE_MEET_MANIFEST_FILE)
-        
-        process_kscore_files(meet_manifest, club_aliases)
-        
-        print("\n--- Kscore data loading script finished ---")
+    if setup_database(DB_FILE): # NOTE: ensure we don't wipe existing DB if we want to append, but usually setup_db is "create if not exists" or we use a separate init script.
+        # etl_functions.setup_database DOES wipe tables currently.
+        # But create_db.py calls it.
+        # Loader scripts usually shouldn't call setup_database(wipe=True).
+        # Let's check etl_functions.py content again.
+        pass
+
+    # Actually, we should NOT call setup_database here as it drops tables.
+    # We should just connect.
+    
+    club_aliases = load_club_aliases()
+    meet_manifest = load_meet_manifest(MSO_MANIFEST_FILE)
+    
+    process_mso_files(meet_manifest, club_aliases)
+    
+    print("\n--- MSO data loading script finished ---")
 
 if __name__ == "__main__":
     main()

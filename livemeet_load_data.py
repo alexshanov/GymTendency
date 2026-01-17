@@ -107,7 +107,10 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
 
     core_column = 'Name'
     result_columns = [col for col in df.columns if col.startswith('Result_')]
-    dynamic_columns = [col for col in df.columns if col not in [core_column] and not col.startswith('Result_')]
+    
+    # Define columns to EXCLUDE from the details_json bag
+    service_columns = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
+    dynamic_columns = [col for col in df.columns if col not in service_columns and not col.startswith('Result_')]
     
     event_bases = {}
     for col in result_columns:
@@ -168,10 +171,27 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
                     cleaned_rank_str = re.sub(r'\D', '', str(rank_val))
                     if cleaned_rank_str: rank_numeric = int(cleaned_rank_str)
             
+            # --- EXTRACT NEW STANDARD FIELDS ---
+            level_val = row.get('Level')
+            age_raw = row.get('Age')
+            prov_val = row.get('Prov')
+            
+            age_numeric = pd.to_numeric(age_raw, errors='coerce') if age_raw else None
+
             cursor.execute("""
-                INSERT INTO Results (meet_db_id, athlete_id, apparatus_id, score_d, score_final, score_text, rank_numeric, rank_text, details_json) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (meet_db_id, athlete_id, apparatus_id, d_numeric, score_numeric, score_text, rank_numeric, rank_text, details_json))
+                INSERT INTO Results (
+                    meet_db_id, athlete_id, apparatus_id, 
+                    level, age, province,
+                    score_d, score_final, score_text, 
+                    rank_numeric, rank_text, details_json
+                ) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                meet_db_id, athlete_id, apparatus_id, 
+                level_val, age_numeric, prov_val,
+                d_numeric, score_numeric, score_text, 
+                rank_numeric, rank_text, details_json
+            ))
             results_inserted += 1
             
     conn.commit()
