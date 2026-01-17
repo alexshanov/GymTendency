@@ -181,25 +181,22 @@ def process_meet(driver, meet_id, meet_name):
             if col not in df.columns:
                 df[col] = "" # Fill missing
                 
-        # 2. Apparatus Mapping
+        # 2. Apparatus Mapping - normalize to standard names (with underscores to match K-Score/LiveMeet)
         event_map = {
+            # MSO abbreviations -> Standard underscored names
             "FLR": "Floor", "FX": "Floor", "FLOOR": "Floor",
-            "PH": "PommelHorse", "POMMEL HORSE": "PommelHorse",
-            "SR": "Rings", 
+            "PH": "Pommel_Horse", "POMMEL HORSE": "Pommel_Horse", "POMML": "Pommel_Horse",
+            "SR": "Rings", "RINGS": "Rings",
             "VT": "Vault", "VAULT": "Vault",
-            "PB": "ParallelBars", "PARALLEL BARS": "ParallelBars",
-            "HB": "HighBar", "HIGH BAR": "HighBar",
+            "PB": "Parallel_Bars", "PARALLEL BARS": "Parallel_Bars", "PBARS": "Parallel_Bars",
+            "HB": "High_Bar", "HIGH BAR": "High_Bar", "HIBAR": "High_Bar",
             "AA": "AllAround", "ALL AROUND": "AllAround",
-            "UB": "UnevenBars", "BARS": "UnevenBars", "UNEVEN BARS": "UnevenBars",
+            "UB": "Uneven_Bars", "BARS": "Uneven_Bars", "UNEVEN BARS": "Uneven_Bars",
             "BB": "Beam", "Beam": "Beam", "Balance Beam": "Beam", "BEAM": "Beam"
         }
         df['Apparatus'] = df['Apparatus'].map(lambda x: event_map.get(x, x))
         
-        # 3. Pivot to standard format (One row per athlete, Result_Columns)
-        # However, our other scrapers produce ONE ROW PER ATHLETE with multiple Result_XX columns.
-        # This records format is Long. We need wide.
-        
-        # Let's pivot
+        # 3. Pivot to wide format
         df_wide = df.pivot_table(
             index=['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group'],
             columns='Apparatus',
@@ -207,23 +204,55 @@ def process_meet(driver, meet_id, meet_name):
             aggfunc='first'
         ).reset_index()
         
-        # Flatten MultiIndex columns
-        new_cols = []
-        for col in df_wide.columns:
-            if col[0] in ['Score', 'D_Score', 'Rank']:
-                # e.g. Result_Floor_Score, Result_Floor_Rank
-                metric = col[0]
-                apparatus = col[1]
-                if metric == 'Score':
-                    new_cols.append(f"Result_{apparatus}_Score")
-                elif metric == 'D_Score':
-                    new_cols.append(f"Result_{apparatus}_D_Score")
-                elif metric == 'Rank':
-                    new_cols.append(f"Result_{apparatus}_Rank")
-            else:
-                new_cols.append(col[0]) # Keep index cols as is
+        # 4. Flatten MultiIndex and build triplets in Olympic order
+        # Official FIG Olympic Order (using underscored names):
+        # WAG: Vault, Uneven_Bars, Beam, Floor
+        # MAG: Floor, Pommel_Horse, Rings, Vault, Parallel_Bars, High_Bar
+        WAG_ORDER = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'AllAround']
+        MAG_ORDER = ['Floor', 'Pommel_Horse', 'Rings', 'Vault', 'Parallel_Bars', 'High_Bar', 'AllAround']
         
-        df_wide.columns = new_cols
+        # Detect discipline from apparatus present
+        apparatus_present = [col[1] for col in df_wide.columns if col[0] in ['Score', 'D_Score', 'Rank']]
+        is_mag = any(a in apparatus_present for a in ['Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar'])
+        apparatus_order = MAG_ORDER if is_mag else WAG_ORDER
+        
+        # Build new column list: service cols first, then triplets per apparatus
+        service_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
+        new_columns = []
+        column_mapping = {}  # old tuple -> new name
+        
+        for col in df_wide.columns:
+            if isinstance(col, tuple) and col[0] in ['Score', 'D_Score', 'Rank']:
+                metric, apparatus = col
+                if metric == 'D_Score':
+                    new_name = f"Result_{apparatus}_D"
+                elif metric == 'Score':
+                    new_name = f"Result_{apparatus}_Score"
+                elif metric == 'Rank':
+                    new_name = f"Result_{apparatus}_Rnk"
+                column_mapping[col] = new_name
+            else:
+                column_mapping[col] = col[0] if isinstance(col, tuple) else col
+        
+        # Rename columns
+        df_wide.columns = [column_mapping.get(c, c) for c in df_wide.columns]
+        
+        # Build ordered column list
+        ordered_result_cols = []
+        for apparatus in apparatus_order:
+            for suffix in ['_D', '_Score', '_Rnk']:
+                col_name = f"Result_{apparatus}{suffix}"
+                if col_name in df_wide.columns:
+                    ordered_result_cols.append(col_name)
+        
+        # Add any remaining result columns not in order (unexpected apparatus)
+        for col in df_wide.columns:
+            if col.startswith('Result_') and col not in ordered_result_cols:
+                ordered_result_cols.append(col)
+        
+        # Final column order: service + ordered results
+        final_cols = [c for c in service_cols if c in df_wide.columns] + ordered_result_cols
+        df_wide = df_wide[final_cols]
         
         # Save
         filename = f"{meet_id}_mso.csv"

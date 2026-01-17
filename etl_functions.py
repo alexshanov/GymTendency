@@ -59,8 +59,8 @@ def setup_database(db_file):
             source_meet_id TEXT NOT NULL,
             name TEXT,
             start_date_iso TEXT,
+            comp_year INTEGER,
             location TEXT,
-            year INTEGER,
             UNIQUE(source, source_meet_id)
         );""",
         """CREATE TABLE IF NOT EXISTS Results (
@@ -199,15 +199,25 @@ def get_or_create_athlete_link(conn, person_id, club_id, cache):
 def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
     meet_key = (source, source_meet_id)
     if meet_key in cache: return cache[meet_key]
+    
+    # Extract year: prefer explicit year, then parse from date string
+    comp_year = meet_details.get('year') or meet_details.get('comp_year')
+    if not comp_year and meet_details.get('start_date_iso'):
+        import re
+        date_str = str(meet_details.get('start_date_iso'))
+        year_match = re.search(r'(20\d{2})', date_str)
+        if year_match:
+            comp_year = int(year_match.group(1))
+    
     cursor = conn.cursor()
     cursor.execute("SELECT meet_db_id FROM Meets WHERE source = ? AND source_meet_id = ?", meet_key)
     result = cursor.fetchone()
     if result:
         meet_db_id = result[0]
     else:
-        cursor.execute("INSERT INTO Meets (source, source_meet_id, name, start_date_iso, location, year) VALUES (?, ?, ?, ?, ?, ?)",
-            (source, source_meet_id, meet_details.get('name'), meet_details.get('start_date_iso'), meet_details.get('location'), meet_details.get('year')))
+        cursor.execute("INSERT INTO Meets (source, source_meet_id, name, start_date_iso, comp_year, location) VALUES (?, ?, ?, ?, ?, ?)",
+            (source, source_meet_id, meet_details.get('name'), meet_details.get('start_date_iso'), comp_year, meet_details.get('location')))
         meet_db_id = cursor.lastrowid
-        print(f"  -> New meet added: '{meet_details.get('name')}' (ID: {meet_db_id})")
+        print(f"  -> New meet added: '{meet_details.get('name')}' (ID: {meet_db_id}, Year: {comp_year})")
     cache[meet_key] = meet_db_id
     return meet_db_id
