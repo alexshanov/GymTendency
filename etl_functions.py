@@ -61,6 +61,7 @@ def setup_database(db_file):
             start_date_iso TEXT,
             comp_year INTEGER,
             location TEXT,
+            competition_type TEXT,
             UNIQUE(source, source_meet_id)
         );""",
         """CREATE TABLE IF NOT EXISTS Results (
@@ -68,6 +69,7 @@ def setup_database(db_file):
             meet_db_id INTEGER NOT NULL,
             athlete_id INTEGER NOT NULL, 
             apparatus_id INTEGER NOT NULL,
+            gender TEXT,
             level TEXT,
             age REAL,
             province TEXT,
@@ -80,6 +82,13 @@ def setup_database(db_file):
             FOREIGN KEY (meet_db_id) REFERENCES Meets (meet_db_id),
             FOREIGN KEY (athlete_id) REFERENCES Athletes (athlete_id),
             FOREIGN KEY (apparatus_id) REFERENCES Apparatus (apparatus_id)
+        );""",
+        """CREATE TABLE IF NOT EXISTS ScrapeErrors (
+            error_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            source_meet_id TEXT,
+            error_message TEXT,
+            error_timestamp TEXT DEFAULT CURRENT_TIMESTAMP
         );"""
     ]
 
@@ -215,9 +224,80 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
     if result:
         meet_db_id = result[0]
     else:
-        cursor.execute("INSERT INTO Meets (source, source_meet_id, name, start_date_iso, comp_year, location) VALUES (?, ?, ?, ?, ?, ?)",
-            (source, source_meet_id, meet_details.get('name'), meet_details.get('start_date_iso'), comp_year, meet_details.get('location')))
+        cursor.execute("""INSERT INTO Meets 
+            (source, source_meet_id, name, start_date_iso, comp_year, location, competition_type) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (source, source_meet_id, meet_details.get('name'), meet_details.get('start_date_iso'), 
+             comp_year, meet_details.get('location'), meet_details.get('competition_type')))
         meet_db_id = cursor.lastrowid
         print(f"  -> New meet added: '{meet_details.get('name')}' (ID: {meet_db_id}, Year: {comp_year})")
     cache[meet_key] = meet_db_id
     return meet_db_id
+
+# --- ERROR LOGGING ---
+def log_scrape_error(conn, source, source_meet_id, error_message):
+    """Log a scraping error to the ScrapeErrors table."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO ScrapeErrors (source, source_meet_id, error_message) VALUES (?, ?, ?)",
+        (source, source_meet_id, str(error_message)[:500])  # Truncate long messages
+    )
+    conn.commit()
+
+# --- DUPLICATE DETECTION ---
+def check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id):
+    """Check if a result already exists. Returns existing result_id or None."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT result_id FROM Results WHERE meet_db_id = ? AND athlete_id = ? AND apparatus_id = ?",
+        (meet_db_id, athlete_id, apparatus_id)
+    )
+    result = cursor.fetchone()
+    return result[0] if result else None
+
+# --- SCORE VALIDATION ---
+def validate_score(score_final, score_d=None, apparatus_name=""):
+    """
+    Validate score values are within expected ranges.
+    Returns (is_valid, warning_message or None)
+    """
+    warnings = []
+    
+    # AllAround is sum of all events, so skip high-score check
+    is_all_around = 'all' in apparatus_name.lower() or apparatus_name.lower() == 'allaround'
+    
+    if score_final is not None:
+        if score_final < 0:
+            warnings.append(f"Negative score: {score_final}")
+        elif score_final > 16.5 and not is_all_around:
+            warnings.append(f"Unusually high score: {score_final}")
+    
+    if score_d is not None:
+        if score_d < 0:
+            warnings.append(f"Negative D-score: {score_d}")
+        elif score_d > 7.5:
+            warnings.append(f"Very high D-score (elite level?): {score_d}")
+    
+    return (len(warnings) == 0, "; ".join(warnings) if warnings else None)
+
+
+# --- DNS/DNF/SCRATCH STANDARDIZATION ---
+def standardize_score_status(score_text):
+    """
+    Standardize score status codes.
+    Returns standardized code or original text.
+    """
+    if not score_text:
+        return None
+    
+    text_upper = str(score_text).strip().upper()
+    
+    STATUS_MAP = {
+        'DNS': 'DNS', 'DID NOT START': 'DNS', 'NO SHOW': 'DNS',
+        'DNF': 'DNF', 'DID NOT FINISH': 'DNF', 'INCOMPLETE': 'DNF',
+        'SCR': 'SCR', 'SCRATCH': 'SCR', 'SCRATCHED': 'SCR', 'WD': 'SCR', 'WITHDREW': 'SCR',
+        'DQ': 'DQ', 'DISQUALIFIED': 'DQ',
+        'EXH': 'EXH', 'EXHIBITION': 'EXH',
+    }
+    
+    return STATUS_MAP.get(text_upper, score_text)

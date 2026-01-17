@@ -178,16 +178,30 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             
             age_numeric = pd.to_numeric(age_raw, errors='coerce') if age_raw else None
 
+            # --- DUPLICATE DETECTION ---
+            from etl_functions import check_duplicate_result, validate_score, standardize_score_status
+            existing_result = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id)
+            if existing_result:
+                continue  # Skip duplicate
+            
+            # --- SCORE VALIDATION ---
+            is_valid, warning = validate_score(score_numeric, d_numeric, clean_name)
+            if warning:
+                print(f"    Warning for {person_name}/{clean_name}: {warning}")
+            
+            # --- STANDARDIZE STATUS CODES ---
+            score_text = standardize_score_status(score_text)
+
             cursor.execute("""
                 INSERT INTO Results (
-                    meet_db_id, athlete_id, apparatus_id, 
+                    meet_db_id, athlete_id, apparatus_id, gender,
                     level, age, province,
                     score_d, score_final, score_text, 
                     rank_numeric, rank_text, details_json
                 ) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                meet_db_id, athlete_id, apparatus_id, 
+                meet_db_id, athlete_id, apparatus_id, gender_heuristic,
                 level_val, age_numeric, prov_val,
                 d_numeric, score_numeric, score_text, 
                 rank_numeric, rank_text, details_json
@@ -196,6 +210,7 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             
     conn.commit()
     print(f"  Processed {athletes_processed} athletes, inserting {results_inserted} result records.")
+
 
 # ==============================================================================
 #  MAIN EXECUTION

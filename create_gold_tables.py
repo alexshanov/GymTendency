@@ -2,76 +2,135 @@ import sqlite3
 import pandas as pd
 import os
 
-# --- КОНФИГУРАЦИЯ ---
+# --- CONFIGURATION ---
 DB_FILE = "gym_data.db"
-GOLD_TABLE_NAME = "Gold_Athlete_Event_Summary"
 
-def create_athlete_summary_table():
+def create_gold_tables():
     """
-    Подключается к базе данных, выполняет агрегирующий SQL-запрос
-    и создает новую 'Gold' таблицу со сводной статистикой по спортсменам.
+    Creates analytical gold tables and views for the gymnastics data.
     """
     if not os.path.exists(DB_FILE):
-        print(f"Ошибка: Файл базы данных '{DB_FILE}' не найден.")
+        print(f"Error: Database file '{DB_FILE}' not found.")
         return
 
-    print(f"--- Создание Gold-таблицы: {GOLD_TABLE_NAME} ---")
+    print("--- Creating Gold Tables and Views ---")
     
     try:
-        # Используем 'with' для автоматического закрытия соединения
         with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
             
-            # --- Шаг 1: SQL-запрос для агрегации данных ---
-            # Этот запрос - сердце всего процесса. Он объединяет таблицы
-            # и вычисляет статистику.
+            # --- 1. Athlete Progression View ---
+            print("Creating AthleteProgression view...")
+            cursor.execute("DROP VIEW IF EXISTS AthleteProgression")
+            cursor.execute("""
+                CREATE VIEW AthleteProgression AS
+                SELECT 
+                    p.full_name,
+                    c.name as club,
+                    r.gender,
+                    m.comp_year,
+                    r.level,
+                    a.name as apparatus,
+                    COUNT(r.result_id) as appearances,
+                    AVG(r.score_final) as avg_score,
+                    MAX(r.score_final) as best_score,
+                    AVG(r.score_d) as avg_d_score
+                FROM Results r
+                JOIN Athletes at ON r.athlete_id = at.athlete_id
+                JOIN Persons p ON at.person_id = p.person_id
+                JOIN Clubs c ON at.club_id = c.club_id
+                JOIN Meets m ON r.meet_db_id = m.meet_db_id
+                JOIN Apparatus a ON r.apparatus_id = a.apparatus_id
+                WHERE r.score_final IS NOT NULL
+                GROUP BY p.person_id, m.comp_year, r.level, a.apparatus_id
+            """)
+            
+            # --- 2. Athlete Event Summary (updated) ---
+            print("Creating Gold_Athlete_Event_Summary table...")
+            cursor.execute("DROP TABLE IF EXISTS Gold_Athlete_Event_Summary")
             query = """
                 SELECT
-                    a.full_name,
-                    a.club,
-                    e.event_name,
+                    p.full_name,
+                    c.name as club,
+                    r.gender,
+                    a.name as apparatus,
                     COUNT(r.result_id) AS participation_count,
-                    AVG(r.score_final) AS average_score,
+                    ROUND(AVG(r.score_final), 3) AS average_score,
                     MAX(r.score_final) AS best_score,
-                    MIN(r.score_final) AS worst_score
-                FROM
-                    Results r
-                JOIN
-                    Athletes a ON r.athlete_id = a.athlete_id
-                JOIN
-                    Events e ON r.event_id = e.event_id
-                WHERE
-                    r.score_final IS NOT NULL  -- Считаем статистику только по числовым оценкам
-                GROUP BY
-                    a.full_name, a.club, e.event_name -- Группируем, чтобы агрегаты считались для каждого спортсмена в каждой дисциплине
-                ORDER BY
-                    a.full_name, e.event_name;
+                    MIN(r.score_final) AS worst_score,
+                    ROUND(AVG(r.score_d), 3) AS average_d_score
+                FROM Results r
+                JOIN Athletes at ON r.athlete_id = at.athlete_id
+                JOIN Persons p ON at.person_id = p.person_id
+                JOIN Clubs c ON at.club_id = c.club_id
+                JOIN Apparatus a ON r.apparatus_id = a.apparatus_id
+                WHERE r.score_final IS NOT NULL
+                GROUP BY p.person_id, a.apparatus_id
+                ORDER BY p.full_name, a.name
             """
-            
-            print("Выполняем SQL-запрос для агрегации данных...")
-            # pd.read_sql_query выполняет запрос и сразу загружает результат в DataFrame
             gold_df = pd.read_sql_query(query, conn)
+            gold_df.to_sql("Gold_Athlete_Event_Summary", conn, if_exists='replace', index=False)
+            print(f"  -> Created {len(gold_df)} athlete-event summary records.")
             
-            # Округляем результаты для красоты
-            gold_df['average_score'] = gold_df['average_score'].round(3)
+            # --- 3. Meet Quality Index (MQI) ---
+            print("Creating Gold_Meet_Quality table...")
+            cursor.execute("DROP TABLE IF EXISTS Gold_Meet_Quality")
+            mqi_query = """
+                SELECT
+                    m.meet_db_id,
+                    m.source,
+                    m.name as meet_name,
+                    m.comp_year,
+                    m.competition_type,
+                    COUNT(DISTINCT r.athlete_id) as athlete_count,
+                    COUNT(DISTINCT r.level) as level_count,
+                    COUNT(DISTINCT at.club_id) as club_count,
+                    ROUND(AVG(r.score_final), 3) as avg_score,
+                    ROUND(
+                        (MIN(25, LOG(COUNT(DISTINCT r.athlete_id) + 1) * 10) + 
+                         MIN(25, COUNT(DISTINCT r.level) * 5) +
+                         MIN(25, COUNT(DISTINCT at.club_id) * 3) +
+                         25) 
+                    , 1) as mqi_score
+                FROM Meets m
+                JOIN Results r ON m.meet_db_id = r.meet_db_id
+                JOIN Athletes at ON r.athlete_id = at.athlete_id
+                WHERE r.score_final IS NOT NULL
+                GROUP BY m.meet_db_id
+                ORDER BY mqi_score DESC
+            """
+            mqi_df = pd.read_sql_query(mqi_query, conn)
+            mqi_df.to_sql("Gold_Meet_Quality", conn, if_exists='replace', index=False)
+            print(f"  -> Created {len(mqi_df)} meet quality records.")
             
-            print(f"Агрегация завершена. Получено {len(gold_df)} сводных записей.")
+            # --- 4. Pipeline Statistics View ---
+            print("Creating PipelineStats view...")
+            cursor.execute("DROP VIEW IF EXISTS PipelineStats")
+            cursor.execute("""
+                CREATE VIEW PipelineStats AS
+                SELECT
+                    (SELECT COUNT(*) FROM Meets) as total_meets,
+                    (SELECT COUNT(*) FROM Results) as total_results,
+                    (SELECT COUNT(*) FROM Persons) as total_persons,
+                    (SELECT COUNT(*) FROM Athletes) as total_athlete_links,
+                    (SELECT COUNT(*) FROM Clubs) as total_clubs,
+                    (SELECT COUNT(*) FROM ScrapeErrors) as total_errors,
+                    (SELECT COUNT(DISTINCT source) FROM Meets) as total_sources
+            """)
             
-            # --- Шаг 2: Сохранение результата в новую таблицу в БД ---
-            # if_exists='replace' означает, что при каждом запуске скрипта
-            # эта таблица будет полностью перезаписываться свежими данными.
-            print(f"Сохраняем результаты в новую таблицу '{GOLD_TABLE_NAME}'...")
-            gold_df.to_sql(GOLD_TABLE_NAME, conn, if_exists='replace', index=False)
+            conn.commit()
+            print("\n--- Gold tables and views created successfully! ---")
             
-            print("Gold-таблица успешно создана/обновлена в базе данных!")
-
-            # (Опционально) Сохранить также и в CSV для быстрой проверки
-            # gold_df.to_csv("gold_athlete_summary.csv", index=False)
+            # Summary
+            print("\nSummary:")
+            stats = conn.execute("SELECT * FROM PipelineStats").fetchone()
+            print(f"  Meets: {stats[0]}, Results: {stats[1]}, Persons: {stats[2]}")
+            print(f"  Clubs: {stats[4]}, Sources: {stats[6]}")
 
     except Exception as e:
-        print(f"Произошла ошибка: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
 
-# --- Основной блок для запуска скрипта ---
 if __name__ == "__main__":
-    create_athlete_summary_table()
+    create_gold_tables()
