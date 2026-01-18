@@ -89,6 +89,18 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             meet_name_element = soup.select_one("div#thHeader.TournamentHeader div div.TournamentHeading")
             meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet Name"
             
+            # --- TNT SKIP LOGIC ---
+            # Check for TNT/T&T keywords in meet name or page content
+            tnt_keywords = ["TNT", "T&T", "TG ", " TG", "T G ", "T.G.", "TUMBLING", "TRAMPOLINE", "T & T"]
+            # Look at both meet name and page body for common TNT markers
+            page_text_upper = page_text.upper() # Use already captured page_text from line 62
+            if any(k in meet_name.upper() for k in tnt_keywords) or \
+               "DOUBLE MINI" in page_text_upper or \
+               ("TRAMPOLINE" in page_text_upper and "TUMBLING" in page_text_upper):
+                print(f"--> SKIPPING TNT MEET: '{meet_name}' (ID: {meet_id_for_filename})")
+                return 0, None
+            # ----------------------
+            
             # Initial SessionId identification (web session ID)
             active_session_id = ""
             session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
