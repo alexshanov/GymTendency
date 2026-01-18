@@ -73,7 +73,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             print("  -> Attempting to switch to 'Results by Session' tab...")
             
             # Check if the transition is possible (if the form and function exist)
-            can_switch = driver.execute_script("return typeof gotoSubTab === 'function';")
+            can_switch = driver.execute_script("return typeof gotoSubTab === 'function' && typeof document.Tournament !== 'undefined';")
             if can_switch:
                 driver.execute_script("gotoSubTab('Z')")
                 time.sleep(5) # Wait for page to refresh
@@ -106,7 +106,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             if not sessions_to_scrape:
                 print("--> INFO: No session-based results found in 'FilterPanel'. Falling back to level-based search (Plan B).")
                 # Switch back to "Results by Level" tab if possible
-                can_switch_level = driver.execute_script("return typeof gotoSubTab === 'function';")
+                can_switch_level = driver.execute_script("return typeof gotoSubTab === 'function' && typeof document.Tournament !== 'undefined';")
                 if can_switch_level:
                     driver.execute_script("gotoSubTab('D')")
                     time.sleep(3) # Wait for sidebar to refresh
@@ -150,12 +150,15 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                         driver.get(main_page_url)
                         WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel")))
                     
-                    # Ensure "Results by Session" tab is selected
+                    # Ensure "Results by Session" tab is selected (Safe execution)
                     try:
-                        driver.execute_script("gotoSubTab('Z');")
-                        time.sleep(2)
-                        # Wait for the sidebar to populate with sessions
-                        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel li")))
+                        if driver.execute_script("return typeof gotoSubTab === 'function' && typeof document.Tournament !== 'undefined';"):
+                            driver.execute_script("gotoSubTab('Z');")
+                            time.sleep(2)
+                            # Wait for the sidebar to populate with sessions
+                            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel li")))
+                        else:
+                            print("    -> Skipping Session SubTab switch: 'gotoSubTab' or 'Tournament' undefined.")
                     except Exception as tab_err:
                         print(f"    -> Warning: Could not ensure Session tab: {tab_err}")
                     
@@ -174,7 +177,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 switch_success = True
                             except Exception:
                                 # 2. Fallback to JS (Safe execution)
-                                js_check = f"return typeof {report_func} === 'function';"
+                                js_check = f"return typeof {report_func} === 'function' && typeof document.Tournament !== 'undefined';"
                                 if driver.execute_script(js_check):
                                     driver.execute_script(f"{report_func}('{comp_session_id}');")
                                     print(f"    -> Switched via JS call ({report_func})")
