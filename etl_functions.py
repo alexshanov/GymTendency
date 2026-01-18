@@ -36,8 +36,73 @@ def is_tt_meet(meet_name):
     return False
 
 # ==============================================================================
+#  COUNTRY DETECTION
+#  Detect meet country from location strings, source, or other indicators
+# ==============================================================================
+US_STATES = {
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL',
+    'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT',
+    'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI',
+    'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+}
+
+CANADIAN_PROVINCES = {
+    'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT',
+    # Common variations
+    'ALBERTA', 'BRITISH COLUMBIA', 'MANITOBA', 'NEW BRUNSWICK', 'NEWFOUNDLAND',
+    'NOVA SCOTIA', 'ONTARIO', 'PRINCE EDWARD ISLAND', 'QUEBEC', 'SASKATCHEWAN'
+}
+
+def detect_country(location=None, source=None, meet_name=None):
+    """
+    Detect the country for a meet based on available information.
+    Returns 'USA', 'CAN', or None if unable to determine.
+    
+    Priority:
+    1. Source-based (K-Score is predominantly Canadian)
+    2. Location-based (state/province codes)
+    3. Meet name patterns
+    """
+    # 1. Source-based detection
+    if source:
+        source_lower = source.lower()
+        if source_lower == 'kscore':
+            return 'CAN'  # K-Score is primarily Canadian
+        # MSO and LiveMeet are primarily US but can have Canadian meets
+    
+    # 2. Location-based detection
+    if location:
+        loc_upper = location.upper().strip()
+        
+        # Check for exact state/province code match
+        loc_parts = re.split(r'[,\s]+', loc_upper)
+        for part in loc_parts:
+            part_clean = part.strip()
+            if part_clean in US_STATES:
+                return 'USA'
+            if part_clean in CANADIAN_PROVINCES:
+                return 'CAN'
+        
+        # Check for province names in location string
+        for prov in ['ONTARIO', 'QUEBEC', 'ALBERTA', 'BRITISH COLUMBIA', 'MANITOBA', 
+                     'SASKATCHEWAN', 'NOVA SCOTIA', 'NEW BRUNSWICK']:
+            if prov in loc_upper:
+                return 'CAN'
+    
+    # 3. Meet name patterns (last resort)
+    if meet_name:
+        name_upper = meet_name.upper()
+        if 'CANADIAN' in name_upper or 'CANADA' in name_upper:
+            return 'CAN'
+        if 'USA' in name_upper or 'USAG' in name_upper or 'AAU' in name_upper:
+            return 'USA'
+    
+    return None  # Unable to determine
+
+# ==============================================================================
 #  DATABASE SETUP AND DEFINITIONS
 # ==============================================================================
+
 
 
 def setup_database(db_file):
@@ -91,9 +156,11 @@ def setup_database(db_file):
             start_date_iso TEXT,
             comp_year INTEGER,
             location TEXT,
+            country TEXT,
             competition_type TEXT,
             UNIQUE(source, source_meet_id)
         );""",
+
         """CREATE TABLE IF NOT EXISTS Results (
             result_id INTEGER PRIMARY KEY AUTOINCREMENT,
             meet_db_id INTEGER NOT NULL,
@@ -242,11 +309,19 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
     # Extract year: prefer explicit year, then parse from date string
     comp_year = meet_details.get('year') or meet_details.get('comp_year')
     if not comp_year and meet_details.get('start_date_iso'):
-        import re
         date_str = str(meet_details.get('start_date_iso'))
         year_match = re.search(r'(20\d{2})', date_str)
         if year_match:
             comp_year = int(year_match.group(1))
+    
+    # Auto-detect country if not provided
+    country = meet_details.get('country')
+    if not country:
+        country = detect_country(
+            location=meet_details.get('location'),
+            source=source,
+            meet_name=meet_details.get('name')
+        )
     
     cursor = conn.cursor()
     cursor.execute("SELECT meet_db_id FROM Meets WHERE source = ? AND source_meet_id = ?", meet_key)
@@ -255,14 +330,16 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
         meet_db_id = result[0]
     else:
         cursor.execute("""INSERT INTO Meets 
-            (source, source_meet_id, name, start_date_iso, comp_year, location, competition_type) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (source, source_meet_id, name, start_date_iso, comp_year, location, country, competition_type) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (source, source_meet_id, meet_details.get('name'), meet_details.get('start_date_iso'), 
-             comp_year, meet_details.get('location'), meet_details.get('competition_type')))
+             comp_year, meet_details.get('location'), country, meet_details.get('competition_type')))
         meet_db_id = cursor.lastrowid
-        print(f"  -> New meet added: '{meet_details.get('name')}' (ID: {meet_db_id}, Year: {comp_year})")
+        country_str = country or 'Unknown'
+        print(f"  -> New meet added: '{meet_details.get('name')}' (ID: {meet_db_id}, Year: {comp_year}, Country: {country_str})")
     cache[meet_key] = meet_db_id
     return meet_db_id
+
 
 # --- ERROR LOGGING ---
 def log_scrape_error(conn, source, source_meet_id, error_message):
