@@ -56,15 +56,28 @@ def extract_kscore_meets_from_html(filename="meets_kscore.html"):
         year = None
 
         try:
-            start_date_only_str = dates_str.split('–')[0].strip().split('&')[0].strip() # Добавлена обработка '&'
-            dt_object = parser.parse(start_date_only_str)
-            start_date_iso = dt_object.strftime('%Y-%m-%d')
-            year = dt_object.year
-        except (parser.ParserError, ValueError):
-            print(f"  - Предупреждение: Не удалось распознать дату из строки: '{dates_str}' для {meet_name}")
-            year_match = re.search(r'(\d{4})', dates_str)
+            # 1. First, find a 4-digit year in the entire string
+            year_match = re.search(r'\b(20\d{2})\b', dates_str)
             if year_match:
                 year = year_match.group(1)
+            
+            # 2. Extract the start part (before range symbols)
+            start_date_only_str = dates_str.split('–')[0].split('-')[0].split('&')[0].strip()
+            
+            # 3. If we have a year, append it to the start part to ensure parser uses it
+            if year and year not in start_date_only_str:
+                parse_target = f"{start_date_only_str}, {year}"
+            else:
+                parse_target = start_date_only_str
+                
+            dt_object = parser.parse(parse_target)
+            start_date_iso = dt_object.strftime('%Y-%m-%d')
+            
+            # Use the year from the object if we didn't find one via regex
+            if not year:
+                year = dt_object.year
+        except (parser.ParserError, ValueError):
+            print(f"  - Warning: Could not parse date from: '{dates_str}' for {meet_name}")
 
         meet_info_list.append({
             "Source": "kscore",

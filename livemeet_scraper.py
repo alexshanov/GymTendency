@@ -54,30 +54,87 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
         driver.get(main_page_url)
         
         try:
-            WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "liCategory")))
+            # Step 1: Wait for page content and check if results are available
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             
+            # Check for "disabled results" message
+            if "Host has disabled public viewing of Results" in driver.page_source:
+                print(f"--> SKIPPING MEET: Results are disabled by the host for ID {meet_id_for_filename}.")
+                return 0, None
+
+            # Step 1.1: Switch to "Results by Session" tab if possible
+            print("  -> Attempting to switch to 'Results by Session' tab...")
+            
+            # Check if the transition is possible (if the form and function exist)
+            can_switch = driver.execute_script("return typeof document.Tournament !== 'undefined' && typeof gotoSubTab === 'function';")
+            if can_switch:
+                driver.execute_script("gotoSubTab('Z')")
+                time.sleep(3) # Wait for sidebar to refresh
+            else:
+                print("  -> Warning: 'document.Tournament' not found. Results might be formatted differently.")
+            
+            # Step 1.2: Identify all sessions in the "FilterPanel"
+            # We look for <li> elements that have the 'reportOnSession' class
             html_content = driver.page_source
             soup = BeautifulSoup(html_content, 'html.parser')
             
+            # Get Meet Name from the page before it updates
             meet_name_element = soup.select_one("div#thHeader.TournamentHeader div div.TournamentHeading")
             meet_name = meet_name_element.get_text(strip=True) if meet_name_element else "Unknown Meet Name"
             
+            # Initial SessionId identification (web session ID)
+            active_session_id = ""
             session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
-            if not session_id_match:
-                print("--> ERROR: Could not find SessionId needed for data requests.")
-                return 0, None
-            active_session_id = session_id_match.group(1)
+            if session_id_match:
+                active_session_id = session_id_match.group(1)
+
+            session_elements = soup.select("#FilterPanel li.reportOnSession")
+            sessions_to_scrape = {}
+            for el in session_elements:
+                session_id = el.get('id')
+                session_name_el = el.select_one(".repSessionShortName")
+                if session_id and session_name_el:
+                    sessions_to_scrape[session_name_el.get_text(strip=True)] = session_id
             
-            event_elements = soup.find_all('li', class_='liCategory')
-            events_to_scrape = {el.get_text(strip=True): el.get('id') for el in event_elements if el.get_text(strip=True) and el.get('id')}
+            if not sessions_to_scrape:
+                print("--> INFO: No session-based results found in 'FilterPanel'. Falling back to level-based search (Plan B).")
+                # Switch back to "Results by Level" tab if possible
+                if driver.execute_script("return typeof document.Tournament !== 'undefined' && typeof gotoSubTab === 'function';"):
+                    driver.execute_script("gotoSubTab('D')")
+                    time.sleep(3) # Wait for sidebar to refresh
+                else:
+                    print("  -> Skipping SubTab switch: required JS objects undefined.")
+                
+                html_content = driver.page_source
+                soup = BeautifulSoup(html_content, 'html.parser')
+                event_elements = soup.find_all('li', class_='liCategory')
+                
+                for el in event_elements:
+                    name = el.get_text(strip=True)
+                    div_id = el.get('id')
+                    if name and div_id:
+                        sessions_to_scrape[name] = div_id
+                
+                base_data_url_param = "DivId"
+                print(f"  -> Found {len(sessions_to_scrape)} level/category groups via Plan B.")
+            else:
+                base_data_url_param = "SelectSession"
+                print(f"  -> Found {len(sessions_to_scrape)} competitive sessions via Plan A.")
+
+            # Re-get the web session ID from the URL or state
+            session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', driver.current_url)
+            web_session_id = session_id_match.group(1) if session_id_match else active_session_id
             
             base_data_url = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
             
-            print(f"Found {len(events_to_scrape)} event groups for meet '{meet_name}'. Processing...")
+            print(f"Found {len(sessions_to_scrape)} session groups. Processing...")
             
-            for group_name, division_id in events_to_scrape.items():
+            for group_name, comp_session_id in sessions_to_scrape.items():
                 try:
-                    data_url = f"{base_data_url}?DivId={division_id}&SessionId={active_session_id}"
+                    # Construct URL to fetch the partial HTML for this session
+                    data_url = f"{base_data_url}?{base_data_url_param}={comp_session_id}&SessionId={web_session_id}"
+                    print(f"  -> Fetching data for: {group_name} ({comp_session_id})")
+                    
                     driver.get(data_url)
                     WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
                     json_text = driver.find_element(By.TAG_NAME, 'pre').text
@@ -86,47 +143,59 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                     results_soup = BeautifulSoup(decoded_html, 'html.parser')
                     table_wrappers = results_soup.find_all('div', class_='resultsTableWrapper')
 
-                    # Use an inner counter for tables within a single event group page
+                    # If no wrappers found, try to find table directly (fallback for simpler pages)
+                    if not table_wrappers:
+                         single_table = results_soup.find('table', id='sessionEventResults')
+                         if single_table:
+                             # Wrap it to reuse the loop logic
+                             dummy_wrapper = results_soup.new_tag("div")
+                             dummy_wrapper.append(single_table)
+                             table_wrappers = [dummy_wrapper]
+
                     tables_in_group_counter = 1
                     for wrapper in table_wrappers:
+                        # Extract Age Group or Level info from wrappers if present
                         age_group = "N/A"
                         title_element = wrapper.select_one(".resultsTitle .rpSubTitle")
-                        if title_element and 'Age Group:' in title_element.get_text():
-                            age_group_text = title_element.get_text(strip=True)
-                            age_group = age_group_text.replace('(Age Group:', '').replace(')', '').strip()
+                        if title_element:
+                            title_text = title_element.get_text(strip=True)
+                            if 'Age Group:' in title_text:
+                                age_group = title_text.replace('(Age Group:', '').replace(')', '').strip()
+                            else:
+                                age_group = title_text
 
-                        table_element = wrapper.find('table', id='sessionEventResults')
+                        table_element = wrapper.find('table', id='sessionEventResults') 
+                        if not table_element:
+                            table_element = wrapper.find('table') # Final fallback
+
                         if table_element:
                             df_list = pd.read_html(io.StringIO(str(table_element)))
                             if df_list:
                                 df = df_list[0].copy()
                                 df['Group'] = group_name
                                 df['Meet'] = meet_name
-                                df['Age_Group'] = age_group # Correctly assign the specific age group for this table
+                                df['Age_Group'] = age_group
                                 
-                                # --- NEW FILENAME LOGIC ---
-                                # Sanitize group and age_group names for use in filenames
+                                # Sanitize for filename
                                 safe_group_name = re.sub(r'[\s/\\:*?"<>|]+', '_', group_name)
                                 safe_age_group = re.sub(r'[\s/\\:*?"<>|]+', '_', age_group)
                                 
-                                # Create a unique filename based on the content
                                 filename = f"{meet_id_for_filename}_MESSY_{safe_group_name}_{safe_age_group}_{tables_in_group_counter}.csv"
                                 full_path = os.path.join(output_directory, filename)
                                 
                                 df.to_csv(full_path, index=False)
-                                
-                                print(f"  -> Saved table to '{full_path}'")
+                                print(f"    -> Saved table: {filename}")
                                 total_files_saved += 1
                                 tables_in_group_counter += 1
                 except Exception as e:
-                    print(f"  -> Skipping a section in '{group_name}' due to an error: {e}")
+                    print(f"  -> Error processing '{group_name}': {e}")
                     continue
             
             if total_files_saved > 0:
-                print(f"\n--> Success! Saved a total of {total_files_saved} tables for '{meet_name}' to the '{output_directory}' directory.")
+                print(f"\n--> Success! Saved {total_files_saved} tables for '{meet_name}'.")
                 return total_files_saved, meet_id_for_filename
             else:
-                print(f"--> No data tables were found or saved for {main_page_url}.")
+                print(f"--> No data tables saved for {main_page_url}.")
                 return 0, None
 
         except (TimeoutException, UnexpectedAlertPresentException) as e:

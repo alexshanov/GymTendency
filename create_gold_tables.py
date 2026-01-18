@@ -52,7 +52,7 @@ def create_gold_tables():
                     r.score_final,
                     ss.max_score,
                     CASE 
-                        WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN NULL
+                        WHEN a.name LIKE 'All%Around%' THEN NULL
                         WHEN ss.max_score IS NOT NULL AND ss.max_score > 0 
                         THEN ROUND((r.score_final / ss.max_score) * 100, 2)
                         ELSE NULL 
@@ -277,13 +277,13 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.rank_text END) as hb_rank_text,
                     
                     -- All Around (AA)
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_final END) as aa_score,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_d END) as aa_d,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_numeric END) as aa_rank,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.bonus END) as aa_bonus,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.execution_bonus END) as aa_exec_bonus,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_text END) as aa_score_text,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_text END) as aa_rank_text
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_final END) as aa_score,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_d END) as aa_d,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_numeric END) as aa_rank,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.bonus END) as aa_bonus,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.execution_bonus END) as aa_exec_bonus,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_text END) as aa_score_text,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_text END) as aa_rank_text
                     
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id
@@ -296,7 +296,7 @@ def create_gold_tables():
                 LEFT JOIN Results r_base ON r_base.athlete_id = r.athlete_id 
                     AND r_base.meet_db_id = r.meet_db_id 
                     AND r_base.level IS NOT NULL
-                WHERE d.discipline_name = 'MAG'
+                WHERE d.discipline_name IN ('MAG', 'Other')
                 GROUP BY p.person_id, m.meet_db_id
                 ORDER BY m.start_date_iso DESC, p.full_name
             """
@@ -374,13 +374,13 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_text END) as fx_rank_text,
                     
                     -- All Around (AA)
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_final END) as aa_score,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_d END) as aa_d,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_numeric END) as aa_rank,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.bonus END) as aa_bonus,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.execution_bonus END) as aa_exec_bonus,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_text END) as aa_score_text,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_text END) as aa_rank_text
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_final END) as aa_score,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_d END) as aa_d,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_numeric END) as aa_rank,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.bonus END) as aa_bonus,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.execution_bonus END) as aa_exec_bonus,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_text END) as aa_score_text,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_text END) as aa_rank_text
                     
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id
@@ -393,7 +393,7 @@ def create_gold_tables():
                 LEFT JOIN Results r_base ON r_base.athlete_id = r.athlete_id 
                     AND r_base.meet_db_id = r.meet_db_id 
                     AND r_base.level IS NOT NULL
-                WHERE d.discipline_name = 'WAG'
+                WHERE d.discipline_name IN ('WAG', 'Other')
                 GROUP BY p.person_id, m.meet_db_id
                 ORDER BY m.start_date_iso DESC, p.full_name
             """

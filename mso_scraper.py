@@ -132,9 +132,9 @@ def extract_table_raw(driver, meet_name):
         
     return pd.DataFrame(data)
 
-def process_meet(driver, meet_id, meet_name):
+def process_meet(driver, meet_id, meet_name, index, total):
     url = f"https://www.meetscoresonline.com/Results/{meet_id}"
-    print(f"Processing Meet: {meet_name} ({meet_id}) -> {url}")
+    print(f"[{index}/{total}] Processing Meet: {meet_name} ({meet_id}) -> {url}")
     
     try:
         driver.get(url)
@@ -187,18 +187,17 @@ def main():
         return
 
     manifest = pd.read_csv(INPUT_MANIFEST)
+    total = len(manifest)
     driver = setup_driver()
     
-    count = 0
-    for _, row in manifest.iterrows():
-        if DEBUG_LIMIT > 0 and count >= DEBUG_LIMIT:
+    for i, (_, row) in enumerate(manifest.iterrows(), 1):
+        if DEBUG_LIMIT > 0 and i > DEBUG_LIMIT:
             break
             
         meet_id = str(row['MeetID'])
         meet_name = row['MeetName']
         
-        if process_meet(driver, meet_id, meet_name):
-            count += 1
+        process_meet(driver, meet_id, meet_name, i, total)
             
     driver.quit()
 

@@ -177,17 +177,19 @@ def setup_database(db_file):
     """
     print("--- Setting up new professional database schema ---")
     
-    # Drop tables in reverse order of dependency to avoid errors
-    drop_queries = [
-        "DROP TABLE IF EXISTS ScoringStandards;",
-        "DROP TABLE IF EXISTS Results;",
-        "DROP TABLE IF EXISTS Athletes;",
-        "DROP TABLE IF EXISTS Persons;",
-        "DROP TABLE IF EXISTS Clubs;",
-        "DROP TABLE IF EXISTS Apparatus;",
-        "DROP TABLE IF EXISTS Events;", 
-        "DROP TABLE IF EXISTS Disciplines;"
-    ]
+    # schema_queries = [ # Moved below
+    
+    # We use CREATE TABLE IF NOT EXISTS, so no need to drop unless explicitly requested.
+    # drop_queries = [
+    #     "DROP TABLE IF EXISTS ScoringStandards;",
+    #     "DROP TABLE IF EXISTS Results;",
+    #     "DROP TABLE IF EXISTS Athletes;",
+    #     "DROP TABLE IF EXISTS Persons;",
+    #     "DROP TABLE IF EXISTS Clubs;",
+    #     "DROP TABLE IF EXISTS Apparatus;",
+    #     "DROP TABLE IF EXISTS Events;", 
+    #     "DROP TABLE IF EXISTS Disciplines;"
+    # ]
 
     schema_queries = [
         "CREATE TABLE IF NOT EXISTS Disciplines (discipline_id INTEGER PRIMARY KEY, discipline_name TEXT NOT NULL UNIQUE);",
@@ -330,8 +332,7 @@ def setup_database(db_file):
     try:
         with sqlite3.connect(db_file) as conn:
             cursor = conn.cursor()
-            print("Dropping old tables to ensure a clean slate...")
-            for query in drop_queries: cursor.execute(query)
+            # for query in drop_queries: cursor.execute(query) # Skip dropping
             
             print("Creating new tables with professional schema...")
             for query in schema_queries: cursor.execute(query)
@@ -345,9 +346,9 @@ def setup_database(db_file):
             
             disciplines = [(1, 'WAG'), (2, 'MAG'), (99, 'Other')]
             cursor.executemany("INSERT OR IGNORE INTO Disciplines (discipline_id, discipline_name) VALUES (?, ?)", disciplines)
-            WAG_EVENTS = {'Vault': 1, 'Uneven Bars': 2, 'Beam': 3, 'Floor': 4}
-            MAG_EVENTS = {'Floor': 1, 'Pommel Horse': 2, 'Rings': 3, 'Vault': 4, 'Parallel Bars': 5, 'High Bar': 6}
-            OTHER_EVENTS = {'AllAround': 99, 'All-Around': 99}
+            WAG_EVENTS = {'Vault': 1, 'Uneven Bars': 2, 'Beam': 3, 'Floor': 4, 'AllAround': 99, 'All-Around': 99, 'All Around': 99}
+            MAG_EVENTS = {'Floor': 1, 'Pommel Horse': 2, 'Rings': 3, 'Vault': 4, 'Parallel Bars': 5, 'High Bar': 6, 'AllAround': 99, 'All-Around': 99, 'All Around': 99}
+            OTHER_EVENTS = {'AllAround': 99, 'All-Around': 99, 'All Around': 99}
             all_apparatus = []
             for name, order in WAG_EVENTS.items(): all_apparatus.append((name, 1, order))
             for name, order in MAG_EVENTS.items(): all_apparatus.append((name, 2, order))
