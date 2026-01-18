@@ -114,6 +114,7 @@ def setup_database(db_file):
     
     # Drop tables in reverse order of dependency to avoid errors
     drop_queries = [
+        "DROP TABLE IF EXISTS ScoringStandards;",
         "DROP TABLE IF EXISTS Results;",
         "DROP TABLE IF EXISTS Athletes;",
         "DROP TABLE IF EXISTS Persons;",
@@ -186,7 +187,66 @@ def setup_database(db_file):
             source_meet_id TEXT,
             error_message TEXT,
             error_timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+        );""",
+
+        """CREATE TABLE IF NOT EXISTS ScoringStandards (
+            standard_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            country TEXT NOT NULL,
+            level_system TEXT NOT NULL,
+            level_name TEXT NOT NULL,
+            max_score REAL,
+            has_d_score BOOLEAN DEFAULT 0,
+            UNIQUE(country, level_system, level_name)
         );"""
+    ]
+
+    # Initial data for Scoring Standards
+    scoring_data = [
+        # USA JO / DP (Development Program)
+        ('USA', 'USAG_DP', 'Level 1', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 2', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 3', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 4', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 5', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 6', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 7', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 8', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 9', 10.0, 0),
+        ('USA', 'USAG_DP', 'Level 10', 10.0, 0), # Max 10.0 (with bonus)
+        
+        # USA Xcel
+        ('USA', 'USAG_XCEL', 'Bronze', 10.0, 0),
+        ('USA', 'USAG_XCEL', 'Silver', 10.0, 0),
+        ('USA', 'USAG_XCEL', 'Gold', 10.0, 0),
+        ('USA', 'USAG_XCEL', 'Platinum', 10.0, 0),
+        ('USA', 'USAG_XCEL', 'Diamond', 10.0, 0),
+        ('USA', 'USAG_XCEL', 'Sapphire', 10.0, 0),
+
+        # Canada CCP (similar to US DP)
+        ('CAN', 'CAN_CCP', 'Level 1', 10.0, 0),
+        ('CAN', 'CAN_CCP', 'Level 2', 10.0, 0),
+        ('CAN', 'CAN_CCP', 'Level 3', 10.0, 0),
+        ('CAN', 'CAN_CCP', 'Level 4', 10.0, 0),
+        ('CAN', 'CAN_CCP', 'Level 5', 10.0, 0),
+        ('CAN', 'CAN_CCP', 'Level 6', 10.0, 0),
+        ('CAN', 'CAN_CCP', 'Level 7', 10.0, 0),
+        ('CAN', 'CAN_CCP', 'Level 8', 10.0, 0),
+        ('CAN', 'CAN_CCP', 'Level 9', 10.0, 0), # 10.0 start value
+        ('CAN', 'CAN_CCP', 'Level 10', 10.0, 0),
+
+        # Canada Xcel (Adopted)
+        ('CAN', 'CAN_XCEL', 'Bronze', 10.0, 0),
+        ('CAN', 'CAN_XCEL', 'Silver', 10.0, 0),
+        ('CAN', 'CAN_XCEL', 'Gold', 10.0, 0),
+        ('CAN', 'CAN_XCEL', 'Platinum', 10.0, 0),
+        ('CAN', 'CAN_XCEL', 'Diamond', 10.0, 0),
+
+        # Canada Aspire / HP (High Performance) - Open ended / FIG
+        ('CAN', 'CAN_HP', 'Novice', None, 1),
+        ('CAN', 'CAN_HP', 'Junior', None, 1),
+        ('CAN', 'CAN_HP', 'Senior', None, 1),
+        ('USA', 'USAG_ELITE', 'Junior', None, 1),
+        ('USA', 'USAG_ELITE', 'Senior', None, 1),
     ]
 
     try:
@@ -197,6 +257,13 @@ def setup_database(db_file):
             
             print("Creating new tables with professional schema...")
             for query in schema_queries: cursor.execute(query)
+            
+            # Populate Scoring Standards
+            print(f"Populating ScoringStandards with {len(scoring_data)} reference records...")
+            cursor.executemany("""
+                INSERT OR IGNORE INTO ScoringStandards (country, level_system, level_name, max_score, has_d_score)
+                VALUES (?, ?, ?, ?, ?)
+            """, scoring_data)
             
             disciplines = [(1, 'WAG'), (2, 'MAG'), (99, 'Other')]
             cursor.executemany("INSERT OR IGNORE INTO Disciplines (discipline_id, discipline_name) VALUES (?, ?)", disciplines)
