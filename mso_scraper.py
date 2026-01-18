@@ -44,83 +44,41 @@ def clean_text(text):
 
 def select_combined_filter(driver, element_id):
     """
-    Selects the '---All' (Combined) option in a select element if it exists.
-    Expected to work on hidden selects that sync with the UI.
+    Selects the '---All' (Combined) option in a select element using JavaScript.
+    This is the primary method because these filters are often hidden behind
+    a menu or labeled as 'non-interactable' by Selenium.
     """
     try:
-        # First try to find and click the hamburger menu if it's the first interaction
-        # Browser check confirmed selector is 'a[href="#nav"]' or class based
-        try:
-            # Wait for hamburger to be present
-            hamburger = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href="#nav"], .fa-bars, .navbar-toggler'))
-            )
-            # hamburger = driver.find_element(By.CSS_SELECTOR, 'a[href="#nav"], .fa-bars, .navbar-toggler')
-            if hamburger.is_displayed():
-                hamburger.click()
-                time.sleep(1.0) # Short wait for menu expansion
-                print("  -> Clicked hamburger menu")
-        except:
-            # print("  -> Hamburger menu not found or not clickable (might be open)")
-            pass 
-            
-        # Locate the select element (hidden or visible)
-        # Use simple ID presence as it might be hidden
-        # Wait for it to be present in DOM
-        select_elem = WebDriverWait(driver, 5).until(
+        # Check if the element exists in the DOM first
+        WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.ID, element_id))
         )
         
-        # We need to interact with it differently if it's hidden or not
-        # But dispatching 'change' event to the element usually works for MSO
+        js_code = f"""
+        var select = document.getElementById('{element_id}');
+        if (select) {{
+            var opts = Array.from(select.options);
+            var allOpt = opts.find(o => o.value == '{ALL_OPTION_VALUE}');
+            if (allOpt) {{
+                select.value = '{ALL_OPTION_VALUE}';
+                select.dispatchEvent(new Event('change', {{ 'bubbles': true }}));
+                return true;
+            }}
+        }}
+        return false;
+        """
+        result = driver.execute_script(js_code)
         
-        select = Select(select_elem)
-        
-        # Check if "---All" exists
-        options = [o.get_attribute("value") for o in select.options]
-        # print(f"  -> Options for {element_id}: {options}") 
-        
-        if ALL_OPTION_VALUE in options:
-            select.select_by_value(ALL_OPTION_VALUE)
-            # Critical: Dispatch change event for MSO ajax to trigger
-            driver.execute_script("arguments[0].dispatchEvent(new Event('change', { 'bubbles': true }));", select_elem)
-            print(f"  -> Selected 'Combined' (---All) for #{element_id}")
-            time.sleep(2) # Wait for AJAX reload
+        if result:
+            print(f"  -> Successfully selected 'Combined' (---All) for #{element_id} via JS")
+            time.sleep(1.5) # Wait for AJAX reload
             return True
         else:
-            print(f"  -> '---All' option not found in #{element_id}")
+            # Not an error if the meet simply doesn't have multiple levels/sessions
             return False
             
-    except Exception as e:
-        print(f"  -> Filter error for {element_id}: {e}")
-        # Try JS Fallback
-        try:
-            print(f"  -> Attempting JS fallback for {element_id}")
-            js_code = f"""
-            var select = document.getElementById('{element_id}');
-            if (select) {{
-                var opts = Array.from(select.options);
-                var allOpt = opts.find(o => o.value == '{ALL_OPTION_VALUE}');
-                if (allOpt) {{
-                    select.value = '{ALL_OPTION_VALUE}';
-                    select.dispatchEvent(new Event('change', {{ 'bubbles': true }}));
-                    return true;
-                }}
-            }}
-            return false;
-            """
-            result = driver.execute_script(js_code)
-            if result:
-                print(f"  -> JS Fallback: Selected 'Combined' for #{element_id}")
-                time.sleep(2)
-                return True
-            else:
-                print(f"  -> JS Fallback: Failed (Element or Option not found)")
-        except Exception as js_e:
-            print(f"  -> JS Fallback Exception: {js_e}")
-
-        # Save screenshot for debugging if both failed
-        driver.save_screenshot(f"debug_error_{element_id}.png")
+    except Exception:
+        # Silently fail if the element doesn't exist; some meets don't have all filters
         return False
 
 def extract_table_raw(driver, meet_name):
@@ -213,6 +171,7 @@ def process_meet(driver, meet_id, meet_name):
         
         # 4. Save Raw CSV
         filename = f"{meet_id}_mso.csv"
+        os.makedirs(OUTPUT_FOLDER, exist_ok=True)
         filepath = os.path.join(OUTPUT_FOLDER, filename)
         df.to_csv(filepath, index=False)
         print(f"  -> Saved raw data to {filepath}")

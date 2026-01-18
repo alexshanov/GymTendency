@@ -19,7 +19,10 @@ from etl_functions import (
     get_or_create_person,
     get_or_create_club,
     get_or_create_athlete_link,
-    get_or_create_meet
+    get_or_create_meet,
+    calculate_file_hash,
+    is_file_processed,
+    mark_file_processed
 )
 
 # --- CONFIGURATION (Specific to Livemeet) ---
@@ -80,9 +83,19 @@ def process_livemeet_files(meet_manifest, club_alias_map, sample_rate=1):
             meet_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
 
             for filepath in csv_files:
-                print(f"\nProcessing file: {os.path.basename(filepath)}")
+                filename = os.path.basename(filepath)
+                file_hash = calculate_file_hash(filepath)
+                
+                if is_file_processed(conn, filepath, file_hash):
+                    print(f"  Skipping: {filename} (Already processed and unchanged)")
+                    continue
+
+                print(f"\nProcessing file: {filename}")
                 # Pass all the new caches to the parsing function
-                parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
+                success = parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
+                
+                if success:
+                    mark_file_processed(conn, filepath, file_hash)
 
     except Exception as e:
         print(f"A critical error occurred during file processing: {e}")
@@ -96,10 +109,10 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
         df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
         if df.empty or 'Name' not in df.columns:
             print("File is empty or missing 'Name' column. Skipping.")
-            return
+            return True
     except Exception as e:
         print(f"Warning: Could not read CSV file '{filepath}'. Error: {e}")
-        return
+        return False
 
     source_meet_id = os.path.basename(filepath).split('_FINAL_')[0]
     meet_details = meet_manifest.get(source_meet_id, {})
@@ -256,6 +269,7 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             
     conn.commit()
     print(f"  Processed {athletes_processed} athletes, inserting {results_inserted} records (Dynamic Schema).")
+    return True
 
 
 # ==============================================================================

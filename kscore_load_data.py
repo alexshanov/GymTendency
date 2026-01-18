@@ -19,7 +19,10 @@ from etl_functions import (
     get_or_create_person,
     get_or_create_club,
     get_or_create_athlete_link,
-    get_or_create_meet
+    get_or_create_meet,
+    calculate_file_hash,
+    is_file_processed,
+    mark_file_processed
 )
 
 # --- CONFIGURATION (Specific to Kscore) ---
@@ -80,9 +83,19 @@ def process_kscore_files(meet_manifest, club_alias_map, sample_rate=1):
             meet_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
 
             for filepath in csv_files:
-                print(f"\nProcessing file: {os.path.basename(filepath)}")
+                filename = os.path.basename(filepath)
+                file_hash = calculate_file_hash(filepath)
+                
+                if is_file_processed(conn, filepath, file_hash):
+                    print(f"  Skipping: {filename} (Already processed and unchanged)")
+                    continue
+
+                print(f"\nProcessing file: {filename}")
                 # Pass all the new caches to the parsing function
-                parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
+                success = parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
+                
+                if success:
+                    mark_file_processed(conn, filepath, file_hash)
 
     except Exception as e:
         print(f"A critical error occurred during file processing: {e}")
@@ -96,10 +109,10 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
         df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
         if df.empty:
             print("File is empty. Skipping.")
-            return
+            return True # Not an error, just empty
     except Exception as e:
         print(f"Warning: Could not read CSV file '{filepath}'. Error: {e}")
-        return
+        return False
 
     full_source_id = os.path.basename(filepath).split('_FINAL_')[0]
     source_meet_id = full_source_id.replace('kscore_', '', 1)
@@ -128,7 +141,7 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
     
     if not name_col:
         print(f"File matches no known Name column (checked Athlete, Gymnast, Name). Skipping.")
-        return
+        return False
 
     from etl_functions import sanitize_column_name, ensure_column_exists
     from etl_functions import check_duplicate_result, validate_score, standardize_score_status
@@ -271,6 +284,7 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
 
     conn.commit()
     print(f"  Processed {athletes_processed} athletes, inserting {results_inserted} records (Dynamic Schema).")
+    return True
 
 
 # ==============================================================================

@@ -6,6 +6,8 @@ import os
 import json
 import traceback
 import re
+import hashlib
+from datetime import datetime
 
 # ==============================================================================
 #  T&T (TRAMPOLINE & TUMBLING) EXCLUSION
@@ -251,6 +253,11 @@ def setup_database(db_file):
             FOREIGN KEY (meet_db_id) REFERENCES Meets (meet_db_id),
             FOREIGN KEY (athlete_id) REFERENCES Athletes (athlete_id),
             FOREIGN KEY (apparatus_id) REFERENCES Apparatus (apparatus_id)
+        );""",
+        """CREATE TABLE IF NOT EXISTS ProcessedFiles (
+            file_path TEXT PRIMARY KEY,
+            file_hash TEXT,
+            last_processed TIMESTAMP
         );""",
         """CREATE TABLE IF NOT EXISTS ScrapeErrors (
             error_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -586,3 +593,33 @@ def standardize_score_status(score_text):
     }
     
     return STATUS_MAP.get(text_upper, score_text)
+# ==============================================================================
+#  FILE TRACKING HELPERS
+# ==============================================================================
+
+def calculate_file_hash(filepath):
+    """Calculates MD5 hash of a file."""
+    import hashlib
+    if not os.path.exists(filepath): return None
+    hasher = hashlib.md5()
+    try:
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+    except: return None
+
+def is_file_processed(conn, filepath, file_hash):
+    """Checks if file hash already processed."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT file_hash FROM ProcessedFiles WHERE file_path = ?", (filepath,))
+    res = cursor.fetchone()
+    return True if res and res[0] == file_hash else False
+
+def mark_file_processed(conn, filepath, file_hash):
+    """Updates processed state of a file."""
+    cursor = conn.cursor()
+    from datetime import datetime
+    cursor.execute("INSERT OR REPLACE INTO ProcessedFiles (file_path, file_hash, last_processed) VALUES (?, ?, ?)",
+                   (filepath, file_hash, datetime.now().isoformat()))
+    conn.commit()
