@@ -1,28 +1,25 @@
 import sqlite3
 import pandas as pd
 import os
+import traceback
 
 # --- CONFIGURATION ---
 DB_FILE = "gym_data.db"
 
-def create_gold_tables():
+def create_silver_tables():
     """
-    Creates analytical gold tables and views for the gymnastics data.
+    Creates analytical silver tables and views for the gymnastics data.
+    These are "lighter" and more flexible than the final gold tables.
     """
     if not os.path.exists(DB_FILE):
         print(f"Error: Database file '{DB_FILE}' not found.")
         return
 
-    print("--- Creating Gold Tables and Views ---")
+    print("--- Creating Silver Tables and Views ---")
     
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            
-            # Ensure apparatus-specific bonus columns exist to avoid query failures
-            from etl_functions import ensure_column_exists
-            ensure_column_exists(cursor, 'Results', 'bonus', 'REAL')
-            ensure_column_exists(cursor, 'Results', 'execution_bonus', 'REAL')
             
             # --- 1. Normalized Scores View ---
             print("Creating NormalizedScores view...")
@@ -82,47 +79,9 @@ def create_gold_tables():
                 WHERE r.score_final IS NOT NULL
             """)
 
-            
-            # --- 2. Athlete Progression View (updated with normalized scores) ---
-            print("Creating AthleteProgression view...")
-            cursor.execute("DROP VIEW IF EXISTS AthleteProgression")
-            cursor.execute("""
-                CREATE VIEW AthleteProgression AS
-                SELECT 
-                    p.full_name,
-                    c.name as club,
-                    r.gender,
-                    m.country,
-                    m.comp_year,
-                    r.level,
-                    a.name as apparatus,
-                    COUNT(r.result_id) as appearances,
-                    ROUND(AVG(r.score_final), 3) as avg_score,
-                    MAX(r.score_final) as best_score,
-                    ROUND(AVG(r.score_d), 3) as avg_d_score,
-                    ss.max_score,
-                    CASE 
-                        WHEN ss.max_score IS NOT NULL AND ss.max_score > 0 
-                        THEN ROUND((AVG(r.score_final) / ss.max_score) * 100, 2)
-                        ELSE NULL 
-                    END as avg_normalized_score
-                FROM Results r
-                JOIN Athletes at ON r.athlete_id = at.athlete_id
-                JOIN Persons p ON at.person_id = p.person_id
-                JOIN Clubs c ON at.club_id = c.club_id
-                JOIN Meets m ON r.meet_db_id = m.meet_db_id
-                JOIN Apparatus a ON r.apparatus_id = a.apparatus_id
-                LEFT JOIN ScoringStandards ss ON (
-                    m.country = ss.country 
-                    AND r.level = ss.level_name
-                )
-                WHERE r.score_final IS NOT NULL
-                GROUP BY p.person_id, m.comp_year, r.level, a.apparatus_id
-            """)
-            
-            # --- 3. Athlete Event Summary (updated) ---
-            print("Creating Gold_Athlete_Event_Summary table...")
-            cursor.execute("DROP TABLE IF EXISTS Gold_Athlete_Event_Summary")
+            # --- 2. Athlete Event Summary ---
+            print("Creating Silver_Athlete_Event_Summary table...")
+            cursor.execute("DROP TABLE IF EXISTS Silver_Athlete_Event_Summary")
             query = """
                 SELECT
                     p.full_name,
@@ -143,13 +102,13 @@ def create_gold_tables():
                 GROUP BY p.person_id, a.apparatus_id
                 ORDER BY p.full_name, a.name
             """
-            gold_df = pd.read_sql_query(query, conn)
-            gold_df.to_sql("Gold_Athlete_Event_Summary", conn, if_exists='replace', index=False)
-            print(f"  -> Created {len(gold_df)} athlete-event summary records.")
+            silver_df = pd.read_sql_query(query, conn)
+            silver_df.to_sql("Silver_Athlete_Event_Summary", conn, if_exists='replace', index=False)
+            print(f"  -> Created {len(silver_df)} athlete-event summary records.")
             
-            # --- 4. Meet Quality Index (MQI) ---
-            print("Creating Gold_Meet_Quality table...")
-            cursor.execute("DROP TABLE IF EXISTS Gold_Meet_Quality")
+            # --- 3. Meet Quality Index (MQI) ---
+            print("Creating Silver_Meet_Quality table...")
+            cursor.execute("DROP TABLE IF EXISTS Silver_Meet_Quality")
             mqi_query = """
                 SELECT
                     m.meet_db_id,
@@ -176,13 +135,31 @@ def create_gold_tables():
                 ORDER BY mqi_score DESC
             """
             mqi_df = pd.read_sql_query(mqi_query, conn)
-            mqi_df.to_sql("Gold_Meet_Quality", conn, if_exists='replace', index=False)
+            mqi_df.to_sql("Silver_Meet_Quality", conn, if_exists='replace', index=False)
             print(f"  -> Created {len(mqi_df)} meet quality records.")
             
             # Get current Results columns to avoid "no such column" errors
             cursor.execute("PRAGMA table_info(Results)")
             results_cols = {row[1] for row in cursor.fetchall()}
             
+            # Expanded service columns list
+            SERVICE_COLS = [
+                ('level', 'level'),
+                ('age', 'age'),
+                ('age_group', 'age_group'),
+                ('session', 'session'),
+                ('group', 'group'),
+                ('state', 'state'),
+                ('province', 'province'),
+                ('num', 'num'),
+                ('meet', 'raw_meet_name'),
+                ('execution_bonus', 'execution_bonus'),
+                ('bonus', 'bonus'),
+                ('school', 'school'),
+                ('zone', 'zone'),
+                ('team', 'team')
+            ]
+
             def safe_col(col_name, alias=None):
                 target = alias or col_name
                 if col_name in results_cols:
@@ -190,100 +167,59 @@ def create_gold_tables():
                 else:
                     return f'NULL as "{target}"'
 
-            # --- 5. Gold MAG Export Table (Wide Format for External DB) ---
-            print("Creating Gold_MAG_Export table...")
-            cursor.execute("DROP TABLE IF EXISTS Gold_MAG_Export")
+            service_selections = ", ".join([safe_col(c[0], c[1]) for c in SERVICE_COLS])
+
+            # --- 4. Silver MAG Export Table (Wide Format) ---
+            print("Creating Silver_MAG_Export table...")
+            cursor.execute("DROP TABLE IF EXISTS Silver_MAG_Export")
             
-            # Pivot query to create wide format with 7 apparatus triples
             mag_export_query = f"""
                 SELECT 
-                    -- Athlete Identity
                     p.full_name as athlete_name,
                     p.gender,
                     c.name as club,
-                    
-                    -- Meet Information
                     m.name as meet_name,
                     m.start_date_iso as meet_date,
                     m.comp_year,
                     m.country,
                     m.source,
                     
-                    -- Service Columns (Safe Selection)
-                    {safe_col('level')},
-                    {safe_col('age')},
-                    {safe_col('age_group')},
-                    {safe_col('session')},
-                    {safe_col('group')},
-                    {safe_col('state')},
-                    {safe_col('province')},
-                    {safe_col('num')},
-                    {safe_col('meet', 'raw_meet_name')},
-                    {safe_col('execution_bonus')},
-                    {safe_col('bonus')},
+                    {service_selections},
                     
                     -- Floor (FX)
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_final END) as fx_score,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_d END) as fx_d,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_numeric END) as fx_rank,
-                    MAX(CASE WHEN a.name = 'Floor' THEN r.bonus END) as fx_bonus,
-                    MAX(CASE WHEN a.name = 'Floor' THEN r.execution_bonus END) as fx_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Floor' THEN r.score_text END) as fx_score_text,
-                    MAX(CASE WHEN a.name = 'Floor' THEN r.rank_text END) as fx_rank_text,
                     
                     -- Pommel Horse (PH)
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_final END) as ph_score,
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_d END) as ph_d,
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.rank_numeric END) as ph_rank,
-                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.bonus END) as ph_bonus,
-                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.execution_bonus END) as ph_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_text END) as ph_score_text,
-                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.rank_text END) as ph_rank_text,
                     
                     -- Rings (SR)
                     MAX(CASE WHEN a.name = 'Rings' THEN r.score_final END) as sr_score,
                     MAX(CASE WHEN a.name = 'Rings' THEN r.score_d END) as sr_d,
                     MAX(CASE WHEN a.name = 'Rings' THEN r.rank_numeric END) as sr_rank,
-                    MAX(CASE WHEN a.name = 'Rings' THEN r.bonus END) as sr_bonus,
-                    MAX(CASE WHEN a.name = 'Rings' THEN r.execution_bonus END) as sr_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Rings' THEN r.score_text END) as sr_score_text,
-                    MAX(CASE WHEN a.name = 'Rings' THEN r.rank_text END) as sr_rank_text,
                     
                     -- Vault (VT)
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_final END) as vt_score,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_d END) as vt_d,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.rank_numeric END) as vt_rank,
-                    MAX(CASE WHEN a.name = 'Vault' THEN r.bonus END) as vt_bonus,
-                    MAX(CASE WHEN a.name = 'Vault' THEN r.execution_bonus END) as vt_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Vault' THEN r.score_text END) as vt_score_text,
-                    MAX(CASE WHEN a.name = 'Vault' THEN r.rank_text END) as vt_rank_text,
                     
                     -- Parallel Bars (PB)
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_final END) as pb_score,
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_d END) as pb_d,
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.rank_numeric END) as pb_rank,
-                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.bonus END) as pb_bonus,
-                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.execution_bonus END) as pb_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_text END) as pb_score_text,
-                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.rank_text END) as pb_rank_text,
                     
                     -- High Bar (HB)
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.score_final END) as hb_score,
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.score_d END) as hb_d,
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.rank_numeric END) as hb_rank,
-                    MAX(CASE WHEN a.name = 'High Bar' THEN r.bonus END) as hb_bonus,
-                    MAX(CASE WHEN a.name = 'High Bar' THEN r.execution_bonus END) as hb_exec_bonus,
-                    MAX(CASE WHEN a.name = 'High Bar' THEN r.score_text END) as hb_score_text,
-                    MAX(CASE WHEN a.name = 'High Bar' THEN r.rank_text END) as hb_rank_text,
                     
                     -- All Around (AA)
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_final END) as aa_score,
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_d END) as aa_d,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_numeric END) as aa_rank,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.bonus END) as aa_bonus,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.execution_bonus END) as aa_exec_bonus,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_text END) as aa_score_text,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_text END) as aa_rank_text
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_numeric END) as aa_rank
                     
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id
@@ -292,7 +228,6 @@ def create_gold_tables():
                 JOIN Meets m ON r.meet_db_id = m.meet_db_id
                 JOIN Apparatus a ON r.apparatus_id = a.apparatus_id
                 JOIN Disciplines d ON a.discipline_id = d.discipline_id
-                -- Get a base result for service columns
                 LEFT JOIN Results r_base ON r_base.athlete_id = r.athlete_id 
                     AND r_base.meet_db_id = r.meet_db_id 
                     AND r_base.level IS NOT NULL
@@ -302,85 +237,50 @@ def create_gold_tables():
             """
             
             mag_df = pd.read_sql_query(mag_export_query, conn)
-            mag_df.to_sql("Gold_MAG_Export", conn, if_exists='replace', index=False)
+            mag_df.to_sql("Silver_MAG_Export", conn, if_exists='replace', index=False)
             print(f"  -> Created {len(mag_df)} MAG export records.")
             
-            # --- 6. Gold WAG Export Table (Wide Format for External DB) ---
-            print("Creating Gold_WAG_Export table...")
-            cursor.execute("DROP TABLE IF EXISTS Gold_WAG_Export")
+            # --- 5. Silver WAG Export Table (Wide Format) ---
+            print("Creating Silver_WAG_Export table...")
+            cursor.execute("DROP TABLE IF EXISTS Silver_WAG_Export")
             
-            # Pivot query for WAG with 5 apparatus triples
             wag_export_query = f"""
                 SELECT 
-                    -- Athlete Identity
                     p.full_name as athlete_name,
                     p.gender,
                     c.name as club,
-                    
-                    -- Meet Information
                     m.name as meet_name,
                     m.start_date_iso as meet_date,
                     m.comp_year,
                     m.country,
                     m.source,
                     
-                    -- Service Columns (Safe Selection)
-                    {safe_col('level')},
-                    {safe_col('age')},
-                    {safe_col('age_group')},
-                    {safe_col('session')},
-                    {safe_col('group')},
-                    {safe_col('state')},
-                    {safe_col('province')},
-                    {safe_col('num')},
-                    {safe_col('meet', 'raw_meet_name')},
-                    {safe_col('execution_bonus')},
-                    {safe_col('bonus')},
+                    {service_selections},
                     
                     -- Vault (VT)
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_final END) as vt_score,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_d END) as vt_d,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.rank_numeric END) as vt_rank,
-                    MAX(CASE WHEN a.name = 'Vault' THEN r.bonus END) as vt_bonus,
-                    MAX(CASE WHEN a.name = 'Vault' THEN r.execution_bonus END) as vt_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Vault' THEN r.score_text END) as vt_score_text,
-                    MAX(CASE WHEN a.name = 'Vault' THEN r.rank_text END) as vt_rank_text,
                     
                     -- Uneven Bars (UB)
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_final END) as ub_score,
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_d END) as ub_d,
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.rank_numeric END) as ub_rank,
-                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.bonus END) as ub_bonus,
-                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.execution_bonus END) as ub_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_text END) as ub_score_text,
-                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.rank_text END) as ub_rank_text,
                     
                     -- Beam (BB)
                     MAX(CASE WHEN a.name = 'Beam' THEN r.score_final END) as bb_score,
                     MAX(CASE WHEN a.name = 'Beam' THEN r.score_d END) as bb_d,
                     MAX(CASE WHEN a.name = 'Beam' THEN r.rank_numeric END) as bb_rank,
-                    MAX(CASE WHEN a.name = 'Beam' THEN r.bonus END) as bb_bonus,
-                    MAX(CASE WHEN a.name = 'Beam' THEN r.execution_bonus END) as bb_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Beam' THEN r.score_text END) as bb_score_text,
-                    MAX(CASE WHEN a.name = 'Beam' THEN r.rank_text END) as bb_rank_text,
                     
                     -- Floor (FX)
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_final END) as fx_score,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_d END) as fx_d,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_numeric END) as fx_rank,
-                    MAX(CASE WHEN a.name = 'Floor' THEN r.bonus END) as fx_bonus,
-                    MAX(CASE WHEN a.name = 'Floor' THEN r.execution_bonus END) as fx_exec_bonus,
-                    MAX(CASE WHEN a.name = 'Floor' THEN r.score_text END) as fx_score_text,
-                    MAX(CASE WHEN a.name = 'Floor' THEN r.rank_text END) as fx_rank_text,
                     
                     -- All Around (AA)
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_final END) as aa_score,
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_d END) as aa_d,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_numeric END) as aa_rank,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.bonus END) as aa_bonus,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.execution_bonus END) as aa_exec_bonus,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_text END) as aa_score_text,
-                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_text END) as aa_rank_text
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_numeric END) as aa_rank
                     
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id
@@ -389,7 +289,6 @@ def create_gold_tables():
                 JOIN Meets m ON r.meet_db_id = m.meet_db_id
                 JOIN Apparatus a ON r.apparatus_id = a.apparatus_id
                 JOIN Disciplines d ON a.discipline_id = d.discipline_id
-                -- Get a base result for service columns
                 LEFT JOIN Results r_base ON r_base.athlete_id = r.athlete_id 
                     AND r_base.meet_db_id = r.meet_db_id 
                     AND r_base.level IS NOT NULL
@@ -399,11 +298,10 @@ def create_gold_tables():
             """
             
             wag_df = pd.read_sql_query(wag_export_query, conn)
-            wag_df.to_sql("Gold_WAG_Export", conn, if_exists='replace', index=False)
+            wag_df.to_sql("Silver_WAG_Export", conn, if_exists='replace', index=False)
             print(f"  -> Created {len(wag_df)} WAG export records.")
             
-            # --- 7. Pipeline Statistics View ---
-
+            # --- 6. Pipeline Statistics View ---
             print("Creating PipelineStats view...")
             cursor.execute("DROP VIEW IF EXISTS PipelineStats")
             cursor.execute("""
@@ -417,24 +315,19 @@ def create_gold_tables():
                     (SELECT COUNT(*) FROM ScrapeErrors) as total_errors,
                     (SELECT COUNT(DISTINCT source) FROM Meets) as total_sources,
                     (SELECT COUNT(*) FROM ScoringStandards) as scoring_standards,
-                    (SELECT COUNT(*) FROM Gold_MAG_Export) as mag_export_records
+                    (SELECT COUNT(*) FROM Silver_MAG_Export) as mag_export_records
             """)
 
-
-            
             conn.commit()
-            print("\n--- Gold tables and views created successfully! ---")
+            print("\n--- Silver tables and views created successfully! ---")
             
             # Summary
-            print("\nSummary:")
             stats = conn.execute("SELECT * FROM PipelineStats").fetchone()
-            print(f"  Meets: {stats[0]}, Results: {stats[1]}, Persons: {stats[2]}")
-            print(f"  Clubs: {stats[4]}, Sources: {stats[6]}")
+            print(f"Summary: Meets: {stats[0]}, Results: {stats[1]}, Persons: {stats[2]}, Clubs: {stats[4]}")
 
     except Exception as e:
         print(f"Error: {e}")
-        import traceback
         traceback.print_exc()
 
 if __name__ == "__main__":
-    create_gold_tables()
+    create_silver_tables()

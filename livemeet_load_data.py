@@ -135,14 +135,38 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
         'Age_Group': 'Age_Group'
     }
 
+    # --- 1. Detect and Normalize Raw Headers (Sportzsoft/LiveMeet messy format) ---
+    # Some files have repeated apparatus headers: Vault, Vault, Vault ...
+    # These are triplets of (D, Score, Rank), often repeated 3 times.
+    raw_apps = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar', 'AllAround']
+    new_headers = []
+    seen_counts = {}
+    for col in df.columns:
+        base = col.split('.')[0]
+        if base in raw_apps:
+            count = seen_counts.get(base, 0)
+            seen_counts[base] = count + 1
+            # triplet_pos: 0=D, 1=Score, 2=Rnk
+            # triplet_num: 0, 1, 2 (Sportzsoft often exports 3 identical triplets)
+            triplet_pos = count % 3
+            triplet_num = count // 3
+            suffix = ['D', 'Score', 'Rnk'][triplet_pos]
+            if triplet_num == 0:
+                new_headers.append(f"Result_{base}_{suffix}")
+            else:
+                new_headers.append(f"EXTRA_{base}_{triplet_num}_{suffix}")
+        else:
+            new_headers.append(col)
+    df.columns = new_headers
+
     col_map = {col: KEY_MAP.get(col, col) for col in df.columns}
     name_col = next((c for c, v in col_map.items() if v == 'Name'), None)
     
     if not name_col:
-        print(f"Skipping file: No Name column identified.")
+        print(f"Skipping file: No Name column identified (checked Athlete, Gymnast, Name).")
         return
 
-    from etl_functions import sanitize_column_name, ensure_column_exists
+    from etl_functions import sanitize_column_name, ensure_column_exists, parse_rank
     from etl_functions import check_duplicate_result, validate_score, standardize_score_status
 
     cursor = conn.cursor()
@@ -197,6 +221,7 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
         for raw_event, _ in event_bases.items():
             clean_name = raw_event.replace('_', ' ')
             if clean_name == "Balance Beam": clean_name = "Beam" # Small normalization for matching ID
+            if clean_name == "AllAround": clean_name = "All Around"
             
             app_key = (clean_name, discipline_id)
             if app_key not in apparatus_cache:
@@ -228,9 +253,7 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             if not pd.isna(d_numeric): d_numeric = float(d_numeric)
             else: d_numeric = None
 
-            rank_numeric = pd.to_numeric(rank_val, errors='coerce')
-            if not pd.isna(rank_numeric): rank_numeric = int(rank_numeric)
-            else: rank_numeric = None
+            rank_numeric = parse_rank(str(rank_val)) if rank_val else None
 
             bonus_numeric = pd.to_numeric(bonus_val, errors='coerce')
             if not pd.isna(bonus_numeric): bonus_numeric = float(bonus_numeric)

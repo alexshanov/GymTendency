@@ -42,7 +42,7 @@ def main():
         ("kscore_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
         ("livemeet_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
         ("mso_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
-        ("create_gold_tables.py", [])
+        ("create_silver_tables.py", [])
     ]
     
     overall_success = True

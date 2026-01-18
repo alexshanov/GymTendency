@@ -143,7 +143,7 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
         print(f"File matches no known Name column (checked Athlete, Gymnast, Name). Skipping.")
         return False
 
-    from etl_functions import sanitize_column_name, ensure_column_exists
+    from etl_functions import sanitize_column_name, ensure_column_exists, parse_rank
     from etl_functions import check_duplicate_result, validate_score, standardize_score_status
 
     cursor = conn.cursor()
@@ -212,7 +212,9 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
             clean_name = raw_event.replace('_', ' ')
             
             # Legacy mapping support if needed, but we try to match "As Is" first
-            if clean_name == "Balance Beam": clean_name = "Beam" # Small normalization for matching ID
+            if clean_name == "Balance Beam": clean_name = "Beam"
+            if clean_name == "Horizontal Bar": clean_name = "High Bar"
+            if clean_name == "AllAround": clean_name = "All Around"
             
             app_key = (clean_name, discipline_id)
             if app_key not in apparatus_cache:
@@ -244,9 +246,7 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
             if not pd.isna(d_numeric): d_numeric = float(d_numeric)
             else: d_numeric = None
             
-            rank_numeric = pd.to_numeric(rank_val, errors='coerce')
-            if not pd.isna(rank_numeric): rank_numeric = int(rank_numeric)
-            else: rank_numeric = None
+            rank_numeric = parse_rank(str(rank_val)) if rank_val else None
             
             bonus_numeric = pd.to_numeric(bonus_val, errors='coerce')
             if not pd.isna(bonus_numeric): bonus_numeric = float(bonus_numeric)

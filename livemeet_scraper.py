@@ -66,12 +66,12 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             print("  -> Attempting to switch to 'Results by Session' tab...")
             
             # Check if the transition is possible (if the form and function exist)
-            can_switch = driver.execute_script("return typeof document.Tournament !== 'undefined' && typeof gotoSubTab === 'function';")
+            can_switch = driver.execute_script("return typeof gotoSubTab === 'function';")
             if can_switch:
                 driver.execute_script("gotoSubTab('Z')")
-                time.sleep(3) # Wait for sidebar to refresh
+                time.sleep(5) # Wait for page to refresh
             else:
-                print("  -> Warning: 'document.Tournament' not found. Results might be formatted differently.")
+                print("  -> Warning: 'gotoSubTab' not found. Results might be formatted differently.")
             
             # Step 1.2: Identify all sessions in the "FilterPanel"
             # We look for <li> elements that have the 'reportOnSession' class
@@ -127,20 +127,77 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             
             base_data_url = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
             
-            print(f"Found {len(sessions_to_scrape)} session groups. Processing...")
-            
             for group_name, comp_session_id in sessions_to_scrape.items():
                 try:
-                    # Construct URL to fetch the partial HTML for this session
-                    data_url = f"{base_data_url}?{base_data_url_param}={comp_session_id}&SessionId={web_session_id}"
-                    print(f"  -> Fetching data for: {group_name} ({comp_session_id})")
+                    # --- NEW: Specific Drill-down into Reporting Categories ---
+                    # To get the Reporting Categories (like P2 A, P2 B), we need to actually 'click' 
+                    # the session in the sidebar so the radio buttons appear in the main content area.
+                    print(f"  -> Selecting session: {group_name}")
                     
-                    driver.get(data_url)
-                    WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
-                    json_text = driver.find_element(By.TAG_NAME, 'pre').text
-                    data = json.loads(json_text)
-                    decoded_html = html.unescape(data['html'])
-                    results_soup = BeautifulSoup(decoded_html, 'html.parser')
+                    # Ensure we are on the main meet page and function is available
+                    if driver.current_url != main_page_url:
+                        driver.get(main_page_url)
+                        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel li.reportOnSession")))
+                    
+                    # Method 1: JS Click on the sidebar element
+                    try:
+                        # Find by ID directly (no '#' in ID if using By.ID)
+                        session_li = driver.find_element(By.ID, comp_session_id)
+                        driver.execute_script("arguments[0].scrollIntoView(true);", session_li)
+                        time.sleep(1)
+                        driver.execute_script("arguments[0].click();", session_li)
+                        print(f"    -> JS Clicked sidebar element for {group_name}")
+                    except Exception as click_err:
+                        print(f"    -> Sidebar click failed ({click_err}). Trying direct JS function...")
+                        # Method 2: Fallback to direct JS call
+                        try:
+                            WebDriverWait(driver, 10).until(lambda d: d.execute_script("return typeof reportOnSession === 'function'"))
+                            driver.execute_script(f"reportOnSession('{comp_session_id}')")
+                            print(f"    -> Executed reportOnSession('{comp_session_id}')")
+                        except Exception as js_err:
+                            print(f"    -> JS execution failed: {js_err}")
+
+                    # Wait for 'Select Awards Category' radio buttons to appear
+                    scrape_targets = []
+                    try:
+                        # Increase wait to 15s to be safe
+                        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[id^='rcReportingCategory']")))
+                        category_radios = driver.find_elements(By.CSS_SELECTOR, "input[id^='rcReportingCategory']")
+                        for radio in category_radios:
+                            try:
+                                rc_id = radio.get_attribute('value')
+                                rc_input_id = radio.get_attribute('id')
+                                rc_label_el = driver.find_element(By.CSS_SELECTOR, f"label[for='{rc_input_id}']")
+                                rc_label = rc_label_el.text.strip()
+                                
+                                if rc_label.upper() == "ALL" and len(category_radios) > 1:
+                                    continue
+                                
+                                scrape_targets.append((rc_label, rc_id))
+                            except Exception as e:
+                                print(f"    -> Error identifying category: {e}")
+                    except TimeoutException:
+                        print(f"    -> Info: No specific awards categories detected for session {group_name}.")
+                    
+                    if not scrape_targets:
+                        scrape_targets = [("Session_Overall", "0")]
+
+                    for rc_label, rc_id in scrape_targets:
+                        # Fetch the data
+                        # Normalize 'All Around' synonyms
+                        clean_rc_label = rc_label.replace('AllAround', 'All Around').replace('AllAround', 'All Around')
+                        safe_rc_name = re.sub(r'[\s/\\:*?"<>|]+', '_', clean_rc_label).strip().replace('__', '_')
+                        
+                        print(f"    -> Fetching Category: {rc_label} (ID: {rc_id})")
+                        
+                        data_url = f"{base_data_url}?{base_data_url_param}={comp_session_id}&SessionId={web_session_id}&ReportingCategory={rc_id}&ReportOnly=1"
+                        
+                        driver.get(data_url)
+                        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
+                        json_text = driver.find_element(By.TAG_NAME, 'pre').text
+                        data = json.loads(json_text)
+                        decoded_html = html.unescape(data['html'])
+                        results_soup = BeautifulSoup(decoded_html, 'html.parser')
                     table_wrappers = results_soup.find_all('div', class_='resultsTableWrapper')
 
                     # If no wrappers found, try to find table directly (fallback for simpler pages)
@@ -175,12 +232,14 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 df['Group'] = group_name
                                 df['Meet'] = meet_name
                                 df['Age_Group'] = age_group
+                                df['Reporting_Category'] = rc_label
                                 
                                 # Sanitize for filename
                                 safe_group_name = re.sub(r'[\s/\\:*?"<>|]+', '_', group_name)
                                 safe_age_group = re.sub(r'[\s/\\:*?"<>|]+', '_', age_group)
+                                safe_rc_name = re.sub(r'[\s/\\:*?"<>|]+', '_', rc_label)
                                 
-                                filename = f"{meet_id_for_filename}_MESSY_{safe_group_name}_{safe_age_group}_{tables_in_group_counter}.csv"
+                                filename = f"{meet_id_for_filename}_MESSY_{safe_group_name}_{safe_age_group}_{safe_rc_name}_{tables_in_group_counter}.csv"
                                 full_path = os.path.join(output_directory, filename)
                                 
                                 df.to_csv(full_path, index=False)
@@ -294,14 +353,16 @@ def fix_and_standardize_headers(input_filename, output_filename):
     data_df.columns = mapped_header
 
     # Rename the trailing standard columns added during scraping
+    # We now have 4 extra columns: Group, Meet, Age_Group, Reporting_Category
     data_df.rename(columns={
-        data_df.columns[-3]: 'Group',
-        data_df.columns[-2]: 'Meet',
-        data_df.columns[-1]: 'Age_Group'
+        data_df.columns[-4]: 'Group',
+        data_df.columns[-3]: 'Meet',
+        data_df.columns[-2]: 'Age_Group',
+        data_df.columns[-1]: 'Reporting_Category'
     }, inplace=True)
 
     # --- APPLY SERVICE COLUMN STANDARDIZATION ---
-    standard_info_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
+    standard_info_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Reporting_Category', 'Meet', 'Group']
     
     # 1. Ensure all columns exist
     for col in standard_info_cols:

@@ -471,6 +471,15 @@ def detect_discipline(df):
         if any(indicator in col for indicator in MAG_INDICATORS): return 2, 'MAG', 'M'
         if any(indicator in col for indicator in WAG_INDICATORS): return 1, 'WAG', 'F'
     return 99, 'Other', 'Unknown'
+    
+def parse_rank(rank_str):
+    """
+    Extracts numeric rank from strings like '1', '7T', 'Gold'. 
+    Returns None if no digit found.
+    """
+    if not rank_str or not isinstance(rank_str, str): return None
+    clean = re.sub(r'\D', '', rank_str)
+    return int(clean) if clean else None
 
 # ==============================================================================
 #  NEW DATABASE INTERACTION FUNCTIONS

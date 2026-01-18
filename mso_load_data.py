@@ -47,7 +47,7 @@ COLUMN_MAP = {
     'UB': 'Uneven Bars', 'BARS': 'Uneven Bars', 'UNEVEN BARS': 'Uneven Bars',
     'BB': 'Beam', 'BEAM': 'Beam', 'Balance Beam': 'Beam',
     'FX': 'Floor', 'FLR': 'Floor', 'FLOOR': 'Floor',
-    'AA': 'AllAround', 'ALL AROUND': 'AllAround',
+    'AA': 'All Around', 'ALL AROUND': 'All Around',
     
     # Apparatus - MAG
     'PH': 'Pommel Horse', 'POMMEL HORSE': 'Pommel Horse', 'POMML': 'Pommel Horse',
@@ -114,14 +114,14 @@ def parse_cell_value(cell_str):
     # 1. Single Token: "8.800" or "8"
     if len(parts) == 1:
         if is_float(parts[0]):
-            return float(parts[0]), None, None, None
+            return float(parts[0]), None, None, None, None
             
     # 2. Two Tokens: "[Fractional] [Integer]" (e.g., "800 8")
     if len(parts) == 2:
         p0, p1 = parts[0], parts[1]
         if is_float(p0) and is_float(p1):
             score_final = float(p1) + (float(p0) / 1000.0)
-            return score_final, None, None, None
+            return score_final, None, None, None, None
             
     # 3. Three Tokens: "[Rank] [Fractional] [Integer]" (e.g., "1 500 11")
     if len(parts) == 3:
@@ -133,7 +133,7 @@ def parse_cell_value(cell_str):
             score_final = float(int_part) + (float(frac_part) / 1000.0)
             rank_numeric = parse_rank(rank_part)
             rank_text = rank_part
-            return score_final, None, rank_numeric, rank_text
+            return score_final, None, rank_numeric, rank_text, None
 
     # 4. Four Tokens: "[Rank] [Fractional] [Integer] [Bonus/D]" (e.g., "1 500 11 0.5")
     if len(parts) == 4:
@@ -272,7 +272,7 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
         print(f"  {filename}: Detected WAG")
 
     # Dynamic Schema Check
-    from etl_functions import sanitize_column_name, ensure_column_exists, check_duplicate_result, validate_score, standardize_score_status
+    from etl_functions import sanitize_column_name, ensure_column_exists, check_duplicate_result, validate_score, standardize_score_status, parse_rank
     cursor = conn.cursor()
     
     dynamic_mapping = [] # (raw_col, safe_col_name)
@@ -326,7 +326,13 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
             # --- PARSE MSO CELL VALUE ---
             # Returns (score_final, d_score, rank_numeric, rank_text, bonus)
             mso_vals = parse_cell_value(cell_value)
-            score_final, d_score, rank_numeric, rank_text, bonus = mso_vals
+            score_final, d_score, rank_numeric_mso, rank_text, bonus = mso_vals
+            
+            # Use standardized parse_rank if available? 
+            # Actually, parse_cell_value already uses a local version.
+            # But the Result table expects rank_numeric. 
+            # Consolidate:
+            rank_numeric = rank_numeric_mso if rank_numeric_mso is not None else parse_rank(rank_text)
             
             if score_final is None and d_score is None: continue
             
