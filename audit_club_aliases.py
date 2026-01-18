@@ -15,48 +15,75 @@ def find_potential_club_aliases(db_file="gym_data.db"):
     # Get all clubs
     cursor.execute("SELECT club_id, name FROM Clubs")
     clubs = cursor.fetchall()
-
-    club_to_id = {name: cid for cid, name in clubs}
     aliases_found = {}
 
     print(f"Scanning {len(clubs)} clubs for potential aliases...")
 
-    # Sort by length to compare shorter names against potential long names
-    sorted_clubs = sorted([c[1] for c in clubs], key=len)
-
-    for i, name in enumerate(sorted_clubs):
+    # 1. Core Name Matching
+    sorted_club_names = sorted([c[1] for c in clubs], key=len)
+    for i, name in enumerate(sorted_club_names):
         name_lower = name.lower()
-        
-        # 1. Check for common suffixes/prefixes (Association, Society, Gymnastics Club, etc.)
-        # Remove common words to find core name
         core_name = re.sub(r'\b(Gymnastics|Club|Association|Society|Secondary|School|Elem|High|District|Mag|Wag|Competitive|Team|Association|Secondary School)\b', '', name, flags=re.IGNORECASE).strip()
         core_name = re.sub(r'\s+', ' ', core_name)
         
         if len(core_name) < 3: continue
 
-        for other_name in sorted_clubs[i+1:]:
+        for other_name in sorted_club_names[i+1:]:
             other_lower = other_name.lower()
-            
-            # Simple substring match or core name match
             if core_name.lower() in other_lower and name_lower != other_lower:
-                # Potential match
-                canonical = min(name, other_name, key=len) # Suggest shorter one as canonical usually
+                canonical = min(name, other_name, key=len)
                 alias = max(name, other_name, key=len)
-                
-                # Heuristic: If one contains "Secondary" and other doesn't, they are likely the same school club
                 if alias not in aliases_found:
                     aliases_found[alias] = canonical
+
+    # 2. Analyze athlete history (Person-Club associations)
+    print("Analyzing athlete history for person-club associations...")
+    cursor.execute("""
+        SELECT p.person_id, p.full_name, c.club_id, c.name
+        FROM Athletes a
+        JOIN Persons p ON a.person_id = p.person_id
+        JOIN Clubs c ON a.club_id = c.club_id
+    """)
+    associations = cursor.fetchall()
+    
+    person_to_clubs = {}
+    for pid, pname, cid, cname in associations:
+        if pid not in person_to_clubs:
+            person_to_clubs[pid] = {'name': pname, 'clubs': set()}
+        person_to_clubs[pid]['clubs'].add((cid, cname))
+        
+    history_aliases_count = 0
+    for pid, data in person_to_clubs.items():
+        if len(data['clubs']) > 1:
+            club_list = sorted(list(data['clubs']), key=lambda x: len(x[1]))
+            for i in range(len(club_list)):
+                for j in range(i + 1, len(club_list)):
+                    cn1 = club_list[i][1]
+                    cn2 = club_list[j][1]
+                    canon = cn1
+                    alias = cn2
+                    if alias not in aliases_found:
+                        aliases_found[alias] = canon
+                        history_aliases_count += 1
 
     conn.close()
 
     if aliases_found:
-        print(f"\nFound {len(aliases_found)} potential club alias pairs:")
-        for i, (alias, canon) in enumerate(list(aliases_found.items())[:20]):
-            print(f"  - {alias} -> {canon}")
+        print(f"\nFound {len(aliases_found)} potential club alias pairs ({history_aliases_count} from history):")
+        
+        # Group by canonical name for a "nicer" JSON
+        grouped_aliases = {}
+        for alias, canon in aliases_found.items():
+            if canon not in grouped_aliases:
+                grouped_aliases[canon] = []
+            grouped_aliases[canon].append(alias)
+        
+        # Sort canonical names and their alias lists
+        sorted_grouped = {c: sorted(grouped_aliases[c]) for c in sorted(grouped_aliases.keys())}
         
         with open("potential_club_aliases.json", "w") as f:
-            json.dump(aliases_found, f, indent=2)
-        print(f"\nSaved all results to 'potential_club_aliases.json'.")
+            json.dump(sorted_grouped, f, indent=2)
+        print(f"\nSaved grouped results to 'potential_club_aliases.json'.")
     else:
         print("No obvious club aliases found.")
 
