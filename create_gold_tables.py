@@ -228,6 +228,8 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_numeric END) as fx_rank,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.bonus END) as fx_bonus,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.execution_bonus END) as fx_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.score_text END) as fx_score_text,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.rank_text END) as fx_rank_text,
                     
                     -- Pommel Horse (PH)
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_final END) as ph_score,
@@ -235,6 +237,8 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.rank_numeric END) as ph_rank,
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.bonus END) as ph_bonus,
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.execution_bonus END) as ph_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_text END) as ph_score_text,
+                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.rank_text END) as ph_rank_text,
                     
                     -- Rings (SR)
                     MAX(CASE WHEN a.name = 'Rings' THEN r.score_final END) as sr_score,
@@ -242,6 +246,8 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Rings' THEN r.rank_numeric END) as sr_rank,
                     MAX(CASE WHEN a.name = 'Rings' THEN r.bonus END) as sr_bonus,
                     MAX(CASE WHEN a.name = 'Rings' THEN r.execution_bonus END) as sr_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Rings' THEN r.score_text END) as sr_score_text,
+                    MAX(CASE WHEN a.name = 'Rings' THEN r.rank_text END) as sr_rank_text,
                     
                     -- Vault (VT)
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_final END) as vt_score,
@@ -249,6 +255,8 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Vault' THEN r.rank_numeric END) as vt_rank,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.bonus END) as vt_bonus,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.execution_bonus END) as vt_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.score_text END) as vt_score_text,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.rank_text END) as vt_rank_text,
                     
                     -- Parallel Bars (PB)
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_final END) as pb_score,
@@ -256,6 +264,8 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.rank_numeric END) as pb_rank,
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.bonus END) as pb_bonus,
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.execution_bonus END) as pb_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_text END) as pb_score_text,
+                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.rank_text END) as pb_rank_text,
                     
                     -- High Bar (HB)
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.score_final END) as hb_score,
@@ -263,13 +273,17 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.rank_numeric END) as hb_rank,
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.bonus END) as hb_bonus,
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.execution_bonus END) as hb_exec_bonus,
+                    MAX(CASE WHEN a.name = 'High Bar' THEN r.score_text END) as hb_score_text,
+                    MAX(CASE WHEN a.name = 'High Bar' THEN r.rank_text END) as hb_rank_text,
                     
                     -- All Around (AA)
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_final END) as aa_score,
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_d END) as aa_d,
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_numeric END) as aa_rank,
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.bonus END) as aa_bonus,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.execution_bonus END) as aa_exec_bonus
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.execution_bonus END) as aa_exec_bonus,
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_text END) as aa_score_text,
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_text END) as aa_rank_text
                     
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id
@@ -329,6 +343,8 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Vault' THEN r.rank_numeric END) as vt_rank,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.bonus END) as vt_bonus,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.execution_bonus END) as vt_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.score_text END) as vt_score_text,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.rank_text END) as vt_rank_text,
                     
                     -- Uneven Bars (UB)
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_final END) as ub_score,
@@ -336,6 +352,8 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.rank_numeric END) as ub_rank,
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.bonus END) as ub_bonus,
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.execution_bonus END) as ub_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_text END) as ub_score_text,
+                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.rank_text END) as ub_rank_text,
                     
                     -- Beam (BB)
                     MAX(CASE WHEN a.name = 'Beam' THEN r.score_final END) as bb_score,
@@ -343,6 +361,8 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Beam' THEN r.rank_numeric END) as bb_rank,
                     MAX(CASE WHEN a.name = 'Beam' THEN r.bonus END) as bb_bonus,
                     MAX(CASE WHEN a.name = 'Beam' THEN r.execution_bonus END) as bb_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Beam' THEN r.score_text END) as bb_score_text,
+                    MAX(CASE WHEN a.name = 'Beam' THEN r.rank_text END) as bb_rank_text,
                     
                     -- Floor (FX)
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_final END) as fx_score,
@@ -350,13 +370,17 @@ def create_gold_tables():
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_numeric END) as fx_rank,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.bonus END) as fx_bonus,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.execution_bonus END) as fx_exec_bonus,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.score_text END) as fx_score_text,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.rank_text END) as fx_rank_text,
                     
                     -- All Around (AA)
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_final END) as aa_score,
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_d END) as aa_d,
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_numeric END) as aa_rank,
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.bonus END) as aa_bonus,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.execution_bonus END) as aa_exec_bonus
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.execution_bonus END) as aa_exec_bonus,
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_text END) as aa_score_text,
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_text END) as aa_rank_text
                     
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id

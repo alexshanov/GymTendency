@@ -227,8 +227,8 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
             # Dynamic INSERT Construction
-            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric']
-            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_numeric, d_numeric, rank_numeric]
+            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'score_text', 'rank_text']
+            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_numeric, d_numeric, rank_numeric, str(score_val) if score_val else None, str(rank_val) if rank_val else None]
             
             if bonus_numeric is not None:
                 cols.append('bonus')

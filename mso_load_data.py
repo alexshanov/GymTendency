@@ -310,8 +310,8 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
             # Dynamic INSERT Construction
-            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'rank_text']
-            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_final, d_score, rank_numeric, rank_text]
+            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'rank_text', 'score_text']
+            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_final, d_score, rank_numeric, rank_text, str(cell_value) if cell_value else None]
             
             if bonus is not None:
                 cols.append('bonus')

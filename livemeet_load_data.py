@@ -210,8 +210,8 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
             # Dynamic INSERT Construction
-            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric']
-            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_numeric, d_numeric, rank_numeric]
+            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'score_text', 'rank_text']
+            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_numeric, d_numeric, rank_numeric, str(score_val) if score_val else None, str(rank_val) if rank_val else None]
             
             if bonus_numeric is not None:
                 cols.append('bonus')
@@ -220,6 +220,7 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
                 cols.append('execution_bonus')
                 vals.append(exec_bonus_numeric)
             
+            # Add dynamic extra columns (Global metadata)
             for col_name, col_val in dynamic_values.items():
                 cols.append(col_name)
                 vals.append(col_val)
