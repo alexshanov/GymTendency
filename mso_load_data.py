@@ -309,9 +309,15 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
             
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
+            # Ensure native types for SQLite
+            if score_final is not None: score_final = float(score_final)
+            if d_score is not None: d_score = float(d_score)
+            if rank_numeric is not None: rank_numeric = int(rank_numeric)
+            if bonus is not None: bonus = float(bonus)
+            
             # Dynamic INSERT Construction
             cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'rank_text', 'score_text']
-            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_final, d_score, rank_numeric, rank_text, str(cell_value) if cell_value else None]
+            vals = [int(meet_db_id), int(athlete_id), int(apparatus_id), gender_heuristic, score_final, d_score, rank_numeric, rank_text, str(cell_value) if cell_value else None]
             
             if bonus is not None:
                 cols.append('bonus')

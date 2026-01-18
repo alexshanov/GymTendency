@@ -217,18 +217,32 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
             
             if not score_val and not d_val: continue
             
-            # Numeric conversion
+            # Numeric conversion (Ensure native types for SQLite)
             score_numeric = pd.to_numeric(score_val, errors='coerce')
+            if not pd.isna(score_numeric): score_numeric = float(score_numeric)
+            else: score_numeric = None
+                
             d_numeric = pd.to_numeric(d_val, errors='coerce')
+            if not pd.isna(d_numeric): d_numeric = float(d_numeric)
+            else: d_numeric = None
+            
             rank_numeric = pd.to_numeric(rank_val, errors='coerce')
+            if not pd.isna(rank_numeric): rank_numeric = int(rank_numeric)
+            else: rank_numeric = None
+            
             bonus_numeric = pd.to_numeric(bonus_val, errors='coerce')
+            if not pd.isna(bonus_numeric): bonus_numeric = float(bonus_numeric)
+            else: bonus_numeric = None
+            
             exec_bonus_numeric = pd.to_numeric(exec_bonus_val, errors='coerce')
+            if not pd.isna(exec_bonus_numeric): exec_bonus_numeric = float(exec_bonus_numeric)
+            else: exec_bonus_numeric = None
             
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
             # Dynamic INSERT Construction
             cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'score_text', 'rank_text']
-            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_numeric, d_numeric, rank_numeric, str(score_val) if score_val else None, str(rank_val) if rank_val else None]
+            vals = [int(meet_db_id), int(athlete_id), int(apparatus_id), gender_heuristic, score_numeric, d_numeric, rank_numeric, str(score_val) if score_val else None, str(rank_val) if rank_val else None]
             
             if bonus_numeric is not None:
                 cols.append('bonus')
