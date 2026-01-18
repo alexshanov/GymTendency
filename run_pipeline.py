@@ -29,6 +29,7 @@ def main():
     print("This script will run all data loaders and refresh the analytics tables.")
     
     scripts = [
+        "create_db.py",
         "kscore_load_data.py",
         "livemeet_load_data.py",
         "mso_load_data.py",

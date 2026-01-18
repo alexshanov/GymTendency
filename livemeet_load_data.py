@@ -150,6 +150,10 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             sanitized = sanitize_column_name(col)
             ensure_column_exists(cursor, 'Results', sanitized, 'TEXT')
             dynamic_cols_to_add.append((col, sanitized))
+            
+    # Ensure apparatus-specific bonus columns exist
+    ensure_column_exists(cursor, 'Results', 'bonus', 'REAL')
+    ensure_column_exists(cursor, 'Results', 'execution_bonus', 'REAL')
 
     for index, row in df.iterrows():
         # 1. Identity
@@ -186,22 +190,35 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             
             apparatus_id = apparatus_cache[app_key]
             
-            # Extract Triplet
+            # Extract Triplet + Bonuses
             d_val = row.get(f'Result_{raw_event}_D')
             score_val = row.get(f'Result_{raw_event}_Score')
             rank_val = row.get(f'Result_{raw_event}_Rnk')
+            
+            # Look for per-event bonuses
+            bonus_val = row.get(f'Result_{raw_event}_Bonus')
+            exec_bonus_val = row.get(f'Result_{raw_event}_Exec_Bonus') or row.get(f'Result_{raw_event}_Execution_Bonus')
             
             if not score_val and not d_val: continue
             
             score_numeric = pd.to_numeric(score_val, errors='coerce')
             d_numeric = pd.to_numeric(d_val, errors='coerce')
             rank_numeric = pd.to_numeric(rank_val, errors='coerce')
+            bonus_numeric = pd.to_numeric(bonus_val, errors='coerce')
+            exec_bonus_numeric = pd.to_numeric(exec_bonus_val, errors='coerce')
             
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
             # Dynamic INSERT Construction
             cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric']
             vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_numeric, d_numeric, rank_numeric]
+            
+            if bonus_numeric is not None:
+                cols.append('bonus')
+                vals.append(bonus_numeric)
+            if exec_bonus_numeric is not None:
+                cols.append('execution_bonus')
+                vals.append(exec_bonus_numeric)
             
             for col_name, col_val in dynamic_values.items():
                 cols.append(col_name)

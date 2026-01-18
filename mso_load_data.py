@@ -70,16 +70,7 @@ def load_meet_manifest(manifest_file):
 def parse_cell_value(cell_str):
     """
     Parses a raw cell string from MSO into (score, d_score, rank).
-    Typical inputs:
-    - "9.500"           -> Score: 9.5
-    - "1 9.500"         -> Rank: 1, Score: 9.5
-    - "T2 9.500"        -> Rank: 2, Score: 9.5 (Rank Text: T2)
-    - "1 3.5 9.500"     -> Rank: 1, D: 3.5, Score: 9.5
-    
-    Heuristics:
-    - Last token is almost always the FINAL SCORE (float).
-    - First token (if integer-like) is RANK.
-    - If 3 tokens, Middle is D-SCORE.
+    Improved logic to handle [Score] [Rank] format common in MSO.
     """
     if not isinstance(cell_str, str) or not cell_str.strip():
         return None, None, None, None
@@ -93,7 +84,6 @@ def parse_cell_value(cell_str):
     rank_numeric = None
     rank_text = None
     
-    # Helper to check if string is float
     def is_float(s):
         try:
             float(s)
@@ -101,47 +91,68 @@ def parse_cell_value(cell_str):
         except ValueError:
             return False
             
-    # Helper to extract integer rank
     def parse_rank(s):
         clean = re.sub(r'\D', '', s)
         return int(clean) if clean else None
+        
+    def is_likely_rank(s):
+        # Rank is typically integer-like, or "T"+int. 
+        # Should NOT be a float like "8.500".
+        if is_float(s) and '.' in s: return False # It's a score
+        if parse_rank(s) is not None: return True
+        return False
 
-    # Logic based on token count
-    # Default assumption: Last token is Score
+    # --- LOGIC ---
+    
+    # 1. Single Token: "8.800" or "8"
+    if len(parts) == 1:
+        if is_float(parts[0]):
+            return float(parts[0]), None, None, None
+            
+    # 2. Two Tokens: "[Fractional] [Integer]" (e.g., "800 8")
+    if len(parts) == 2:
+        p0, p1 = parts[0], parts[1]
+        if is_float(p0) and is_float(p1):
+            score_final = float(p1) + (float(p0) / 1000.0)
+            return score_final, None, None, None
+            
+    # 3. Three Tokens: "[Rank] [Fractional] [Integer]" (e.g., "1 500 11")
+    if len(parts) == 3:
+        rank_part = parts[0]
+        frac_part = parts[1]
+        int_part = parts[2]
+        
+        if is_float(frac_part) and is_float(int_part):
+            score_final = float(int_part) + (float(frac_part) / 1000.0)
+            rank_numeric = parse_rank(rank_part)
+            rank_text = rank_part
+            return score_final, None, rank_numeric, rank_text
+
+    # 4. Four Tokens: "[Rank] [Fractional] [Integer] [Bonus/D]" (e.g., "1 500 11 0.5")
+    if len(parts) == 4:
+        rank_part = parts[0]
+        frac_part = parts[1]
+        int_part = parts[2]
+        extra_part = parts[3]
+        
+        if is_float(frac_part) and is_float(int_part):
+            score_final = float(int_part) + (float(frac_part) / 1000.0)
+            rank_numeric = parse_rank(rank_part)
+            rank_text = rank_part
+            # In MSO, the 4th token is often a bonus or execution bonus.
+            # We'll return it as 'bonus' for now.
+            bonus = float(extra_part) if is_float(extra_part) else None
+            return score_final, None, rank_numeric, rank_text, bonus
+            
+    # Fallback for other patterns
     if is_float(parts[-1]):
         score_final = float(parts[-1])
         remaining = parts[:-1]
-    else:
-        # Sometimes score might be missing or weird text
-        return None, None, None, None # Skip weird cells for now
-        
-    if not remaining:
-        # Case: "9.500"
-        pass
+        if len(remaining) == 1:
+             rank_text = remaining[0]
+             rank_numeric = parse_rank(remaining[0])
     
-    elif len(remaining) == 1:
-        # Case: "1 9.500" or "10.0 9.500" (?)
-        # Is the first part Rank or D-score?
-        # Rank is typically an integer or "T2". D-score is float.
-        token = remaining[0]
-        if is_float(token) and '.' in token:
-            d_score = float(token) # Likely D-score if it has decimal
-        else:
-            rank_text = token
-            rank_numeric = parse_rank(token)
-            
-    elif len(remaining) == 2:
-        # Case: "1 4.0 9.500" -> Rank, D, Score
-        rank_token = remaining[0]
-        d_token = remaining[1]
-        
-        rank_text = rank_token
-        rank_numeric = parse_rank(rank_token)
-        
-        if is_float(d_token):
-            d_score = float(d_token)
-            
-    return score_final, d_score, rank_numeric, rank_text
+    return score_final, None, rank_numeric, rank_text, None
 
 def process_mso_files(meet_manifest, club_alias_map):
     print("\n--- Starting to process MSO result files ---")
@@ -252,6 +263,10 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
         ensure_column_exists(cursor, 'Results', safe_name, 'TEXT')
         dynamic_mapping.append((raw_col, safe_name))
 
+    # Ensure apparatus-specific bonus columns exist
+    ensure_column_exists(cursor, 'Results', 'bonus', 'REAL')
+    ensure_column_exists(cursor, 'Results', 'execution_bonus', 'REAL')
+
     results_inserted = 0
     
     for index, row in df.iterrows():
@@ -285,24 +300,28 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
             
             apparatus_id = apparatus_cache[app_key]
             
-            score, d_score, rank_num, rank_txt = parse_cell_value(cell_value)
-            if score is None and rank_num is None: continue
+            # --- PARSE MSO CELL VALUE ---
+            # Returns (score_final, d_score, rank_numeric, rank_text, bonus)
+            mso_vals = parse_cell_value(cell_value)
+            score_final, d_score, rank_numeric, rank_text, bonus = mso_vals
+            
+            if score_final is None and d_score is None: continue
             
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
-            is_valid, warning = validate_score(score, d_score, clean_app_name)
-            if warning: print(f"    Warning ({person_name} - {clean_app_name}): {warning}")
+            # Dynamic INSERT Construction
+            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'rank_text']
+            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_final, d_score, rank_numeric, rank_text]
             
-            # Dynamic INSERT
-            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_d', 'score_final', 'rank_numeric', 'rank_text']
-            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, d_score, score, rank_num, rank_txt]
+            if bonus is not None:
+                cols.append('bonus')
+                vals.append(bonus)
             
-            for k, v in dynamic_vals.items():
-                cols.append(k)
-                vals.append(v)
+            for col_name, col_val in dynamic_vals.items():
+                cols.append(col_name)
+                vals.append(col_val)
                 
             placeholders = ', '.join(['?'] * len(cols))
-            # Quote all column names
             quoted_cols = [f'"{c}"' for c in cols]
             col_str = ', '.join(quoted_cols)
             

@@ -89,8 +89,8 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
     """
     try:
         df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
-        if df.empty or 'Name' not in df.columns:
-            print("File is empty or missing 'Name' column. Skipping.")
+        if df.empty:
+            print("File is empty. Skipping.")
             return
     except Exception as e:
         print(f"Warning: Could not read CSV file '{filepath}'. Error: {e}")
@@ -159,9 +159,12 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
         if col not in ignore_cols and not col.startswith('Result_'):
             # This is a candidate for a new column (e.g. "USAG #", "Session")
             sanitized = sanitize_column_name(col)
-            # Check/Add to Schema
             ensure_column_exists(cursor, 'Results', sanitized, 'TEXT')
             dynamic_cols_to_add.append((col, sanitized))
+
+    # Ensure apparatus-specific bonus columns exist
+    ensure_column_exists(cursor, 'Results', 'bonus', 'REAL')
+    ensure_column_exists(cursor, 'Results', 'execution_bonus', 'REAL')
 
     for index, row in df.iterrows():
         # 1. Identity
@@ -205,10 +208,12 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
             
             apparatus_id = apparatus_cache[app_key]
             
-            # Extract Triplet
+            # Extract Triplet + Bonuses
             d_val = row.get(f'Result_{raw_event}_D')
             score_val = row.get(f'Result_{raw_event}_Score')
             rank_val = row.get(f'Result_{raw_event}_Rnk')
+            bonus_val = row.get(f'Result_{raw_event}_Bonus')
+            exec_bonus_val = row.get(f'Result_{raw_event}_Exec_Bonus') or row.get(f'Result_{raw_event}_Execution_Bonus')
             
             if not score_val and not d_val: continue
             
@@ -216,21 +221,28 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
             score_numeric = pd.to_numeric(score_val, errors='coerce')
             d_numeric = pd.to_numeric(d_val, errors='coerce')
             rank_numeric = pd.to_numeric(rank_val, errors='coerce')
+            bonus_numeric = pd.to_numeric(bonus_val, errors='coerce')
+            exec_bonus_numeric = pd.to_numeric(exec_bonus_val, errors='coerce')
             
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
             # Dynamic INSERT Construction
-            # Base columns
             cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric']
             vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_numeric, d_numeric, rank_numeric]
             
-            # Add dynamic extra columns
+            if bonus_numeric is not None:
+                cols.append('bonus')
+                vals.append(bonus_numeric)
+            if exec_bonus_numeric is not None:
+                cols.append('execution_bonus')
+                vals.append(exec_bonus_numeric)
+            
+            # Add dynamic extra columns (Global metadata)
             for col_name, col_val in dynamic_values.items():
                 cols.append(col_name)
                 vals.append(col_val)
                 
             placeholders = ', '.join(['?'] * len(cols))
-            # Quote all column names to handle reserved words ('Group', 'Order')
             quoted_cols = [f'"{c}"' for c in cols]
             col_str = ', '.join(quoted_cols)
             

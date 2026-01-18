@@ -19,6 +19,11 @@ def create_gold_tables():
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             
+            # Ensure apparatus-specific bonus columns exist to avoid query failures
+            from etl_functions import ensure_column_exists
+            ensure_column_exists(cursor, 'Results', 'bonus', 'REAL')
+            ensure_column_exists(cursor, 'Results', 'execution_bonus', 'REAL')
+            
             # --- 1. Normalized Scores View ---
             print("Creating NormalizedScores view...")
             cursor.execute("DROP VIEW IF EXISTS NormalizedScores")
@@ -174,12 +179,23 @@ def create_gold_tables():
             mqi_df.to_sql("Gold_Meet_Quality", conn, if_exists='replace', index=False)
             print(f"  -> Created {len(mqi_df)} meet quality records.")
             
+            # Get current Results columns to avoid "no such column" errors
+            cursor.execute("PRAGMA table_info(Results)")
+            results_cols = {row[1] for row in cursor.fetchall()}
+            
+            def safe_col(col_name, alias=None):
+                target = alias or col_name
+                if col_name in results_cols:
+                    return f'r_base."{col_name}" as "{target}"'
+                else:
+                    return f'NULL as "{target}"'
+
             # --- 5. Gold MAG Export Table (Wide Format for External DB) ---
             print("Creating Gold_MAG_Export table...")
             cursor.execute("DROP TABLE IF EXISTS Gold_MAG_Export")
             
             # Pivot query to create wide format with 7 apparatus triples
-            mag_export_query = """
+            mag_export_query = f"""
                 SELECT 
                     -- Athlete Identity
                     p.full_name as athlete_name,
@@ -193,45 +209,67 @@ def create_gold_tables():
                     m.country,
                     m.source,
                     
-                    -- Service Columns
-                    r_base.level,
-                    r_base.age,
-                    r_base.province,
+                    -- Service Columns (Safe Selection)
+                    {safe_col('level')},
+                    {safe_col('age')},
+                    {safe_col('age_group')},
+                    {safe_col('session')},
+                    {safe_col('group')},
+                    {safe_col('state')},
+                    {safe_col('province')},
+                    {safe_col('num')},
+                    {safe_col('meet', 'raw_meet_name')},
+                    {safe_col('execution_bonus')},
+                    {safe_col('bonus')},
                     
                     -- Floor (FX)
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_final END) as fx_score,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_d END) as fx_d,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_numeric END) as fx_rank,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.bonus END) as fx_bonus,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.execution_bonus END) as fx_exec_bonus,
                     
                     -- Pommel Horse (PH)
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_final END) as ph_score,
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_d END) as ph_d,
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.rank_numeric END) as ph_rank,
+                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.bonus END) as ph_bonus,
+                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.execution_bonus END) as ph_exec_bonus,
                     
                     -- Rings (SR)
                     MAX(CASE WHEN a.name = 'Rings' THEN r.score_final END) as sr_score,
                     MAX(CASE WHEN a.name = 'Rings' THEN r.score_d END) as sr_d,
                     MAX(CASE WHEN a.name = 'Rings' THEN r.rank_numeric END) as sr_rank,
+                    MAX(CASE WHEN a.name = 'Rings' THEN r.bonus END) as sr_bonus,
+                    MAX(CASE WHEN a.name = 'Rings' THEN r.execution_bonus END) as sr_exec_bonus,
                     
                     -- Vault (VT)
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_final END) as vt_score,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_d END) as vt_d,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.rank_numeric END) as vt_rank,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.bonus END) as vt_bonus,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.execution_bonus END) as vt_exec_bonus,
                     
                     -- Parallel Bars (PB)
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_final END) as pb_score,
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_d END) as pb_d,
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.rank_numeric END) as pb_rank,
+                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.bonus END) as pb_bonus,
+                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.execution_bonus END) as pb_exec_bonus,
                     
                     -- High Bar (HB)
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.score_final END) as hb_score,
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.score_d END) as hb_d,
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.rank_numeric END) as hb_rank,
+                    MAX(CASE WHEN a.name = 'High Bar' THEN r.bonus END) as hb_bonus,
+                    MAX(CASE WHEN a.name = 'High Bar' THEN r.execution_bonus END) as hb_exec_bonus,
                     
                     -- All Around (AA)
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_final END) as aa_score,
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_d END) as aa_d,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_numeric END) as aa_rank
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_numeric END) as aa_rank,
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.bonus END) as aa_bonus,
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.execution_bonus END) as aa_exec_bonus
                     
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id
@@ -258,7 +296,7 @@ def create_gold_tables():
             cursor.execute("DROP TABLE IF EXISTS Gold_WAG_Export")
             
             # Pivot query for WAG with 5 apparatus triples
-            wag_export_query = """
+            wag_export_query = f"""
                 SELECT 
                     -- Athlete Identity
                     p.full_name as athlete_name,
@@ -272,35 +310,53 @@ def create_gold_tables():
                     m.country,
                     m.source,
                     
-                    -- Service Columns
-                    r_base.level,
-                    r_base.age,
-                    r_base.province,
+                    -- Service Columns (Safe Selection)
+                    {safe_col('level')},
+                    {safe_col('age')},
+                    {safe_col('age_group')},
+                    {safe_col('session')},
+                    {safe_col('group')},
+                    {safe_col('state')},
+                    {safe_col('province')},
+                    {safe_col('num')},
+                    {safe_col('meet', 'raw_meet_name')},
+                    {safe_col('execution_bonus')},
+                    {safe_col('bonus')},
                     
                     -- Vault (VT)
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_final END) as vt_score,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_d END) as vt_d,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.rank_numeric END) as vt_rank,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.bonus END) as vt_bonus,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.execution_bonus END) as vt_exec_bonus,
                     
                     -- Uneven Bars (UB)
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_final END) as ub_score,
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_d END) as ub_d,
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.rank_numeric END) as ub_rank,
+                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.bonus END) as ub_bonus,
+                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.execution_bonus END) as ub_exec_bonus,
                     
                     -- Beam (BB)
                     MAX(CASE WHEN a.name = 'Beam' THEN r.score_final END) as bb_score,
                     MAX(CASE WHEN a.name = 'Beam' THEN r.score_d END) as bb_d,
                     MAX(CASE WHEN a.name = 'Beam' THEN r.rank_numeric END) as bb_rank,
+                    MAX(CASE WHEN a.name = 'Beam' THEN r.bonus END) as bb_bonus,
+                    MAX(CASE WHEN a.name = 'Beam' THEN r.execution_bonus END) as bb_exec_bonus,
                     
                     -- Floor (FX)
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_final END) as fx_score,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_d END) as fx_d,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_numeric END) as fx_rank,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.bonus END) as fx_bonus,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.execution_bonus END) as fx_exec_bonus,
                     
                     -- All Around (AA)
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_final END) as aa_score,
                     MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.score_d END) as aa_d,
-                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_numeric END) as aa_rank
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.rank_numeric END) as aa_rank,
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.bonus END) as aa_bonus,
+                    MAX(CASE WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN r.execution_bonus END) as aa_exec_bonus
                     
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id
