@@ -366,8 +366,9 @@ if __name__ == "__main__":
         meet_ids_to_process = meet_ids_to_process[:DEBUG_LIMIT]
 
     # --- EXECUTION PIPELINE ---
-    for meet_id in meet_ids_to_process:
-        print(f"\n{'='*20} PROCESSING MEET ID: {meet_id} {'='*20}")
+    total_meets = len(meet_ids_to_process)
+    for i, meet_id in enumerate(meet_ids_to_process, 1):
+        print(f"\n[{i}/{total_meets}] {'='*20} PROCESSING MEET ID: {meet_id} {'='*20}")
         
         meet_url = f"{BASE_URL}{meet_id}"
         

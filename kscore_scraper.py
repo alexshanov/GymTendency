@@ -255,7 +255,7 @@ def main():
         meet_name = str(row['MeetName'])
 
         print("\n" + "="*70)
-        print(f"Processing Meet {total_meets_processed}/{total_meets_in_queue}: {meet_name} (ID: {meet_id})")
+        print(f"[{total_meets_processed}/{total_meets_in_queue}] Processing: {meet_name} (ID: {meet_id})")
         print("="*70)
 
         files_count = scrape_kscore_meet(

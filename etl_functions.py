@@ -123,6 +123,40 @@ def load_column_aliases(filepath="column_aliases.json"):
 # Load on module import
 COLUMN_ALIASES = load_column_aliases()
 
+def load_person_aliases(filepath="person_aliases.json"):
+    """
+    Loads manual person aliases from a JSON file.
+    Example: {"Trinadad Mirabelle": "Trinidad Mirabelle"}
+    """
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        print(f"Error: Could not parse '{filepath}'.")
+        return {}
+
+PERSON_ALIASES = load_person_aliases()
+
+def load_club_aliases(filepath="club_aliases.json"):
+    """
+    Loads manual club aliases from a JSON file.
+    Example: {"Flicka Gymnastics Club": "Flicka"}
+    """
+    try:
+        with open(filepath, 'r') as f:
+            aliases = json.load(f)
+            # Ensure keys are title-cased for case-insensitive matching
+            return {key.strip().title(): value.strip() for key, value in aliases.items()}
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        print(f"Error: Could not parse '{filepath}'.")
+        return {}
+
+CLUB_ALIASES = load_club_aliases()
+
 def sanitize_column_name(col_name):
     """
     Sanitizes a raw column name to be SQL-safe (snake_case).
@@ -213,6 +247,18 @@ def setup_database(db_file):
             FOREIGN KEY (person_id) REFERENCES Persons (person_id),
             FOREIGN KEY (club_id) REFERENCES Clubs (club_id),
             UNIQUE(person_id, club_id)
+        );""",
+        """CREATE TABLE IF NOT EXISTS PersonAliases (
+            alias_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alias_name TEXT NOT NULL UNIQUE,
+            canonical_person_id INTEGER NOT NULL,
+            FOREIGN KEY (canonical_person_id) REFERENCES Persons (person_id)
+        );""",
+        """CREATE TABLE IF NOT EXISTS ClubAliases (
+            alias_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            club_alias_name TEXT NOT NULL UNIQUE,
+            canonical_club_id INTEGER NOT NULL,
+            FOREIGN KEY (canonical_club_id) REFERENCES Clubs (club_id)
         );""",
         # --- END OF NEW SCHEMA TABLES ---
 
@@ -346,9 +392,9 @@ def setup_database(db_file):
             
             disciplines = [(1, 'WAG'), (2, 'MAG'), (99, 'Other')]
             cursor.executemany("INSERT OR IGNORE INTO Disciplines (discipline_id, discipline_name) VALUES (?, ?)", disciplines)
-            WAG_EVENTS = {'Vault': 1, 'Uneven Bars': 2, 'Beam': 3, 'Floor': 4, 'AllAround': 99, 'All-Around': 99, 'All Around': 99}
-            MAG_EVENTS = {'Floor': 1, 'Pommel Horse': 2, 'Rings': 3, 'Vault': 4, 'Parallel Bars': 5, 'High Bar': 6, 'AllAround': 99, 'All-Around': 99, 'All Around': 99}
-            OTHER_EVENTS = {'AllAround': 99, 'All-Around': 99, 'All Around': 99}
+            WAG_EVENTS = {'Vault': 1, 'Uneven Bars': 2, 'Beam': 3, 'Floor': 4, 'All Around': 99}
+            MAG_EVENTS = {'Floor': 1, 'Pommel Horse': 2, 'Rings': 3, 'Vault': 4, 'Parallel Bars': 5, 'High Bar': 6, 'All Around': 99}
+            OTHER_EVENTS = {'All Around': 99}
             all_apparatus = []
             for name, order in WAG_EVENTS.items(): all_apparatus.append((name, 1, order))
             for name, order in MAG_EVENTS.items(): all_apparatus.append((name, 2, order))
@@ -365,15 +411,7 @@ def setup_database(db_file):
 #  GENERIC HELPER FUNCTIONS
 # ==============================================================================
 
-def load_club_aliases(filepath="club_aliases.json"):
-    try:
-        with open(filepath, 'r') as f:
-            aliases = json.load(f)
-            return {key.title(): value for key, value in aliases.items()}
-    except FileNotFoundError:
-        print(f"Warning: '{filepath}' not found. No club aliases will be applied."); return {}
-    except json.JSONDecodeError:
-        print(f"Error: Could not parse '{filepath}'."); return {}
+# Removed load_club_aliases (moved to top)
 
 def standardize_club_name(club_str, alias_map):
     if not club_str or not isinstance(club_str, str): return None
@@ -383,12 +421,10 @@ def standardize_club_name(club_str, alias_map):
 def standardize_athlete_name(name_str, remove_middle_initial=True):
     """
     Standardize athlete names for consistent matching across sources.
-    
     Handles:
     - "Last, First" → "First Last"
-    - "LAST FIRST" (all caps) → "First Last"  
+    - "LAST FIRST" (all caps) → "First Last" (if we suspect order flip)
     - Extra whitespace cleanup
-    - Middle initial removal (optional, for deduplication)
     - Title case normalization
     """
     if not isinstance(name_str, str) or not name_str.strip(): 
@@ -403,32 +439,28 @@ def standardize_athlete_name(name_str, remove_middle_initial=True):
         if len(parts) == 2:
             name_str = f"{parts[1]} {parts[0]}"
     
-    # 3. Handle ALL CAPS (Just title case, do not assume order change)
-    # User feedback: "ALL CAPS does not mean LAST FIRST name"
-    # We simply title case the words.
+    # 3. Handle ALL CAPS (which often implies LAST FIRST in some systems)
     words = name_str.split()
-    if name_str.isupper():
-        name_str = ' '.join(word.title() for word in words)
+    if name_str.isupper() and len(words) == 2:
+        # We don't blindly flip, but we title-case it. 
+        # The get_or_create_person will handle the flip check in the DB.
+        name_str = ' '.join(word.capitalize() for word in words)
         words = name_str.split()
+    else:
+        # standard title case for each word
+        words = [word.capitalize() if word.isupper() or word.islower() else word for word in words]
     
-    # 4. Apply title case to each word
-    words = [word.title() if word.isupper() or word.islower() else word for word in words]
-    
-    # 5. Remove middle initial (single letter or letter with period)
+    # 4. Remove middle initial (optional)
     if remove_middle_initial and len(words) > 2:
         filtered_words = []
         for i, word in enumerate(words):
-            # Keep first and last word, filter middle initials
             if i == 0 or i == len(words) - 1:
                 filtered_words.append(word)
-            elif len(word.replace('.', '')) > 1:  # Not a single initial
+            elif len(word.replace('.', '')) > 1:
                 filtered_words.append(word)
-            # else: skip middle initial
         words = filtered_words
     
-    # 6. Final cleanup - remove any remaining periods from initials kept
-    result = ' '.join(words)
-    return result
+    return ' '.join(words)
 
 
 def detect_discipline(df):
@@ -445,29 +477,96 @@ def detect_discipline(df):
 # ==============================================================================
 
 def get_or_create_person(conn, full_name, gender, cache):
+    """
+    Get or create a person record.
+    Uses PersonAliases table to handle inconsistent name orders (e.g. First Last vs Last First),
+    and a manual person_aliases.json for typo correction.
+    """
     if full_name in cache: return cache[full_name]
+    
+    # 0. Manual Alias Check (Typo correction)
+    if full_name in PERSON_ALIASES:
+        full_name = PERSON_ALIASES[full_name]
+
     cursor = conn.cursor()
+    
+    # 1. Check Alias table first
+    cursor.execute("SELECT canonical_person_id FROM PersonAliases WHERE alias_name = ?", (full_name,))
+    result = cursor.fetchone()
+    if result:
+        person_id = result[0]
+        cache[full_name] = person_id
+        return person_id
+        
+    # 2. Check Persons table (direct match)
     cursor.execute("SELECT person_id FROM Persons WHERE full_name = ?", (full_name,))
     result = cursor.fetchone()
     if result:
         person_id = result[0]
-    else:
-        cursor.execute("INSERT INTO Persons (full_name, gender) VALUES (?, ?)", (full_name, gender))
-        person_id = cursor.lastrowid
+        # Register this name as an alias too for faster lookup next time
+        cursor.execute("INSERT OR IGNORE INTO PersonAliases (alias_name, canonical_person_id) VALUES (?, ?)", (full_name, person_id))
+        cache[full_name] = person_id
+        return person_id
+
+    # 3. Check for flipped name match (e.g. "Smith John" -> "John Smith")
+    words = full_name.split()
+    if len(words) == 2:
+        flipped_name = f"{words[1]} {words[0]}"
+        cursor.execute("SELECT person_id FROM Persons WHERE full_name = ?", (flipped_name,))
+        result = cursor.fetchone()
+        if result:
+            person_id = result[0]
+            # Create alias for the current name pointing to the existing canonical person
+            print(f"  [Alias Match] Mapping '{full_name}' to existing person '{flipped_name}'")
+            cursor.execute("INSERT INTO PersonAliases (alias_name, canonical_person_id) VALUES (?, ?)", (full_name, person_id))
+            cache[full_name] = person_id
+            return person_id
+
+    # 4. Create new person if no match found
+    cursor.execute("INSERT INTO Persons (full_name, gender) VALUES (?, ?)", (full_name, gender))
+    person_id = cursor.lastrowid
+    
+    # Initialize the first alias as the canonical name
+    cursor.execute("INSERT INTO PersonAliases (alias_name, canonical_person_id) VALUES (?, ?)", (full_name, person_id))
+    
     cache[full_name] = person_id
     return person_id
 
 def get_or_create_club(conn, club_name, cache):
-    if club_name is None: return None # Handle athletes with no club
+    """
+    Get or create a club record.
+    Uses ClubAliases table and club_aliases.json for normalization.
+    """
+    if club_name is None: return None
     if club_name in cache: return cache[club_name]
+    
+    # 1. Manual Alias Check (JSON)
+    normalized_name = club_name.strip().title()
+    if normalized_name in CLUB_ALIASES:
+        club_name = CLUB_ALIASES[normalized_name]
+
     cursor = conn.cursor()
+    
+    # 2. Check Database Alias Table
+    cursor.execute("SELECT canonical_club_id FROM ClubAliases WHERE club_alias_name = ?", (club_name,))
+    result = cursor.fetchone()
+    if result:
+        club_id = result[0]
+        cache[club_name] = club_id
+        return club_id
+
+    # 3. Check Clubs Table Directly
     cursor.execute("SELECT club_id FROM Clubs WHERE name = ?", (club_name,))
     result = cursor.fetchone()
     if result:
         club_id = result[0]
     else:
+        # 4. Create New Club
         cursor.execute("INSERT INTO Clubs (name) VALUES (?)", (club_name,))
         club_id = cursor.lastrowid
+        # Also register this name as an alias for future consistency
+        cursor.execute("INSERT OR IGNORE INTO ClubAliases (club_alias_name, canonical_club_id) VALUES (?, ?)", (club_name, club_id))
+    
     cache[club_name] = club_id
     return club_id
 
