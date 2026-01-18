@@ -324,12 +324,11 @@ def standardize_athlete_name(name_str, remove_middle_initial=True):
         if len(parts) == 2:
             name_str = f"{parts[1]} {parts[0]}"
     
-    # 3. Handle ALL CAPS (assume "LAST FIRST" or "FIRST LAST")
+    # 3. Handle ALL CAPS (Just title case, do not assume order change)
+    # User feedback: "ALL CAPS does not mean LAST FIRST name"
+    # We simply title case the words.
     words = name_str.split()
-    if len(words) >= 2 and name_str.isupper():
-        # All caps - check if first word looks like last name (common pattern: SMITH JOHN)
-        # Heuristic: if second word is shorter, it might be first name abbreviated
-        # Default: assume "FIRST LAST" order for all caps
+    if name_str.isupper():
         name_str = ' '.join(word.title() for word in words)
         words = name_str.split()
     

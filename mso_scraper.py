@@ -10,12 +10,16 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select
 from webdriver_manager.chrome import ChromeDriverManager
 
 # --- CONFIGURATION ---
 DEBUG_LIMIT = 0
 OUTPUT_FOLDER = "CSVs_mso_final"
 INPUT_MANIFEST = "discovered_meet_ids_mso.csv"
+
+# MSO 'All' Option Value
+ALL_OPTION_VALUE = "---All"
 
 # Ensure output directory exists
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -34,52 +38,93 @@ def clean_text(text):
     if not text: return ""
     return re.sub(r'\s+', ' ', str(text)).strip()
 
-def extract_score(cell):
+def select_combined_filter(driver, element_id):
     """
-    Extracts score from MSO format:
-    <td ...>
-       <span class="small place">2</span>
-       <sup>500</sup>
-       <span class="score">13</span>
-    </td>
-    Returns: (score_final, score_d, rank)
+    Selects the '---All' (Combined) option in a select element if it exists.
+    Expected to work on hidden selects that sync with the UI.
     """
-    if not cell: return None, None, None
-    
-    # Rank
-    rank_span = cell.find("span", class_="place")
-    rank = clean_text(rank_span.get_text()) if rank_span else ""
-    
-    # Score Integer
-    score_span = cell.find("span", class_="score")
-    score_int = clean_text(score_span.get_text()) if score_span else ""
-    
-    # Score Decimal
-    sup = cell.find("sup")
-    score_dec = clean_text(sup.get_text()) if sup else ""
-    
-    # Construct final score - Logic:
-    # If both int and dec exist: 13.500
-    # If only int exists: 13 (could be just int part or full score if no decimal logic used)
-    # If no standard classes found, try getting direct text (some meets might just have text)
-    
-    if score_int and score_dec:
-        final_score = f"{score_int}.{score_dec}"
-    elif score_int:
-        final_score = score_int
-    elif not score_int and not score_dec:
-        # Fallback: Just get text if structure is different
-        # Remove rank text to avoid pollution if it's in the same cell but not in span
-        # But usually rank is in span class='place'
-        text = cell.get_text(separator=" ", strip=True)
-        # Remove rank if we found it
-        if rank:
-            text = text.replace(rank, "").strip()
-        final_score = text
-    else:
-        final_score = ""
+    try:
+        # First try to find and click the hamburger menu if it's the first interaction
+        # The user image shows a three-dash menu icon that "activates this menu"
+        # Selector guess based on font-awesome icons or classes in HTML
+        try:
+            hamburger = driver.find_element(By.CSS_SELECTOR, ".fa-bars, .fa-navicon, .hamburger, .menu-icon")
+            if hamburger.is_displayed():
+                hamburger.click()
+                time.sleep(1)
+        except:
+            pass # Maybe not present or already open
+            
+        select_elem = WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.ID, element_id))
+        )
+        select = Select(select_elem)
         
-    return final_score, "", rank
+        # Check if "---All" exists
+        options = [o.get_attribute("value") for o in select.options]
+        if ALL_OPTION_VALUE in options:
+            select.select_by_value(ALL_OPTION_VALUE)
+            # Trigger change event for MSO ajax
+            driver.execute_script("arguments[0].dispatchEvent(new Event('change'))", select_elem)
+            print(f"  -> Selected 'Combined' (---All) for #{element_id}")
+            time.sleep(2) # Wait for AJAX reload
+            return True
+        else:
+            print(f"  -> '---All' option not found in #{element_id}")
+            return False
+            
+    except Exception as e:
+        # It's okay if not found, some pages might not have it
+        return False
+
+
+def extract_table_raw(soup, meet_name):
+    """
+    Extracts the updated table data as-is, preserving original headers.
+    """
+    table = soup.find("table", class_="table")
+    if not table:
+        return None
+
+    rows = table.find_all("tr")
+    if not rows: 
+        return None
+        
+    # Extract headers
+    headers = []
+    # Sometimes header is in the first row <tr><th>...</th></tr>
+    header_row = rows[0]
+    cols = header_row.find_all(["th", "td"])
+    headers = [clean_text(col.get_text()) for col in cols]
+    
+    # Extract data rows
+    data = []
+    for tr in rows[1:]:
+        cells = tr.find_all("td")
+        if not cells: continue
+        
+        row_dict = {"Meet": meet_name} # Add meet name metadata
+        
+        for i, cell in enumerate(cells):
+            if i < len(headers):
+                # For scores, we might want just text, or deeper parsing?
+                # User asked for columns "as presented".
+                # The cell text usually contains Rank, Score, D-score in spans.
+                # We will extract the FULL text representation for now, 
+                # or try to keep it cleaner if feasible. 
+                # MSO structure: <span class="place">2</span><sup>D</sup><span class="score">9.5</span>
+                # Text extraction might mash them: "2 D 9.5"
+                
+                # Let's try to be smart: extract the visible text carefully
+                # We'll rely on the loader to separate Rank/D/Score if they are mashed.
+                # But to be helpful, let's try to separate them with spaces if they aren't already.
+                
+                cell_text = cell.get_text(" ", strip=True) 
+                row_dict[headers[i]] = clean_text(cell_text)
+                
+        data.append(row_dict)
+        
+    return pd.DataFrame(data)
 
 def process_meet(driver, meet_id, meet_name):
     url = f"https://www.meetscoresonline.com/Results/{meet_id}"
@@ -98,167 +143,31 @@ def process_meet(driver, meet_id, meet_name):
             print("  -> Closed popup")
             time.sleep(1)
         except:
-            pass # No popup or couldn't close
+            pass 
             
-        # 2. Select "All" / "Combined" Sessions if available
-        # MSO navigation is complex, often loaded via AJAX. 
-        # We will attempt to find a "View All" or simply scrape what is visible 
-        # if the default view is comprehensive (which it often is for MSO result pages).
-        # A more robust approach for MSO is to verify if we are seeing a partial list.
-        # For now, we scrape the main table loaded.
+        # 2. Select "Combined" filters
+        # Session first, then Level (order might matter for AJAX)
+        select_combined_filter(driver, "session_dd")
+        select_combined_filter(driver, "level_dd")
+        select_combined_filter(driver, "division_dd") # Try division too just in case
         
-        # 3. Extract Table
+        time.sleep(2) # Final wait for table update
+        
+        # 3. Extract Raw Table
         soup = BeautifulSoup(driver.page_source, "html.parser")
-        table = soup.find("table", class_="table")
+        df = extract_table_raw(soup, meet_name)
         
-        if not table:
-            print("  -> No results table found.")
-            return False
-
-        rows = table.find_all("tr")
-        print(f"  -> Found {len(rows)} rows (including header)")
-        
-        headers = [th.get_text(strip=True) for th in rows[0].find_all(["th", "td"])]
-        
-        # Identify standard columns vs events
-        # Typical header: Gimnast, Team, Sess, Lvl, Div, FLR, PH, ...
-        
-        data_records = []
-        
-        for tr in rows[1:]:
-            cells = tr.find_all("td")
-            if not cells: continue
-            
-            # Helper to safely get index
-            def get_val(idx):
-                return clean_text(cells[idx].get_text()) if idx < len(cells) else ""
-            
-            # Map standard columns based on header index or position
-            # MSO is usually consistent
-            # 0: Gymnast, 1: Team, 2: Sess, 3: Lvl, 4: Div
-            
-            name = get_val(0)
-            club = get_val(1)
-            sess = get_val(2)
-            level = get_val(3)
-            division = get_val(4)
-            
-            # Columns 5+ are events
-            # Need to map header name to score extraction
-            for i, header_col in enumerate(headers):
-                if i < 5: continue # Skip info columns
-                
-                event_name = header_col
-                final_score, score_d, rank = extract_score(cells[i])
-                
-                if final_score:
-                    data_records.append({
-                        "Include": "ok",
-                        "Name": name,
-                        "Club": club,
-                        "Level": level,
-                        "Age": "", # Not explicit
-                        "Prov": "", # Not explicit
-                        "Age_Group": division, # Best proxy
-                        "Meet": meet_name,
-                        "Group": f"{sess} - {division}",
-                        "Apparatus": event_name,
-                        "Score": final_score,
-                        "D_Score": score_d,
-                        "Rank": rank
-                    })
-
-        if not data_records:
-            print("  -> No data records extracted.")
+        if df is None or df.empty:
+            print("  -> No results found.")
             return False
             
-        df = pd.DataFrame(data_records)
+        print(f"  -> Extracted {len(df)} rows. Columns: {list(df.columns)}")
         
-        # --- STANDARDIZATION ---
-        # 1. Standard Service Columns
-        required_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
-        for col in required_cols:
-            if col not in df.columns:
-                df[col] = "" # Fill missing
-                
-        # 2. Apparatus Mapping - normalize to standard names (with underscores to match K-Score/LiveMeet)
-        event_map = {
-            # MSO abbreviations -> Standard underscored names
-            "FLR": "Floor", "FX": "Floor", "FLOOR": "Floor",
-            "PH": "Pommel_Horse", "POMMEL HORSE": "Pommel_Horse", "POMML": "Pommel_Horse",
-            "SR": "Rings", "RINGS": "Rings",
-            "VT": "Vault", "VAULT": "Vault",
-            "PB": "Parallel_Bars", "PARALLEL BARS": "Parallel_Bars", "PBARS": "Parallel_Bars",
-            "HB": "High_Bar", "HIGH BAR": "High_Bar", "HIBAR": "High_Bar",
-            "AA": "AllAround", "ALL AROUND": "AllAround",
-            "UB": "Uneven_Bars", "BARS": "Uneven_Bars", "UNEVEN BARS": "Uneven_Bars",
-            "BB": "Beam", "Beam": "Beam", "Balance Beam": "Beam", "BEAM": "Beam"
-        }
-        df['Apparatus'] = df['Apparatus'].map(lambda x: event_map.get(x, x))
-        
-        # 3. Pivot to wide format
-        df_wide = df.pivot_table(
-            index=['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group'],
-            columns='Apparatus',
-            values=['Score', 'D_Score', 'Rank'],
-            aggfunc='first'
-        ).reset_index()
-        
-        # 4. Flatten MultiIndex and build triplets in Olympic order
-        # Official FIG Olympic Order (using underscored names):
-        # WAG: Vault, Uneven_Bars, Beam, Floor
-        # MAG: Floor, Pommel_Horse, Rings, Vault, Parallel_Bars, High_Bar
-        WAG_ORDER = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'AllAround']
-        MAG_ORDER = ['Floor', 'Pommel_Horse', 'Rings', 'Vault', 'Parallel_Bars', 'High_Bar', 'AllAround']
-        
-        # Detect discipline from apparatus present
-        apparatus_present = [col[1] for col in df_wide.columns if col[0] in ['Score', 'D_Score', 'Rank']]
-        is_mag = any(a in apparatus_present for a in ['Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar'])
-        apparatus_order = MAG_ORDER if is_mag else WAG_ORDER
-        
-        # Build new column list: service cols first, then triplets per apparatus
-        service_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
-        new_columns = []
-        column_mapping = {}  # old tuple -> new name
-        
-        for col in df_wide.columns:
-            if isinstance(col, tuple) and col[0] in ['Score', 'D_Score', 'Rank']:
-                metric, apparatus = col
-                if metric == 'D_Score':
-                    new_name = f"Result_{apparatus}_D"
-                elif metric == 'Score':
-                    new_name = f"Result_{apparatus}_Score"
-                elif metric == 'Rank':
-                    new_name = f"Result_{apparatus}_Rnk"
-                column_mapping[col] = new_name
-            else:
-                column_mapping[col] = col[0] if isinstance(col, tuple) else col
-        
-        # Rename columns
-        df_wide.columns = [column_mapping.get(c, c) for c in df_wide.columns]
-        
-        # Build ordered column list
-        ordered_result_cols = []
-        for apparatus in apparatus_order:
-            for suffix in ['_D', '_Score', '_Rnk']:
-                col_name = f"Result_{apparatus}{suffix}"
-                if col_name in df_wide.columns:
-                    ordered_result_cols.append(col_name)
-        
-        # Add any remaining result columns not in order (unexpected apparatus)
-        for col in df_wide.columns:
-            if col.startswith('Result_') and col not in ordered_result_cols:
-                ordered_result_cols.append(col)
-        
-        # Final column order: service + ordered results
-        final_cols = [c for c in service_cols if c in df_wide.columns] + ordered_result_cols
-        df_wide = df_wide[final_cols]
-        
-        # Save
+        # 4. Save Raw CSV
         filename = f"{meet_id}_mso.csv"
         filepath = os.path.join(OUTPUT_FOLDER, filename)
-        df_wide.to_csv(filepath, index=False)
-        print(f"  -> Saved {len(df_wide)} athletes to {filepath}")
+        df.to_csv(filepath, index=False)
+        print(f"  -> Saved raw data to {filepath}")
         return True
 
     except Exception as e:
@@ -271,12 +180,6 @@ def main():
         return
 
     manifest = pd.read_csv(INPUT_MANIFEST)
-    
-    # Filter for 2024 testing if needed, or just take first manageable one
-    # User requested: "not take 2026 meets that are still in the future, find a 2024"
-    # But our manifest has 2026 dates (which are actually completed meets per metadata).
-    # We will prioritize a known "Meet Complete" one.
-    
     driver = setup_driver()
     
     count = 0
@@ -287,7 +190,6 @@ def main():
         meet_id = str(row['MeetID'])
         meet_name = row['MeetName']
         
-        # Skip if future? (Already filtered by scraper feasibility usually, but let's be safe)
         if process_meet(driver, meet_id, meet_name):
             count += 1
             
