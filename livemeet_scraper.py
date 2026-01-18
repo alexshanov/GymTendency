@@ -2,6 +2,7 @@ import glob
 import pandas as pd
 import io
 import json
+import requests
 from bs4 import BeautifulSoup
 import re
 import html
@@ -125,127 +126,176 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', driver.current_url)
             web_session_id = session_id_match.group(1) if session_id_match else active_session_id
             
+            # Prepare requests session for fast fetching
+            s = requests.Session()
+            # Pass cookies from selenium to requests
+            for cookie in driver.get_cookies():
+                s.cookies.set(cookie['name'], cookie['value'])
+
             base_data_url = "https://www.sportzsoft.com/meet/meetWeb.dll/TournamentResults"
             
             for group_name, comp_session_id in sessions_to_scrape.items():
                 try:
-                    # --- NEW: Specific Drill-down into Reporting Categories ---
-                    # To get the Reporting Categories (like P2 A, P2 B), we need to actually 'click' 
-                    # the session in the sidebar so the radio buttons appear in the main content area.
-                    print(f"  -> Selecting session: {group_name}")
+                    print(f"  -> Selecting group/session: {group_name}")
                     
-                    # Ensure we are on the main meet page and function is available
+                    # Ensure we are on the main meet page and Session tab is active
                     if driver.current_url != main_page_url:
                         driver.get(main_page_url)
-                        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel li.reportOnSession")))
+                        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel")))
                     
-                    # Method 1: JS Click on the sidebar element
+                    # Ensure "Results by Session" tab is selected
                     try:
-                        # Find by ID directly (no '#' in ID if using By.ID)
-                        session_li = driver.find_element(By.ID, comp_session_id)
-                        driver.execute_script("arguments[0].scrollIntoView(true);", session_li)
-                        time.sleep(1)
-                        driver.execute_script("arguments[0].click();", session_li)
-                        print(f"    -> JS Clicked sidebar element for {group_name}")
-                    except Exception as click_err:
-                        print(f"    -> Sidebar click failed ({click_err}). Trying direct JS function...")
-                        # Method 2: Fallback to direct JS call
+                        driver.execute_script("gotoSubTab('Z');")
+                        time.sleep(2)
+                        # Wait for the sidebar to populate with sessions
+                        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel li")))
+                    except Exception as tab_err:
+                        print(f"    -> Warning: Could not ensure Session tab: {tab_err}")
+                    
+                    # Robust Switching Logic with Retries
+                    switch_success = False
+                    report_func = "reportOnSession" if base_data_url_param == "SelectSession" else "reportOnLv"
+                    start_time = time.time()
+                    while time.time() - start_time < 20: # Try for up to 20 seconds
                         try:
-                            WebDriverWait(driver, 10).until(lambda d: d.execute_script("return typeof reportOnSession === 'function'"))
-                            driver.execute_script(f"reportOnSession('{comp_session_id}')")
-                            print(f"    -> Executed reportOnSession('{comp_session_id}')")
-                        except Exception as js_err:
-                            print(f"    -> JS execution failed: {js_err}")
-
-                    # Wait for 'Select Awards Category' radio buttons to appear
-                    scrape_targets = []
-                    try:
-                        # Increase wait to 15s to be safe
-                        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[id^='rcReportingCategory']")))
-                        category_radios = driver.find_elements(By.CSS_SELECTOR, "input[id^='rcReportingCategory']")
-                        for radio in category_radios:
+                            # 1. Attempt to Click Element
                             try:
-                                rc_id = radio.get_attribute('value')
-                                rc_input_id = radio.get_attribute('id')
-                                rc_label_el = driver.find_element(By.CSS_SELECTOR, f"label[for='{rc_input_id}']")
-                                rc_label = rc_label_el.text.strip()
-                                
-                                if rc_label.upper() == "ALL" and len(category_radios) > 1:
-                                    continue
-                                
-                                scrape_targets.append((rc_label, rc_id))
-                            except Exception as e:
-                                print(f"    -> Error identifying category: {e}")
-                    except TimeoutException:
-                        print(f"    -> Info: No specific awards categories detected for session {group_name}.")
+                                elem = driver.find_element(By.ID, comp_session_id)
+                                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
+                                elem.click()
+                                print("    -> Switched via element click")
+                                switch_success = True
+                            except Exception:
+                                # 2. Fallback to JS
+                                driver.execute_script(f"{report_func}('{comp_session_id}');")
+                                print("    -> Switched via JS call")
+                                switch_success = True
+                            
+                            if switch_success:
+                                time.sleep(5) # Critical wait for server state update
+                                break
+                        except Exception as e:
+                            print(f"    -> Retry switching... ({e})")
+                            time.sleep(2)
+
+                    if not switch_success:
+                        print(f"    -> Failed to switch to session {comp_session_id}. Skipping.")
+                        continue
+
+                    # UPDATE COOKIES: Ensure requests session has latest state/cookies from browser
+                    s.cookies.clear()
+                    for cookie in driver.get_cookies():
+                        s.cookies.set(cookie['name'], cookie['value'])
+                    print(f"    -> Cookies re-synced for requests session. Current URL: {driver.current_url}")
                     
-                    if not scrape_targets:
+                    # Re-capture Web Session ID if it changed
+                    match = re.search(r"SessionId=([a-zA-Z0-9]+)", driver.current_url)
+                    if match:
+                         web_session_id = match.group(1)
+                         print(f"    -> Web Session ID re-captured: {web_session_id}")
+                    else:
+                         print(f"    -> Warning: Could not re-capture Web Session ID from URL after switch.")
+
+                    # Discovery of Reporting Categories via JS - AGGRESSIVE
+                    js_discovery = """
+                    var results = [];
+                    // Look for ANY label that might be a category
+                    var labels = document.querySelectorAll('label.ssRadioLabel, label[for^="rcReportingCategory"]');
+                    labels.forEach(function(l) {
+                        var inp = document.getElementById(l.getAttribute('for')) || document.querySelector('input[name="rcRC"][id="' + l.getAttribute('for') + '"]');
+                        if (inp && !results.some(x => x.value === inp.value)) {
+                            results.push({label: l.innerText.trim(), value: inp.value});
+                        }
+                    });
+                    
+                    // Fallback: search all inputs directly
+                    if (results.length === 0) {
+                        var radios = document.querySelectorAll('input[name="rcRC"], input[id^="rcReportingCategory"]');
+                        radios.forEach(function(r) {
+                            var label = document.querySelector('label[for="' + r.id + '"]');
+                            results.push({label: label ? label.innerText.trim() : "Unknown", value: r.value});
+                        });
+                    }
+                    return results;
+                    """
+                    js_results = driver.execute_script(js_discovery)
+                    
+                    scrape_targets = []
+                    if js_results:
+                        print(f"    -> Discovered {len(js_results)} categories via JS")
+                        for item in js_results:
+                            rc_label = item['label']
+                            rc_id = item['value']
+                            if rc_label.upper() == "ALL" and len(js_results) > 1:
+                                continue
+                            scrape_targets.append((rc_label, rc_id))
+                    else:
+                        print(f"    -> Info: No category filters found.")
+                        if "Provincial 2" in group_name:
+                            ss_name = f"debug_p2_failure_{comp_session_id}.png"
+                            driver.save_screenshot(ss_name)
+                            print(f"    -> Saved debug screenshot for Provincial 2: {ss_name}")
                         scrape_targets = [("Session_Overall", "0")]
 
                     for rc_label, rc_id in scrape_targets:
-                        # Fetch the data
-                        # Normalize 'All Around' synonyms
-                        clean_rc_label = rc_label.replace('AllAround', 'All Around').replace('AllAround', 'All Around')
+                        # Normalization
+                        clean_rc_label = rc_label.replace('AllAround', 'All Around')
                         safe_rc_name = re.sub(r'[\s/\\:*?"<>|]+', '_', clean_rc_label).strip().replace('__', '_')
                         
-                        print(f"    -> Fetching Category: {rc_label} (ID: {rc_id})")
+                        print(f"    -> Processing: {rc_label} (ID: {rc_id})")
                         
-                        data_url = f"{base_data_url}?{base_data_url_param}={comp_session_id}&SessionId={web_session_id}&ReportingCategory={rc_id}&ReportOnly=1"
+                        # FETCH DATA VIA REQUESTS
+                        # CRITICAL FIX: Do NOT include SelectSession/ResultsForSessionId when fetching a specific category.
+                        # Including it resets the filter to "All". The session is already active from the switching step.
+                        if rc_id != "0":
+                            ajax_url = f"{base_data_url}?ReportingCategory={rc_id}&SessionId={web_session_id}&ReportOnly=1"
+                        else:
+                            # For "Session Overall" (ID 0) or if we need to force the session view
+                            ajax_url = f"{base_data_url}?{base_data_url_param}={comp_session_id}&SessionId={web_session_id}&ReportingCategory={rc_id}&ReportOnly=1"
                         
-                        driver.get(data_url)
-                        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
-                        json_text = driver.find_element(By.TAG_NAME, 'pre').text
-                        data = json.loads(json_text)
-                        decoded_html = html.unescape(data['html'])
-                        results_soup = BeautifulSoup(decoded_html, 'html.parser')
-                    table_wrappers = results_soup.find_all('div', class_='resultsTableWrapper')
+                        try:
+                            resp = s.get(ajax_url, timeout=15)
+                            data = resp.json()
+                            decoded_html = html.unescape(data['html'])
+                            results_soup = BeautifulSoup(decoded_html, 'html.parser')
+                            
+                            table_wrappers = results_soup.find_all('div', class_='resultsTableWrapper')
+                            if not table_wrappers:
+                                 single_table = results_soup.find('table', id='sessionEventResults')
+                                 if single_table:
+                                     dummy_wrapper = results_soup.new_tag("div")
+                                     dummy_wrapper.append(single_table)
+                                     table_wrappers = [dummy_wrapper]
 
-                    # If no wrappers found, try to find table directly (fallback for simpler pages)
-                    if not table_wrappers:
-                         single_table = results_soup.find('table', id='sessionEventResults')
-                         if single_table:
-                             # Wrap it to reuse the loop logic
-                             dummy_wrapper = results_soup.new_tag("div")
-                             dummy_wrapper.append(single_table)
-                             table_wrappers = [dummy_wrapper]
+                            tables_in_group_counter = 1
+                            for wrapper in table_wrappers:
+                                age_group = "N/A"
+                                title_element = wrapper.select_one(".resultsTitle .rpSubTitle")
+                                if title_element:
+                                    title_text = title_element.get_text(strip=True)
+                                    age_group = title_text.replace('(Age Group:', '').replace(')', '').strip()
 
-                    tables_in_group_counter = 1
-                    for wrapper in table_wrappers:
-                        # Extract Age Group or Level info from wrappers if present
-                        age_group = "N/A"
-                        title_element = wrapper.select_one(".resultsTitle .rpSubTitle")
-                        if title_element:
-                            title_text = title_element.get_text(strip=True)
-                            if 'Age Group:' in title_text:
-                                age_group = title_text.replace('(Age Group:', '').replace(')', '').strip()
-                            else:
-                                age_group = title_text
+                                table_element = wrapper.find('table', id='sessionEventResults') or wrapper.find('table')
+                                if table_element:
+                                    df_list = pd.read_html(io.StringIO(str(table_element)))
+                                    if df_list:
+                                        df = df_list[0].copy()
+                                        df['Group'] = group_name
+                                        df['Meet'] = meet_name
+                                        df['Age_Group'] = age_group
+                                        df['Reporting_Category'] = rc_label
+                                        
+                                        safe_group_name = re.sub(r'[\s/\\:*?"<>|]+', '_', group_name)
+                                        safe_age_group = re.sub(r'[\s/\\:*?"<>|]+', '_', age_group)
+                                        
+                                        filename = f"{meet_id_for_filename}_MESSY_{safe_group_name}_{safe_age_group}_{safe_rc_name}_{tables_in_group_counter}.csv"
+                                        df.to_csv(os.path.join(output_directory, filename), index=False)
+                                        print(f"    -> Saved: {filename}")
+                                        total_files_saved += 1
+                                        tables_in_group_counter += 1
+                        except Exception as ajax_err:
+                            print(f"    -> AJAX Error for {rc_label}: {ajax_err}")
 
-                        table_element = wrapper.find('table', id='sessionEventResults') 
-                        if not table_element:
-                            table_element = wrapper.find('table') # Final fallback
-
-                        if table_element:
-                            df_list = pd.read_html(io.StringIO(str(table_element)))
-                            if df_list:
-                                df = df_list[0].copy()
-                                df['Group'] = group_name
-                                df['Meet'] = meet_name
-                                df['Age_Group'] = age_group
-                                df['Reporting_Category'] = rc_label
-                                
-                                # Sanitize for filename
-                                safe_group_name = re.sub(r'[\s/\\:*?"<>|]+', '_', group_name)
-                                safe_age_group = re.sub(r'[\s/\\:*?"<>|]+', '_', age_group)
-                                safe_rc_name = re.sub(r'[\s/\\:*?"<>|]+', '_', rc_label)
-                                
-                                filename = f"{meet_id_for_filename}_MESSY_{safe_group_name}_{safe_age_group}_{safe_rc_name}_{tables_in_group_counter}.csv"
-                                full_path = os.path.join(output_directory, filename)
-                                
-                                df.to_csv(full_path, index=False)
-                                print(f"    -> Saved table: {filename}")
-                                total_files_saved += 1
-                                tables_in_group_counter += 1
                 except Exception as e:
                     print(f"  -> Error processing '{group_name}': {e}")
                     continue
