@@ -508,21 +508,8 @@ def get_or_create_person(conn, full_name, gender, cache):
         cache[full_name] = person_id
         return person_id
 
-    # 3. Check for flipped name match (e.g. "Smith John" -> "John Smith")
-    words = full_name.split()
-    if len(words) == 2:
-        flipped_name = f"{words[1]} {words[0]}"
-        cursor.execute("SELECT person_id FROM Persons WHERE full_name = ?", (flipped_name,))
-        result = cursor.fetchone()
-        if result:
-            person_id = result[0]
-            # Create alias for the current name pointing to the existing canonical person
-            print(f"  [Alias Match] Mapping '{full_name}' to existing person '{flipped_name}'")
-            cursor.execute("INSERT INTO PersonAliases (alias_name, canonical_person_id) VALUES (?, ?)", (full_name, person_id))
-            cache[full_name] = person_id
-            return person_id
-
-    # 4. Create new person if no match found
+    # 3. Create new person if no match found
+    # (Automatic flipping removed to ensure manual verification via audit/apply scripts)
     cursor.execute("INSERT INTO Persons (full_name, gender) VALUES (?, ?)", (full_name, gender))
     person_id = cursor.lastrowid
     
