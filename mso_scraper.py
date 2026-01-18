@@ -22,7 +22,7 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 def setup_driver():
     options = Options()
-    # options.add_argument("--headless")  # Comment out for visual debugging if needed
+    options.add_argument("--headless")  # Run in headless mode
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--window-size=1920,1080")
