@@ -4,8 +4,12 @@ import pandas as pd
 import os
 import glob
 import traceback
+import os
+import glob
+import traceback
 import json
 import re
+import argparse
 
 # --- Import shared functions ---
 from etl_functions import (
@@ -154,9 +158,14 @@ def parse_cell_value(cell_str):
     
     return score_final, None, rank_numeric, rank_text, None
 
-def process_mso_files(meet_manifest, club_alias_map):
-    print("\n--- Starting to process MSO result files ---")
-    csv_files = glob.glob(os.path.join(MSO_CSVS_DIR, "*_mso.csv"))
+def process_mso_files(meet_manifest, club_alias_map, sample_rate=1):
+    print(f"\n--- Starting to process MSO result files (Sample Rate: {sample_rate}) ---")
+    search_pattern = os.path.join(MSO_CSVS_DIR, "*_mso.csv")
+    csv_files = glob.glob(search_pattern)
+    csv_files.sort()
+    
+    if sample_rate > 1:
+        csv_files = csv_files[::sample_rate]
     if not csv_files:
         print(f"Warning: No result files found in '{MSO_CSVS_DIR}'.")
         return
@@ -342,9 +351,26 @@ def main():
     if not os.path.exists(DB_FILE):
         print(f"Database {DB_FILE} not found.")
         return
+
+    parser = argparse.ArgumentParser(description="Load MSO data into the database.")
+    parser.add_argument("--sample", type=int, default=1, help="Process every Nth file (e.g. 10)")
+    parser.add_argument("--file", type=str, help="Process a single specific file")
+    args = parser.parse_args()
+
     club_aliases = load_club_aliases()
     meet_manifest = load_meet_manifest(MSO_MANIFEST_FILE)
-    process_mso_files(meet_manifest, club_aliases)
+    
+    if args.file:
+        with sqlite3.connect(DB_FILE) as conn:
+            person_cache = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
+            club_cache = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
+            athlete_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
+            apparatus_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT apparatus_id, name, discipline_id FROM Apparatus").fetchall()}
+            meet_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
+            parse_mso_file(args.file, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_aliases)
+    else:
+        process_mso_files(meet_manifest, club_aliases, sample_rate=args.sample)
+        
     print("\n--- MSO data loading finished ---")
 
 if __name__ == "__main__":

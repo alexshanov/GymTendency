@@ -2,8 +2,9 @@ import os
 import subprocess
 import sys
 import time
+import argparse
 
-def run_script(script_name):
+def run_script(script_name, args=None):
     """
     Runs a python script and waits for it to finish.
     """
@@ -11,8 +12,12 @@ def run_script(script_name):
     print(f"🚀 RUNNING: {script_name}")
     print(f"{'='*60}\n")
     
+    cmd = [sys.executable, script_name]
+    if args:
+        cmd.extend(args)
+        
     start_time = time.time()
-    result = subprocess.run([sys.executable, script_name], capture_output=False)
+    result = subprocess.run(cmd, capture_output=False)
     end_time = time.time()
     
     duration = end_time - start_time
@@ -28,22 +33,26 @@ def main():
     print("--- 🏋️‍♂️ GYM TENDENCY DATA PIPELINE ORCHESTRATOR 🏋️‍♀️ ---")
     print("This script will run all data loaders and refresh the analytics tables.")
     
+    parser = argparse.ArgumentParser(description="Run the GymTendency data pipeline.")
+    parser.add_argument("--sample", type=int, help="Process every Nth file for loaders (e.g. 10)")
+    args = parser.parse_args()
+    
     scripts = [
-        "create_db.py",
-        "kscore_load_data.py",
-        "livemeet_load_data.py",
-        "mso_load_data.py",
-        "create_gold_tables.py"
+        ("create_db.py", []),
+        ("kscore_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
+        ("livemeet_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
+        ("mso_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
+        ("create_gold_tables.py", [])
     ]
     
     overall_success = True
     
-    for script in scripts:
+    for script, script_args in scripts:
         if not os.path.exists(script):
             print(f"⚠️  WARNING: Script '{script}' not found. Skipping.")
             continue
             
-        if not run_script(script):
+        if not run_script(script, script_args):
             overall_success = False
             # We continue even if one fails, as they are mostly independent until gold tables
             

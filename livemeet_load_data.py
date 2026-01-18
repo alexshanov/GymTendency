@@ -7,6 +7,7 @@ import glob
 import traceback
 import json
 import re
+import argparse
 
 # --- Import shared functions from our new ETL library ---
 from etl_functions import (
@@ -52,14 +53,18 @@ def load_meet_manifest(manifest_file):
         print(f"Warning: Could not load Livemeet manifest. Meet details will be incomplete. Error: {e}")
         return {} 
 
-def process_livemeet_files(meet_manifest, club_alias_map):
+def process_livemeet_files(meet_manifest, club_alias_map, sample_rate=1):
     """
     Main function to find and process all Livemeet result CSV files.
     """
-    print("\n--- Starting to process Livemeet result files ---")
+    print(f"\n--- Starting to process Livemeet result files (Sample Rate: {sample_rate}) ---")
     
     search_pattern = os.path.join(LIVEMEET_CSVS_DIR, "*_FINAL_*.csv")
     csv_files = glob.glob(search_pattern)
+    csv_files.sort()
+    
+    if sample_rate > 1:
+        csv_files = csv_files[::sample_rate]
 
     if not csv_files:
         print(f"Warning: No result files found in '{LIVEMEET_CSVS_DIR}'.")
@@ -264,10 +269,24 @@ def main():
         print(f"Database {DB_FILE} not found. Please run create_db.py first.")
         return
 
+    parser = argparse.ArgumentParser(description="Load Livemeet data into the database.")
+    parser.add_argument("--sample", type=int, default=1, help="Process every Nth file (e.g. 10)")
+    parser.add_argument("--file", type=str, help="Process a single specific file")
+    args = parser.parse_args()
+
     club_aliases = load_club_aliases()
     meet_manifest = load_meet_manifest(MEET_MANIFEST_FILE)
     
-    process_livemeet_files(meet_manifest, club_aliases)
+    if args.file:
+        with sqlite3.connect(DB_FILE) as conn:
+            person_cache = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
+            club_cache = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
+            athlete_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
+            apparatus_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT apparatus_id, name, discipline_id FROM Apparatus").fetchall()}
+            meet_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
+            parse_livemeet_file(args.file, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_aliases)
+    else:
+        process_livemeet_files(meet_manifest, club_aliases, sample_rate=args.sample)
     
     print("\n--- Livemeet data loading script finished ---")
 
