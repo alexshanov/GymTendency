@@ -462,7 +462,7 @@ def fix_and_standardize_headers(input_filename, output_filename):
 if __name__ == "__main__":
     
     # --- CONFIGURATION ---
-    MEET_IDS_CSV = "problem_meet.csv"
+    MEET_IDS_CSV = "discovered_meet_ids_livemeet.csv"
     MESSY_FOLDER = "CSVs_Livemeet_messy"
     FINAL_FOLDER = "CSVs_Livemeet_final" 
     BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
