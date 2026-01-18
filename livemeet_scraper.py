@@ -58,8 +58,14 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             # Step 1: Wait for page content and check if results are available
             WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             
-            # Check for "disabled results" message
-            if "Host has disabled public viewing of Results" in driver.page_source:
+            # Check for "disabled results" variants
+            page_text = driver.page_source
+            disabled_markers = [
+                "Host has disabled public viewing of Results",
+                "Results Reporting to the public are disabled",
+                "Results are not available to the public"
+            ]
+            if any(marker in page_text for marker in disabled_markers):
                 print(f"--> SKIPPING MEET: Results are disabled by the host for ID {meet_id_for_filename}.")
                 return 0, None
 
@@ -100,11 +106,12 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             if not sessions_to_scrape:
                 print("--> INFO: No session-based results found in 'FilterPanel'. Falling back to level-based search (Plan B).")
                 # Switch back to "Results by Level" tab if possible
-                if driver.execute_script("return typeof document.Tournament !== 'undefined' && typeof gotoSubTab === 'function';"):
+                can_switch_level = driver.execute_script("return typeof gotoSubTab === 'function';")
+                if can_switch_level:
                     driver.execute_script("gotoSubTab('D')")
                     time.sleep(3) # Wait for sidebar to refresh
                 else:
-                    print("  -> Skipping SubTab switch: required JS objects undefined.")
+                    print("  -> Skipping fallback SubTab switch: 'gotoSubTab' undefined.")
                 
                 html_content = driver.page_source
                 soup = BeautifulSoup(html_content, 'html.parser')
@@ -158,7 +165,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                     start_time = time.time()
                     while time.time() - start_time < 20: # Try for up to 20 seconds
                         try:
-                            # 1. Attempt to Click Element
+                            # Try Method 1: Click the actual sidebar element (most natural click)
                             try:
                                 elem = driver.find_element(By.ID, comp_session_id)
                                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
@@ -166,10 +173,14 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 print("    -> Switched via element click")
                                 switch_success = True
                             except Exception:
-                                # 2. Fallback to JS
-                                driver.execute_script(f"{report_func}('{comp_session_id}');")
-                                print("    -> Switched via JS call")
-                                switch_success = True
+                                # 2. Fallback to JS (Safe execution)
+                                js_check = f"return typeof {report_func} === 'function';"
+                                if driver.execute_script(js_check):
+                                    driver.execute_script(f"{report_func}('{comp_session_id}');")
+                                    print(f"    -> Switched via JS call ({report_func})")
+                                    switch_success = True
+                                else:
+                                    print(f"    -> JS Switch Failure: '{report_func}' is undefined.")
                             
                             if switch_success:
                                 time.sleep(5) # Critical wait for server state update
@@ -451,7 +462,7 @@ def fix_and_standardize_headers(input_filename, output_filename):
 if __name__ == "__main__":
     
     # --- CONFIGURATION ---
-    MEET_IDS_CSV = "discovered_meet_ids_livemeet.csv"
+    MEET_IDS_CSV = "problem_meet.csv"
     MESSY_FOLDER = "CSVs_Livemeet_messy"
     FINAL_FOLDER = "CSVs_Livemeet_final" 
     BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
