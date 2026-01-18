@@ -184,26 +184,47 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
         
     meet_db_id = get_or_create_meet(conn, 'mso', source_meet_id, meet_details, meet_cache)
     
-    # Identify Columns
-    # Map raw headers to internal keys
-    # Keys found in this CSV
-    found_map = {} # raw_col -> internal_key
+    # --- MSO DATA LOADING LOGIC (Dynamic) ---
+    
+    # Identify Apparatus Columns based on the map
+    # We still use the map just to identify "Is this an apparatus?"
+    # But for metadata, we export everything else.
+    
+    col_map = {} 
+    # Use lowercase matching for resilience
+    for col in df.columns:
+        clean = col.strip().upper() # MSO HEADERS ARE OFTEN ALL CAPS
+        # But our key map is case sensitive keys? "Gymnast" vs "GYMNAST"
+        # Let's map strict if possible.
+        col_map[col] = col # Default to self
+
+    # Helper to find core identity columns
+    def find_col_by_fuzzy(candidates):
+        for c in df.columns:
+            if c.upper().strip() in [cand.upper() for cand in candidates]:
+                return c
+        return None
+
+    name_col = find_col_by_fuzzy(['Gymnast', 'Name'])
+    club_col = find_col_by_fuzzy(['Team', 'Club'])
+    
+    if not name_col:
+        print(f"  Skipping {filename}: No Name column identified.")
+        return
+
+    # Identify Apparatus columns using our known map
     apparatus_cols = []
+    dynamic_metadata_cols = []
+    
+    known_apparatus_keys = ['Vault', 'Uneven Bars', 'Beam', 'Floor', 'AllAround', 'Pommel Horse', 'Rings', 'Parallel Bars', 'High Bar']
     
     for col in df.columns:
-        norm_col = col.strip()
-        if norm_col in COLUMN_MAP:
-            internal = COLUMN_MAP[norm_col]
-            found_map[col] = internal
-            # Identify apparatus columns (those in map that are strictly apparatus)
-            if internal in ['Vault', 'Uneven Bars', 'Beam', 'Floor', 'AllAround', 'Pommel Horse', 'Rings', 'Parallel Bars', 'High Bar']:
-                apparatus_cols.append(col)
-        # Check fallback for Name/Club if exact match failed
-        elif 'gymnast' in norm_col.lower() or 'name' in norm_col.lower():
-            found_map[col] = 'Name'
-        elif 'team' in norm_col.lower() or 'club' in norm_col.lower():
-            found_map[col] = 'Club'
-    
+        norm_key = COLUMN_MAP.get(col.strip(), col)
+        if norm_key in known_apparatus_keys:
+            apparatus_cols.append(col)
+        elif col not in [name_col, club_col]:
+             dynamic_metadata_cols.append(col)
+
     # Determine Discipline
     # If we found MAG-specific apparatus, it's MAG.
     detected_apparatus_names = [COLUMN_MAP.get(c.strip(), c) for c in apparatus_cols]
@@ -216,20 +237,25 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
         gender_heuristic = 'F'
         print(f"  {filename}: Detected WAG")
 
-    # Find core columns in this specific file
-    name_col = next((k for k, v in found_map.items() if v == 'Name'), None)
-    club_col = next((k for k, v in found_map.items() if v == 'Club'), None)
-    level_col = next((k for k, v in found_map.items() if v == 'Level'), None)
-    
-    if not name_col:
-        print(f"  Skipping {filename}: No Name column identified.")
-        return
-
+    # Dynamic Schema Check
+    from etl_functions import sanitize_column_name, ensure_column_exists, check_duplicate_result, validate_score, standardize_score_status
     cursor = conn.cursor()
+    
+    dynamic_mapping = [] # (raw_col, safe_col_name)
+    for raw_col in dynamic_metadata_cols:
+        # Check if we should ignore standard ones that we handle explicitly elsewhere?
+        # Actually, for MSO we want ALL metadata (SESS, LVL, DIV) to go into columns.
+        
+        # Now relies on column_aliases.json via etl_functions.py
+        safe_name = sanitize_column_name(raw_col)
+        
+        ensure_column_exists(cursor, 'Results', safe_name, 'TEXT')
+        dynamic_mapping.append((raw_col, safe_name))
+
     results_inserted = 0
     
     for index, row in df.iterrows():
-        # 1. Athlete & Club
+        # 1. Identity
         raw_name = row.get(name_col)
         person_name = standardize_athlete_name(raw_name)
         if not person_name: continue
@@ -239,68 +265,53 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
         raw_club = row.get(club_col) if club_col else ""
         club_name = standardize_club_name(raw_club, club_alias_map)
         club_id = get_or_create_club(conn, club_name, club_cache)
-        
         athlete_id = get_or_create_athlete_link(conn, person_id, club_id, athlete_cache)
         
-        # 2. Metadata
-        level_val = row.get(level_col) if level_col else None
-        
-        # Build Details JSON from other known columns
-        details_dict = {}
-        for col, internal_key in found_map.items():
-            if internal_key in ['Session', 'Age_Group'] and row.get(col):
-                details_dict[internal_key] = row.get(col)
-        
-        # Also grab any unmapped columns that look useful? (Skip for now to keep clean)
-        details_json = json.dumps(details_dict)
-        
-        # 3. Process Apparatus Results
+        # 2. Extract Metadata
+        dynamic_vals = {}
+        for r_col, s_col in dynamic_mapping:
+            val = row.get(r_col)
+            if val: dynamic_vals[s_col] = str(val)
+            
+        # 3. Process Apparatus
         for raw_app_col in apparatus_cols:
             cell_value = row.get(raw_app_col)
             if not cell_value: continue
             
             clean_app_name = COLUMN_MAP.get(raw_app_col.strip())
-            
-            # Get apparatus ID
             app_key = (clean_app_name, discipline_id)
-            if app_key not in apparatus_cache:
-                app_key = (clean_app_name, 99) # Fallback / Shared
+            if app_key not in apparatus_cache: app_key = (clean_app_name, 99)
+            if app_key not in apparatus_cache: continue
             
-            if app_key not in apparatus_cache:
-                continue
-                
             apparatus_id = apparatus_cache[app_key]
             
-            # Parse Score
             score, d_score, rank_num, rank_txt = parse_cell_value(cell_value)
+            if score is None and rank_num is None: continue
             
-            if score is None and rank_num is None: # Empty or invalid
-                continue
-                
-            # Deduplicate
-            from etl_functions import check_duplicate_result, validate_score, standardize_score_status
-            if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id):
-                continue
-                
-            # Validate
+            if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
+            
             is_valid, warning = validate_score(score, d_score, clean_app_name)
             if warning: print(f"    Warning ({person_name} - {clean_app_name}): {warning}")
             
-            cursor.execute("""
-                INSERT INTO Results (
-                    meet_db_id, athlete_id, apparatus_id, gender,
-                    level, score_d, score_final,
-                    rank_numeric, rank_text, details_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                meet_db_id, athlete_id, apparatus_id, gender_heuristic,
-                level_val, d_score, score,
-                rank_num, rank_txt, details_json
-            ))
+            # Dynamic INSERT
+            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_d', 'score_final', 'rank_numeric', 'rank_text']
+            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, d_score, score, rank_num, rank_txt]
+            
+            for k, v in dynamic_vals.items():
+                cols.append(k)
+                vals.append(v)
+                
+            placeholders = ', '.join(['?'] * len(cols))
+            # Quote all column names
+            quoted_cols = [f'"{c}"' for c in cols]
+            col_str = ', '.join(quoted_cols)
+            
+            sql = f"INSERT INTO Results ({col_str}) VALUES ({placeholders})"
+            cursor.execute(sql, vals)
             results_inserted += 1
             
     conn.commit()
-    print(f"  Inserted {results_inserted} results from {filename}")
+    print(f"  Inserted {results_inserted} results from {filename} (Dynamic Schema)")
 
 def main():
     if not os.path.exists(DB_FILE):

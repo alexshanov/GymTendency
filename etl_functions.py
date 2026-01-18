@@ -105,6 +105,69 @@ def detect_country(location=None, source=None, meet_name=None):
 
 
 
+def load_column_aliases(filepath="column_aliases.json"):
+    """
+    Loads column aliases from a JSON file.
+    """
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        print(f"Error: Could not parse '{filepath}'.")
+        return {}
+
+# Load on module import
+COLUMN_ALIASES = load_column_aliases()
+
+def sanitize_column_name(col_name):
+    """
+    Sanitizes a raw column name to be SQL-safe (snake_case).
+    Checks centralized alias map first.
+    Example: "Start Value" -> "start_value", "Sess" -> "session"
+    """
+    if not col_name: return "col_unknown"
+    
+    # 1. Check strict alias map first
+    raw_key = str(col_name).strip()
+    if raw_key in COLUMN_ALIASES:
+        return COLUMN_ALIASES[raw_key]
+        
+    # 2. Check case-insensitive alias map
+    # (Pre-computing this ideally, but doing it here for simplicity)
+    for alias_key, target in COLUMN_ALIASES.items():
+        if alias_key.lower() == raw_key.lower():
+            return target
+
+    # 3. Standard sanitation
+    clean = raw_key.lower()
+    clean = clean.replace('#', 'num').replace('%', 'pct')
+    clean = re.sub(r'[^a-z0-9]+', '_', clean)
+    clean = clean.strip('_')
+    return clean if clean else "col_unknown"
+
+def ensure_column_exists(cursor, table_name, column_name, col_type='TEXT'):
+    """
+    Checks if a column exists in the table. If not, adds it dynamically.
+    Returns True if column was added or already exists.
+    """
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    columns = [info[1] for info in cursor.fetchall()]
+    
+    if column_name not in columns:
+        print(f"  -> Schema Evolution: Adding column '{column_name}' to '{table_name}'")
+        try:
+            # SQLite does not support adding columns safely inside a transaction if it's potentially locked,
+            # but usually allowed. ALTER TABLE ADD COLUMN is atomic in newer SQLite.
+            # Quote the identifier to handle reserved words like "group" or "order"
+            cursor.execute(f'ALTER TABLE {table_name} ADD COLUMN "{column_name}" {col_type}')
+            return True
+        except Exception as e:
+            print(f"  -> Error adding column {column_name}: {e}")
+            return False
+    return True
+
 def setup_database(db_file):
     """
     Creates the new, professional database schema with Persons, Clubs,

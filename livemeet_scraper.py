@@ -213,23 +213,9 @@ def fix_and_standardize_headers(input_filename, output_filename):
             j += 1
 
     # --- APPARATUS NAME MAPPING ---
-    apparatus_map = {
-        'All_Around': 'AllAround',
-        'All-Around': 'AllAround',
-        'Balance_Beam': 'Beam'
-    }
-
-    # Map the headers based on the map above
-    mapped_header = []
-    for col in clean_header:
-        if col.startswith("Result_"):
-            parts = col.split('_')
-            event_name_in_col = "_".join(parts[1:-1])
-            suffix = parts[-1]
-            mapped_event = apparatus_map.get(event_name_in_col, event_name_in_col)
-            mapped_header.append(f"Result_{mapped_event}_{suffix}")
-        else:
-            mapped_header.append(col)
+    # User Request: "Scrape as is". 
+    # Do not normalize 'Balance_Beam' to 'Beam'.
+    mapped_header = clean_header # Pass through logic removed
 
     if len(mapped_header) != data_df.shape[1]:
         print(f"Error: Final header length ({len(mapped_header)}) doesn't match data columns ({data_df.shape[1]}).")

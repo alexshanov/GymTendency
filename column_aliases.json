@@ -1,0 +1,16 @@
+{
+    "Group": "group",
+    "Squad": "group",
+    "Session": "session",
+    "Sess": "session",
+    "Lvl": "level",
+    "Level": "level",
+    "Div": "age_group",
+    "Division": "age_group",
+    "Age Group": "age_group",
+    "Prov": "province",
+    "Province": "province",
+    "Execution Bonus": "execution_bonus",
+    "Exec Bonus": "execution_bonus",
+    "Bonus": "bonus"
+}

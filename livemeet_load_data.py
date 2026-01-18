@@ -105,111 +105,119 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
     discipline_id, discipline_name, gender_heuristic = detect_discipline(df)
     print(f"  Detected Discipline: {discipline_name}")
 
-    core_column = 'Name'
-    result_columns = [col for col in df.columns if col.startswith('Result_')]
-    
-    # Define columns to EXCLUDE from the details_json bag
-    service_columns = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
-    dynamic_columns = [col for col in df.columns if col not in service_columns and not col.startswith('Result_')]
-    
-    event_bases = {}
-    for col in result_columns:
-        match = re.search(r'Result_(.*)_(Score|D)$', col)
-        if match:
-            raw_event_name = match.group(1).replace('_', ' ')
-            if raw_event_name not in event_bases: event_bases[raw_event_name] = raw_event_name.replace(' ', '_')
+    # --- KEY MAPPING FOR IDS ---
+    KEY_MAP = {
+        'Name': 'Name', 'Athlete': 'Name',
+        'Club': 'Club', 'Team': 'Club',
+        'Level': 'Level',
+        'Age': 'Age',
+        'Prov': 'Prov',
+        'Meet': 'Meet',
+        'Group': 'Group',
+        'Age_Group': 'Age_Group'
+    }
 
+    col_map = {col: KEY_MAP.get(col, col) for col in df.columns}
+    name_col = next((c for c, v in col_map.items() if v == 'Name'), None)
+    
+    if not name_col:
+        print(f"Skipping file: No Name column identified.")
+        return
+
+    from etl_functions import sanitize_column_name, ensure_column_exists
+    from etl_functions import check_duplicate_result, validate_score, standardize_score_status
+
+    cursor = conn.cursor()
     athletes_processed = 0
     results_inserted = 0
-    cursor = conn.cursor()
+
+    # Identify apparatus triplets
+    result_columns = [col for col in df.columns if col.startswith('Result_')]
+    event_bases = {}
+    for col in result_columns:
+        match = re.search(r'Result_(.*)_(Score|D|Rnk)$', col)
+        if match:
+            raw_event_name = match.group(1)
+            event_bases[raw_event_name] = raw_event_name
+
+    # Identify Dynamic Columns
+    ignore_cols = list(event_bases.keys()) + result_columns + [name_col]
+    if 'Club' in df.columns: ignore_cols.append('Club')
+    
+    dynamic_cols_to_add = []
+    for col in df.columns:
+        if col not in ignore_cols and not col.startswith('Result_'):
+            sanitized = sanitize_column_name(col)
+            ensure_column_exists(cursor, 'Results', sanitized, 'TEXT')
+            dynamic_cols_to_add.append((col, sanitized))
 
     for index, row in df.iterrows():
-        # --- NEW LOGIC FOR ATHLETE/PERSON/CLUB ---
-        
-        # 1. Standardize the name
-        person_name = standardize_athlete_name(row.get(core_column))
-        if not person_name:
-            print(f"Warning: Skipping row {index+2} due to invalid or empty athlete name.")
-            continue
-            
+        # 1. Identity
+        raw_name = row.get(name_col)
+        person_name = standardize_athlete_name(raw_name)
+        if not person_name: continue
         athletes_processed += 1
         
-        # 2. Get the unique Person ID
         person_id = get_or_create_person(conn, person_name, gender_heuristic, person_cache)
         
-        # 3. Standardize the club name and get the unique Club ID
-        club_name = standardize_club_name(row.get('Club'), club_alias_map)
+        raw_club = row.get('Club', '')
+        club_name = standardize_club_name(raw_club, club_alias_map)
         club_id = get_or_create_club(conn, club_name, club_cache)
-        
-        # 4. Get the unique Athlete ID that links this Person and Club
         athlete_id = get_or_create_athlete_link(conn, person_id, club_id, athlete_cache)
         
-        # --- END OF NEW LOGIC ---
+        # 2. Extract Dynamic Values for this row
+        dynamic_values = {}
+        for raw_col, safe_col in dynamic_cols_to_add:
+            val = row.get(raw_col)
+            if val: dynamic_values[safe_col] = str(val)
 
-        details_dict = {col: val for col, val in row[dynamic_columns].items() if val}
-        details_json = json.dumps(details_dict)
-        
-        for clean_name, raw_name in event_bases.items():
-            apparatus_key = (clean_name, discipline_id)
-            if apparatus_key not in apparatus_cache: apparatus_key = (clean_name, 99) 
-            if apparatus_key not in apparatus_cache: continue
+        # 3. Process Apparatus (Pivot)
+        for raw_event, _ in event_bases.items():
+            clean_name = raw_event.replace('_', ' ')
+            if clean_name == "Balance Beam": clean_name = "Beam" # Small normalization for matching ID
             
-            apparatus_id = apparatus_cache[apparatus_key]
-            d_col, score_col, rank_col = f'Result_{raw_name}_D', f'Result_{raw_name}_Score', f'Result_{raw_name}_Rnk'
-            d_val, score_val, rank_val = row.get(d_col), row.get(score_col), row.get(rank_col)
+            app_key = (clean_name, discipline_id)
+            if app_key not in apparatus_cache:
+                 app_key = (raw_event, discipline_id)
+            if app_key not in apparatus_cache: app_key = (clean_name, 99) 
+            
+            if app_key not in apparatus_cache: 
+                continue
+            
+            apparatus_id = apparatus_cache[app_key]
+            
+            # Extract Triplet
+            d_val = row.get(f'Result_{raw_event}_D')
+            score_val = row.get(f'Result_{raw_event}_Score')
+            rank_val = row.get(f'Result_{raw_event}_Rnk')
+            
+            if not score_val and not d_val: continue
             
             score_numeric = pd.to_numeric(score_val, errors='coerce')
-            score_text = None if pd.notna(score_numeric) else (str(score_val) if score_val else None)
             d_numeric = pd.to_numeric(d_val, errors='coerce')
+            rank_numeric = pd.to_numeric(rank_val, errors='coerce')
             
-            rank_numeric, rank_text = None, None
-            if rank_val:
-                temp_rank_num = pd.to_numeric(rank_val, errors='coerce')
-                if pd.notna(temp_rank_num): rank_numeric = int(temp_rank_num)
-                else:
-                    rank_text = str(rank_val)
-                    cleaned_rank_str = re.sub(r'\D', '', str(rank_val))
-                    if cleaned_rank_str: rank_numeric = int(cleaned_rank_str)
+            if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
-            # --- EXTRACT NEW STANDARD FIELDS ---
-            level_val = row.get('Level')
-            age_raw = row.get('Age')
-            prov_val = row.get('Prov')
+            # Dynamic INSERT Construction
+            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric']
+            vals = [meet_db_id, athlete_id, apparatus_id, gender_heuristic, score_numeric, d_numeric, rank_numeric]
             
-            age_numeric = pd.to_numeric(age_raw, errors='coerce') if age_raw else None
-
-            # --- DUPLICATE DETECTION ---
-            from etl_functions import check_duplicate_result, validate_score, standardize_score_status
-            existing_result = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id)
-            if existing_result:
-                continue  # Skip duplicate
+            for col_name, col_val in dynamic_values.items():
+                cols.append(col_name)
+                vals.append(col_val)
+                
+            placeholders = ', '.join(['?'] * len(cols))
+            # Quote all column names
+            quoted_cols = [f'"{c}"' for c in cols]
+            col_str = ', '.join(quoted_cols)
             
-            # --- SCORE VALIDATION ---
-            is_valid, warning = validate_score(score_numeric, d_numeric, clean_name)
-            if warning:
-                print(f"    Warning for {person_name}/{clean_name}: {warning}")
-            
-            # --- STANDARDIZE STATUS CODES ---
-            score_text = standardize_score_status(score_text)
-
-            cursor.execute("""
-                INSERT INTO Results (
-                    meet_db_id, athlete_id, apparatus_id, gender,
-                    level, age, province,
-                    score_d, score_final, score_text, 
-                    rank_numeric, rank_text, details_json
-                ) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                meet_db_id, athlete_id, apparatus_id, gender_heuristic,
-                level_val, age_numeric, prov_val,
-                d_numeric, score_numeric, score_text, 
-                rank_numeric, rank_text, details_json
-            ))
+            sql = f"INSERT INTO Results ({col_str}) VALUES ({placeholders})"
+            cursor.execute(sql, vals)
             results_inserted += 1
             
     conn.commit()
-    print(f"  Processed {athletes_processed} athletes, inserting {results_inserted} result records.")
+    print(f"  Processed {athletes_processed} athletes, inserting {results_inserted} records (Dynamic Schema).")
 
 
 # ==============================================================================

@@ -49,20 +49,19 @@ def standardize_kscore_columns(html_content):
     # --- Step 2: Build the final, correct header list ---
     final_columns = []
     
-    # Standardize and add the info columns
-    info_column_rename_map = {'Athlete': 'Name', '#': 'Rank'}
-    final_columns.extend([info_column_rename_map.get(name, name) for name in info_headers_raw])
+    # Just take the raw headers. No renaming.
+    # User Request: "Scrape as is"
+    final_columns.extend(info_headers_raw)
     
-    # Apparatus Name Mapping for Consistency
-    apparatus_map = {
-        'Balance Beam': 'Beam',
-        'All Around': 'AllAround',
-        'All-Around': 'AllAround'
-    }
-
-    # Add the event triples
+    # Add the event triples (D/Score/Rnk)
+    # K-Score structure is consistent, so we can infer the structure but keep names close to raw if possible.
+    # However, the events come from alt tags.
+    # We will keep the 'Result_Event_Type' structure for the triples as it's structural, 
+    # but we won't rename the event names themselves (e.g. keep 'Balance Beam').
+    
     for event in event_names:
-        clean_event = apparatus_map.get(event, event).replace(' ', '_').replace('-', '_')
+        # Sanitize slightly for CSV header safety (no spaces) but don't normalize to "Beam"
+        clean_event = event.replace(' ', '_').replace('-', '_')
         final_columns.extend([f"Result_{clean_event}_D", f"Result_{clean_event}_Score", f"Result_{clean_event}_Rnk"])
 
     # --- Step 3: Extract VISIBLE data cells from the <tbody> ---

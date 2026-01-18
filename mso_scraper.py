@@ -29,7 +29,11 @@ def setup_driver():
     options.add_argument("--headless")  # Run in headless mode
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
+    # Anti-detection
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    options.add_argument("--disable-blink-features=AutomationControlled")
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     return driver
@@ -45,27 +49,41 @@ def select_combined_filter(driver, element_id):
     """
     try:
         # First try to find and click the hamburger menu if it's the first interaction
-        # The user image shows a three-dash menu icon that "activates this menu"
-        # Selector guess based on font-awesome icons or classes in HTML
+        # Browser check confirmed selector is 'a[href="#nav"]' or class based
         try:
-            hamburger = driver.find_element(By.CSS_SELECTOR, ".fa-bars, .fa-navicon, .hamburger, .menu-icon")
+            # Wait for hamburger to be present
+            hamburger = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href="#nav"], .fa-bars, .navbar-toggler'))
+            )
+            # hamburger = driver.find_element(By.CSS_SELECTOR, 'a[href="#nav"], .fa-bars, .navbar-toggler')
             if hamburger.is_displayed():
                 hamburger.click()
-                time.sleep(1)
+                time.sleep(1.0) # Short wait for menu expansion
+                print("  -> Clicked hamburger menu")
         except:
-            pass # Maybe not present or already open
+            # print("  -> Hamburger menu not found or not clickable (might be open)")
+            pass 
             
+        # Locate the select element (hidden or visible)
+        # Use simple ID presence as it might be hidden
+        # Wait for it to be present in DOM
         select_elem = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.ID, element_id))
         )
+        
+        # We need to interact with it differently if it's hidden or not
+        # But dispatching 'change' event to the element usually works for MSO
+        
         select = Select(select_elem)
         
         # Check if "---All" exists
         options = [o.get_attribute("value") for o in select.options]
+        # print(f"  -> Options for {element_id}: {options}") 
+        
         if ALL_OPTION_VALUE in options:
             select.select_by_value(ALL_OPTION_VALUE)
-            # Trigger change event for MSO ajax
-            driver.execute_script("arguments[0].dispatchEvent(new Event('change'))", select_elem)
+            # Critical: Dispatch change event for MSO ajax to trigger
+            driver.execute_script("arguments[0].dispatchEvent(new Event('change', { 'bubbles': true }));", select_elem)
             print(f"  -> Selected 'Combined' (---All) for #{element_id}")
             time.sleep(2) # Wait for AJAX reload
             return True
@@ -74,25 +92,67 @@ def select_combined_filter(driver, element_id):
             return False
             
     except Exception as e:
-        # It's okay if not found, some pages might not have it
+        print(f"  -> Filter error for {element_id}: {e}")
+        # Try JS Fallback
+        try:
+            print(f"  -> Attempting JS fallback for {element_id}")
+            js_code = f"""
+            var select = document.getElementById('{element_id}');
+            if (select) {{
+                var opts = Array.from(select.options);
+                var allOpt = opts.find(o => o.value == '{ALL_OPTION_VALUE}');
+                if (allOpt) {{
+                    select.value = '{ALL_OPTION_VALUE}';
+                    select.dispatchEvent(new Event('change', {{ 'bubbles': true }}));
+                    return true;
+                }}
+            }}
+            return false;
+            """
+            result = driver.execute_script(js_code)
+            if result:
+                print(f"  -> JS Fallback: Selected 'Combined' for #{element_id}")
+                time.sleep(2)
+                return True
+            else:
+                print(f"  -> JS Fallback: Failed (Element or Option not found)")
+        except Exception as js_e:
+            print(f"  -> JS Fallback Exception: {js_e}")
+
+        # Save screenshot for debugging if both failed
+        driver.save_screenshot(f"debug_error_{element_id}.png")
         return False
 
-
-def extract_table_raw(soup, meet_name):
+def extract_table_raw(driver, meet_name):
     """
     Extracts the updated table data as-is, preserving original headers.
     """
-    table = soup.find("table", class_="table")
+    try:
+        # Wait for the table to have rows
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "table.table tbody tr"))
+        )
+    except:
+        print("  -> DEBUG: Timeout waiting for table rows.")
+        # proceed to try extraction anyway, maybe it's just slow or different selector
+        
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+    
+    # Try multiple selectors for the table
+    table = soup.find("table", class_="table") 
     if not table:
+        table = soup.find("table") # Fallback to any table
+        
+    if not table:
+        print("  -> DEBUG: No <table> tag found in page source.")
         return None
 
     rows = table.find_all("tr")
     if not rows: 
+        print("  -> DEBUG: Table found but no <tr> rows.")
         return None
         
     # Extract headers
-    headers = []
-    # Sometimes header is in the first row <tr><th>...</th></tr>
     header_row = rows[0]
     cols = header_row.find_all(["th", "td"])
     headers = [clean_text(col.get_text()) for col in cols]
@@ -107,18 +167,6 @@ def extract_table_raw(soup, meet_name):
         
         for i, cell in enumerate(cells):
             if i < len(headers):
-                # For scores, we might want just text, or deeper parsing?
-                # User asked for columns "as presented".
-                # The cell text usually contains Rank, Score, D-score in spans.
-                # We will extract the FULL text representation for now, 
-                # or try to keep it cleaner if feasible. 
-                # MSO structure: <span class="place">2</span><sup>D</sup><span class="score">9.5</span>
-                # Text extraction might mash them: "2 D 9.5"
-                
-                # Let's try to be smart: extract the visible text carefully
-                # We'll rely on the loader to separate Rank/D/Score if they are mashed.
-                # But to be helpful, let's try to separate them with spaces if they aren't already.
-                
                 cell_text = cell.get_text(" ", strip=True) 
                 row_dict[headers[i]] = clean_text(cell_text)
                 
@@ -154,8 +202,8 @@ def process_meet(driver, meet_id, meet_name):
         time.sleep(2) # Final wait for table update
         
         # 3. Extract Raw Table
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        df = extract_table_raw(soup, meet_name)
+        # soup = BeautifulSoup(driver.page_source, "html.parser") # Handled inside extract_table_raw
+        df = extract_table_raw(driver, meet_name)
         
         if df is None or df.empty:
             print("  -> No results found.")
