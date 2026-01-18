@@ -19,7 +19,66 @@ def create_gold_tables():
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             
-            # --- 1. Athlete Progression View ---
+            # --- 1. Normalized Scores View ---
+            print("Creating NormalizedScores view...")
+            cursor.execute("DROP VIEW IF EXISTS NormalizedScores")
+            cursor.execute("""
+                CREATE VIEW NormalizedScores AS
+                SELECT 
+                    r.result_id,
+                    p.full_name,
+                    c.name as club,
+                    m.name as meet_name,
+                    m.country,
+                    m.comp_year,
+                    r.level as original_level,
+                    -- Normalized level name for matching
+                    CASE 
+                        WHEN r.level GLOB '[0-9]*' THEN 'Level ' || r.level
+                        WHEN r.level LIKE 'CCP %' THEN 'Level ' || SUBSTR(r.level, 5)
+                        WHEN r.level IN ('XB', 'XC') THEN 'Bronze'
+                        WHEN r.level = 'XS' THEN 'Silver'
+                        WHEN r.level = 'XG' THEN 'Gold'
+                        WHEN r.level = 'XP' THEN 'Platinum'
+                        WHEN r.level = 'XD' THEN 'Diamond'
+                        ELSE r.level
+                    END as normalized_level,
+                    a.name as apparatus,
+                    r.score_final,
+                    ss.max_score,
+                    CASE 
+                        WHEN a.name LIKE '%AllAround%' OR a.name LIKE '%All Around%' THEN NULL
+                        WHEN ss.max_score IS NOT NULL AND ss.max_score > 0 
+                        THEN ROUND((r.score_final / ss.max_score) * 100, 2)
+                        ELSE NULL 
+                    END as normalized_score,
+                    ss.level_system,
+                    ss.has_d_score
+
+                FROM Results r
+                JOIN Athletes at ON r.athlete_id = at.athlete_id
+                JOIN Persons p ON at.person_id = p.person_id
+                JOIN Clubs c ON at.club_id = c.club_id
+                JOIN Meets m ON r.meet_db_id = m.meet_db_id
+                JOIN Apparatus a ON r.apparatus_id = a.apparatus_id
+                LEFT JOIN ScoringStandards ss ON (
+                    m.country = ss.country 
+                    AND ss.level_name = CASE 
+                        WHEN r.level GLOB '[0-9]*' THEN 'Level ' || r.level
+                        WHEN r.level LIKE 'CCP %' THEN 'Level ' || SUBSTR(r.level, 5)
+                        WHEN r.level IN ('XB', 'XC') THEN 'Bronze'
+                        WHEN r.level = 'XS' THEN 'Silver'
+                        WHEN r.level = 'XG' THEN 'Gold'
+                        WHEN r.level = 'XP' THEN 'Platinum'
+                        WHEN r.level = 'XD' THEN 'Diamond'
+                        ELSE r.level
+                    END
+                )
+                WHERE r.score_final IS NOT NULL
+            """)
+
+            
+            # --- 2. Athlete Progression View (updated with normalized scores) ---
             print("Creating AthleteProgression view...")
             cursor.execute("DROP VIEW IF EXISTS AthleteProgression")
             cursor.execute("""
@@ -28,24 +87,35 @@ def create_gold_tables():
                     p.full_name,
                     c.name as club,
                     r.gender,
+                    m.country,
                     m.comp_year,
                     r.level,
                     a.name as apparatus,
                     COUNT(r.result_id) as appearances,
-                    AVG(r.score_final) as avg_score,
+                    ROUND(AVG(r.score_final), 3) as avg_score,
                     MAX(r.score_final) as best_score,
-                    AVG(r.score_d) as avg_d_score
+                    ROUND(AVG(r.score_d), 3) as avg_d_score,
+                    ss.max_score,
+                    CASE 
+                        WHEN ss.max_score IS NOT NULL AND ss.max_score > 0 
+                        THEN ROUND((AVG(r.score_final) / ss.max_score) * 100, 2)
+                        ELSE NULL 
+                    END as avg_normalized_score
                 FROM Results r
                 JOIN Athletes at ON r.athlete_id = at.athlete_id
                 JOIN Persons p ON at.person_id = p.person_id
                 JOIN Clubs c ON at.club_id = c.club_id
                 JOIN Meets m ON r.meet_db_id = m.meet_db_id
                 JOIN Apparatus a ON r.apparatus_id = a.apparatus_id
+                LEFT JOIN ScoringStandards ss ON (
+                    m.country = ss.country 
+                    AND r.level = ss.level_name
+                )
                 WHERE r.score_final IS NOT NULL
                 GROUP BY p.person_id, m.comp_year, r.level, a.apparatus_id
             """)
             
-            # --- 2. Athlete Event Summary (updated) ---
+            # --- 3. Athlete Event Summary (updated) ---
             print("Creating Gold_Athlete_Event_Summary table...")
             cursor.execute("DROP TABLE IF EXISTS Gold_Athlete_Event_Summary")
             query = """
@@ -72,7 +142,7 @@ def create_gold_tables():
             gold_df.to_sql("Gold_Athlete_Event_Summary", conn, if_exists='replace', index=False)
             print(f"  -> Created {len(gold_df)} athlete-event summary records.")
             
-            # --- 3. Meet Quality Index (MQI) ---
+            # --- 4. Meet Quality Index (MQI) ---
             print("Creating Gold_Meet_Quality table...")
             cursor.execute("DROP TABLE IF EXISTS Gold_Meet_Quality")
             mqi_query = """
@@ -80,6 +150,7 @@ def create_gold_tables():
                     m.meet_db_id,
                     m.source,
                     m.name as meet_name,
+                    m.country,
                     m.comp_year,
                     m.competition_type,
                     COUNT(DISTINCT r.athlete_id) as athlete_count,
@@ -103,7 +174,7 @@ def create_gold_tables():
             mqi_df.to_sql("Gold_Meet_Quality", conn, if_exists='replace', index=False)
             print(f"  -> Created {len(mqi_df)} meet quality records.")
             
-            # --- 4. Pipeline Statistics View ---
+            # --- 5. Pipeline Statistics View ---
             print("Creating PipelineStats view...")
             cursor.execute("DROP VIEW IF EXISTS PipelineStats")
             cursor.execute("""
@@ -115,8 +186,10 @@ def create_gold_tables():
                     (SELECT COUNT(*) FROM Athletes) as total_athlete_links,
                     (SELECT COUNT(*) FROM Clubs) as total_clubs,
                     (SELECT COUNT(*) FROM ScrapeErrors) as total_errors,
-                    (SELECT COUNT(DISTINCT source) FROM Meets) as total_sources
+                    (SELECT COUNT(DISTINCT source) FROM Meets) as total_sources,
+                    (SELECT COUNT(*) FROM ScoringStandards) as scoring_standards
             """)
+
             
             conn.commit()
             print("\n--- Gold tables and views created successfully! ---")
