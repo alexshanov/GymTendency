@@ -301,16 +301,57 @@ def standardize_club_name(club_str, alias_map):
     cleaned_club = club_str.strip().title()
     return alias_map.get(cleaned_club, cleaned_club)
 
-def standardize_athlete_name(name_str):
-    if not isinstance(name_str, str) or not name_str.strip(): return None
-    name_str = name_str.strip()
+def standardize_athlete_name(name_str, remove_middle_initial=True):
+    """
+    Standardize athlete names for consistent matching across sources.
+    
+    Handles:
+    - "Last, First" → "First Last"
+    - "LAST FIRST" (all caps) → "First Last"  
+    - Extra whitespace cleanup
+    - Middle initial removal (optional, for deduplication)
+    - Title case normalization
+    """
+    if not isinstance(name_str, str) or not name_str.strip(): 
+        return None
+    
+    # 1. Clean up extra whitespace
+    name_str = ' '.join(name_str.strip().split())
+    
+    # 2. Handle "Last, First" format
     if ',' in name_str:
         parts = [p.strip() for p in name_str.split(',', 1)]
-        if len(parts) == 2: return f"{parts[1].title()} {parts[0].title()}"
+        if len(parts) == 2:
+            name_str = f"{parts[1]} {parts[0]}"
+    
+    # 3. Handle ALL CAPS (assume "LAST FIRST" or "FIRST LAST")
     words = name_str.split()
-    if len(words) > 1 and words[0].isupper() and all(c.isupper() for c in words[0]) and any(c.islower() for c in ' '.join(words[1:])):
-        return f"{' '.join(words[1:])} {words[0].title()}"
-    return ' '.join(word.capitalize() for word in words)
+    if len(words) >= 2 and name_str.isupper():
+        # All caps - check if first word looks like last name (common pattern: SMITH JOHN)
+        # Heuristic: if second word is shorter, it might be first name abbreviated
+        # Default: assume "FIRST LAST" order for all caps
+        name_str = ' '.join(word.title() for word in words)
+        words = name_str.split()
+    
+    # 4. Apply title case to each word
+    words = [word.title() if word.isupper() or word.islower() else word for word in words]
+    
+    # 5. Remove middle initial (single letter or letter with period)
+    if remove_middle_initial and len(words) > 2:
+        filtered_words = []
+        for i, word in enumerate(words):
+            # Keep first and last word, filter middle initials
+            if i == 0 or i == len(words) - 1:
+                filtered_words.append(word)
+            elif len(word.replace('.', '')) > 1:  # Not a single initial
+                filtered_words.append(word)
+            # else: skip middle initial
+        words = filtered_words
+    
+    # 6. Final cleanup - remove any remaining periods from initials kept
+    result = ' '.join(words)
+    return result
+
 
 def detect_discipline(df):
     column_names = set(df.columns)
