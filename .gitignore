@@ -215,3 +215,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+debug_error_division_dd.png
+debug_error_level_dd.png
+debug_error_session_dd.png
+gym_data.db-journal
