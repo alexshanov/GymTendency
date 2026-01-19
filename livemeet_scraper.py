@@ -101,45 +101,70 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                 return 0, None
             # ----------------------
             
-            # Initial SessionId identification (web session ID)
-            active_session_id = ""
-            session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', html_content)
-            if session_id_match:
-                active_session_id = session_id_match.group(1)
-
-            session_elements = soup.select("#FilterPanel li.reportOnSession")
-            sessions_to_scrape = {}
-            for el in session_elements:
-                session_id = el.get('id')
-                session_name_el = el.select_one(".repSessionShortName")
-                if session_id and session_name_el:
-                    sessions_to_scrape[session_name_el.get_text(strip=True)] = session_id
+            # === LEVEL-BASED EXTRACTION (PRIORITY) ===
+            # The user prefers consistent "Level" columns. We attempt to extract by Level first.
             
-            if not sessions_to_scrape:
-                print("--> INFO: No session-based results found in 'FilterPanel'. Falling back to level-based search (Plan B).")
-                # Switch back to "Results by Level" tab if possible
-                can_switch_level = driver.execute_script("return typeof gotoSubTab === 'function' && typeof document.Tournament !== 'undefined';")
-                if can_switch_level:
+            # 1. Attempt using 'reportOnLv' / 'ReportDivResults' directly or via 'Results by Level' tab
+            print("  -> Attempting Level-Based Extraction (Priority)...")
+            level_targets = {}
+            
+            # Try switching to 'Results by Level' tab ('D')
+            can_switch_level = driver.execute_script("return typeof gotoSubTab === 'function' && typeof document.Tournament !== 'undefined';")
+            if can_switch_level:
+                try:
                     driver.execute_script("gotoSubTab('D')")
-                    time.sleep(3) # Wait for sidebar to refresh
-                else:
-                    print("  -> Skipping fallback SubTab switch: 'gotoSubTab' undefined.")
+                    time.sleep(3) # Wait for sidebar
+                except Exception as e:
+                    print(f"    -> Error switching to Level tab: {e}")
+
+            # Scrape available levels from sidebar
+            html_content = driver.page_source
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # Standard Sportzsoft Level List
+            level_elements = soup.select("#FilterPanel li.liCategory") 
+            # Some meets use a different class or ID structure for levels
+            if not level_elements:
+                 level_elements = soup.select("#FilterPanel li[onclick^='reportOnLv']")
+
+            for el in level_elements:
+                div_id = el.get('id')
+                # If onclick is explicit, extracted ID might differ, but usually ID is enough for click/JS
+                name_el = el.select_one(".repSessionShortName") or el
+                name = name_el.get_text(strip=True)
+                
+                if div_id and name:
+                     level_targets[name] = div_id
+            
+            if level_targets:
+                print(f"  -> Found {len(level_targets)} Levels. Using Level-Based Extraction.")
+                sessions_to_scrape = level_targets
+                base_data_url_param = "DivId" # Or "ReportingCategory" depending on context, but usually DivId for 'D' tab
+            else:
+                print("  -> No Levels found. Falling back to Session-Based Extraction.")
+                
+                # Switch back to 'Results by Session' tab ('Z')
+                if can_switch_level:
+                    driver.execute_script("gotoSubTab('Z')")
+                    time.sleep(3)
                 
                 html_content = driver.page_source
                 soup = BeautifulSoup(html_content, 'html.parser')
-                event_elements = soup.find_all('li', class_='liCategory')
                 
-                for el in event_elements:
-                    name = el.get_text(strip=True)
-                    div_id = el.get('id')
-                    if name and div_id:
-                        sessions_to_scrape[name] = div_id
+                session_elements = soup.select("#FilterPanel li.reportOnSession")
+                sessions_to_scrape = {}
+                for el in session_elements:
+                    session_id = el.get('id')
+                    session_name_el = el.select_one(".repSessionShortName")
+                    if session_id and session_name_el:
+                        sessions_to_scrape[session_name_el.get_text(strip=True)] = session_id
                 
-                base_data_url_param = "DivId"
-                print(f"  -> Found {len(sessions_to_scrape)} level/category groups via Plan B.")
-            else:
+                if not sessions_to_scrape:
+                    print("--> ERROR: No Sessions OR Levels found. This meet structure is unrecognized.")
+                    return 0, None
+                
                 base_data_url_param = "SelectSession"
-                print(f"  -> Found {len(sessions_to_scrape)} competitive sessions via Plan A.")
+                print(f"  -> Found {len(sessions_to_scrape)} competitive sessions via Fallback.")
 
             # Re-get the web session ID from the URL or state
             session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', driver.current_url)

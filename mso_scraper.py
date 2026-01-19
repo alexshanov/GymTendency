@@ -197,6 +197,14 @@ def main():
         meet_id = str(row['MeetID'])
         meet_name = row['MeetName']
         
+        # --- SKIP LOGIC ---
+        filename = f"{meet_id}_mso.csv"
+        filepath = os.path.join(OUTPUT_FOLDER, filename)
+        if os.path.exists(filepath):
+            print(f"[{i}/{total}] Skipping already scraped meet: {meet_name} ({meet_id})")
+            continue
+        # ------------------
+        
         process_meet(driver, meet_id, meet_name, i, total)
             
     driver.quit()

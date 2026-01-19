@@ -5,16 +5,16 @@ import os
 
 def apply_person_aliases(db_file="gym_data.db", confirmed_json="person_aliases.json", potential_json="potential_person_aliases.json"):
     """
-    Reads the GROUPED potential aliases JSON.
-    Format: {"Canonical Name": ["Alias 1", "Alias 2"]}
-    Checks if they are already in confirmed_json. If not, merges them in the DB.
+    Reads the CONFIRMED aliases JSON (person_aliases.json).
+    Format: {"Alias Name": "Canonical Name"}
+    Merges them in the DB.
     """
-    if not os.path.exists(potential_json):
-        print(f"Error: {potential_json} not found.")
+    if not os.path.exists(confirmed_json):
+        print(f"Error: {confirmed_json} not found.")
         return
 
-    with open(potential_json, 'r') as f:
-        potential_grouped = json.load(f)
+    with open(confirmed_json, 'r') as f:
+        confirmed_aliases = json.load(f)
 
     if not os.path.exists(db_file):
         print(f"Error: {db_file} not found.")
@@ -23,8 +23,17 @@ def apply_person_aliases(db_file="gym_data.db", confirmed_json="person_aliases.j
     conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
     
+    # Invert the mapping to group by canonical
+    potential_grouped = {}
+    for alias, canonical in confirmed_aliases.items():
+        if canonical not in potential_grouped:
+            potential_grouped[canonical] = []
+        potential_grouped[canonical].append(alias)
+
     aliases_applied = 0
     records_merged = 0
+
+    print(f"Applying {len(confirmed_aliases)} confirmed aliases...")
 
     for canonical, aliases in potential_grouped.items():
         # Find canonical person_id
