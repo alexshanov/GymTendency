@@ -162,47 +162,77 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                         driver.get(main_page_url)
                         WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel")))
                     
-                    # Ensure "Results by Session" tab is selected (Safe execution)
+                    # Ensure the correct tab is selected (Safe execution)
+                    # 'Z' is Results by Session, 'D' is Results by Level/Category
+                    target_tab = 'Z' if base_data_url_param == "SelectSession" else 'D'
                     try:
-                        if driver.execute_script("return typeof gotoSubTab === 'function' && typeof document.Tournament !== 'undefined';"):
-                            driver.execute_script("gotoSubTab('Z');")
+                        if driver.execute_script(f"return typeof gotoSubTab === 'function' && typeof document.Tournament !== 'undefined';"):
+                            driver.execute_script(f"gotoSubTab('{target_tab}');")
                             time.sleep(2)
-                            # Wait for the sidebar to populate with sessions
+                            # Wait for the sidebar to populate
                             WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#FilterPanel li")))
                         else:
-                            print("    -> Skipping Session SubTab switch: 'gotoSubTab' or 'Tournament' undefined.")
+                            print(f"    -> Skipping SubTab switch ({target_tab}): 'gotoSubTab' or 'Tournament' undefined.")
                     except Exception as tab_err:
-                        print(f"    -> Warning: Could not ensure Session tab: {tab_err}")
+                        print(f"    -> Warning: Could not ensure {target_tab} tab: {tab_err}")
                     
                     # Robust Switching Logic with Retries
                     switch_success = False
-                    report_func = "reportOnSession" if base_data_url_param == "SelectSession" else "reportOnLv"
+                    
+                    # DYNAMIC FUNCTION DETECTION:
+                    # Some meets use reportOnLv/reportOnSession, others use ReportDivResults/ReportOnSessionResults
+                    actual_report_func = None
+                    if base_data_url_param == "SelectSession":
+                        # Variants for Session
+                        for func_name in ["reportOnSession", "ReportOnSessionResults"]:
+                            if driver.execute_script(f"return typeof {func_name} === 'function';"):
+                                actual_report_func = func_name
+                                break
+                    else:
+                        # Variants for Level/Category
+                        for func_name in ["reportOnLv", "ReportDivResults"]:
+                            if driver.execute_script(f"return typeof {func_name} === 'function';"):
+                                actual_report_func = func_name
+                                break
+                    
+                    if not actual_report_func:
+                        print(f"    -> Warning: No known report function found for {base_data_url_param}. Falling back to click only.")
+
                     start_time = time.time()
-                    while time.time() - start_time < 20: # Try for up to 20 seconds
+                    while time.time() - start_time < 30: # Try for up to 30 seconds
                         try:
-                            # Try Method 1: Click the actual sidebar element (most natural click)
+                            # 1. Standard Selenium Click
                             try:
-                                elem = driver.find_element(By.ID, comp_session_id)
-                                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
+                                # Ensure element is present and visible
+                                elem = WebDriverWait(driver, 5).until(
+                                    EC.element_to_be_clickable((By.ID, comp_session_id))
+                                )
+                                driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", elem)
+                                time.sleep(0.5)
                                 elem.click()
-                                print("    -> Switched via element click")
+                                print(f"    -> Switched via element click ({comp_session_id})")
                                 switch_success = True
-                            except Exception:
-                                # 2. Fallback to JS (Safe execution)
-                                js_check = f"return typeof {report_func} === 'function' && typeof document.Tournament !== 'undefined';"
-                                if driver.execute_script(js_check):
-                                    driver.execute_script(f"{report_func}('{comp_session_id}');")
-                                    print(f"    -> Switched via JS call ({report_func})")
-                                    switch_success = True
-                                else:
-                                    print(f"    -> JS Switch Failure: '{report_func}' is undefined.")
+                            except Exception as click_err:
+                                # 2. JS-based Click (Triggers the element's onclick in browser context)
+                                # This is safer as it bypasses Selenium's visibility/interactability checks
+                                try:
+                                    is_present = driver.execute_script(f"return document.getElementById('{comp_session_id}') !== null;")
+                                    if is_present:
+                                        driver.execute_script(f"document.getElementById('{comp_session_id}').click();")
+                                        print(f"    -> Switched via JS element click ({comp_session_id})")
+                                        switch_success = True
+                                except Exception:
+                                    pass
                             
                             if switch_success:
-                                time.sleep(5) # Critical wait for server state update
+                                # IMPORTANT: Wait for the results to actually start loading
+                                # The class often changes to 'working' or 'active'
+                                time.sleep(6) # Critical wait for server state update
                                 break
                         except Exception as e:
-                            print(f"    -> Retry switching... ({e})")
-                            time.sleep(2)
+                            # Outer loop retry
+                            pass
+                        time.sleep(2)
 
                     if not switch_success:
                         print(f"    -> Failed to switch to session {comp_session_id}. Skipping.")
