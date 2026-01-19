@@ -562,6 +562,14 @@ if __name__ == "__main__":
     for i, meet_id in enumerate(meet_ids_to_process, 1):
         print(f"\n[{i}/{total_meets}] {'='*20} PROCESSING MEET ID: {meet_id} {'='*20}")
         
+        # --- SKIP LOGIC ---
+        # Check if any final CSVs already exist for this meet ID
+        final_files_found = glob.glob(os.path.join(FINAL_FOLDER, f"{meet_id}_FINAL_*.csv"))
+        if final_files_found:
+            print(f"Skipping already scraped meet: {meet_id} ({len(final_files_found)} final files exist)")
+            continue
+        # ------------------
+        
         meet_url = f"{BASE_URL}{meet_id}"
         
         # --- STEP 1: Scrape messy files ---

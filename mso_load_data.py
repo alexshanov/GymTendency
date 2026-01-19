@@ -4,12 +4,10 @@ import pandas as pd
 import os
 import glob
 import traceback
-import os
-import glob
-import traceback
 import json
 import re
 import argparse
+import gc  # Explicit garbage collection
 
 # --- Import shared functions ---
 from etl_functions import (
@@ -195,6 +193,9 @@ def process_mso_files(meet_manifest, club_alias_map, sample_rate=1):
                 
                 if success:
                     mark_file_processed(conn, filepath, file_hash)
+                
+                # Force garbage collection to prevent OOM on large batches
+                gc.collect()
 
     except Exception as e:
         print(f"Critical error: {e}")
@@ -366,6 +367,7 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
             
     conn.commit()
     print(f"  Inserted {results_inserted} results from {filename} (Dynamic Schema)")
+    del df
     return True
 
 def main():

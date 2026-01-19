@@ -152,9 +152,16 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             triplet_num = count // 3
             suffix = ['D', 'Score', 'Rnk'][triplet_pos]
             if triplet_num == 0:
-                new_headers.append(f"Result_{base}_{suffix}")
+                proposed_name = f"Result_{base}_{suffix}"
             else:
-                new_headers.append(f"EXTRA_{base}_{triplet_num}_{suffix}")
+                proposed_name = f"EXTRA_{base}_{triplet_num}_{suffix}"
+            
+            # CRITICAL FIX: Avoid creating duplicate columns if the CSV already has explicit Result_... columns.
+            # E.g. If 'Result_AllAround_D' exists, don't rename 'AllAround' to 'Result_AllAround_D'.
+            if proposed_name in df.columns:
+                new_headers.append(col) # Keep original name (e.g. 'AllAround')
+            else:
+                new_headers.append(proposed_name)
         else:
             new_headers.append(col)
     df.columns = new_headers
