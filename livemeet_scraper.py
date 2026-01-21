@@ -273,109 +273,237 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                     match = re.search(r"SessionId=([a-zA-Z0-9]+)", driver.current_url)
                     if match:
                          web_session_id = match.group(1)
-                         print(f"    -> Web Session ID re-captured: {web_session_id}")
-                    else:
-                         print(f"    -> Warning: Could not re-capture Web Session ID from URL after switch.")
-
-                    # Discovery of Reporting Categories via JS - AGGRESSIVE
-                    js_discovery = """
-                    var results = [];
-                    // Look for ANY label that might be a category
-                    var labels = document.querySelectorAll('label.ssRadioLabel, label[for^="rcReportingCategory"]');
-                    labels.forEach(function(l) {
-                        var inp = document.getElementById(l.getAttribute('for')) || document.querySelector('input[name="rcRC"][id="' + l.getAttribute('for') + '"]');
-                        if (inp && !results.some(x => x.value === inp.value)) {
-                            results.push({label: l.innerText.trim(), value: inp.value});
+                    
+                    # --- NEW: APPARATUS DISCOVERY & PER-EVENT AGGREGATION ---
+                    # 1. Switch to 'Per Event' View
+                    print(f"    -> Switching to 'Per Event' view (Detailed mode)")
+                    try:
+                        driver.execute_script("ChangeReportType('P');")
+                        time.sleep(3)
+                    except:
+                        pass
+                    # Discover Sub-Sessions (Session tabs in the middle)
+                    sub_session_discovery_js = r"""
+                    var subs = [];
+                    var sub_links = document.querySelectorAll('a[href*="gotoSessionTab"]');
+                    sub_links.forEach(function(a) {
+                        var val = a.getAttribute('href') || "";
+                        var match = val.match(/gotoSessionTab\('(\d+)'\)/i);
+                        if (match) {
+                            subs.push({ label: a.innerText.trim(), id: match[1] });
                         }
                     });
-                    
-                    // Fallback: search all inputs directly
-                    if (results.length === 0) {
-                        var radios = document.querySelectorAll('input[name="rcRC"], input[id^="rcReportingCategory"]');
-                        radios.forEach(function(r) {
-                            var label = document.querySelector('label[for="' + r.id + '"]');
-                            results.push({label: label ? label.innerText.trim() : "Unknown", value: r.value});
-                        });
-                    }
-                    return results;
+                    return subs;
                     """
-                    js_results = driver.execute_script(js_discovery)
-                    
-                    scrape_targets = []
-                    if js_results:
-                        print(f"    -> Discovered {len(js_results)} categories via JS")
-                        for item in js_results:
-                            rc_label = item['label']
-                            rc_id = item['value']
-                            if rc_label.upper() == "ALL" and len(js_results) > 1:
-                                continue
-                            scrape_targets.append((rc_label, rc_id))
-                    else:
-                        print(f"    -> Info: No category filters found.")
-                        if "Provincial 2" in group_name:
-                            ss_name = f"debug_p2_failure_{comp_session_id}.png"
-                            driver.save_screenshot(ss_name)
-                            print(f"    -> Saved debug screenshot for Provincial 2: {ss_name}")
-                        scrape_targets = [("Session_Overall", "0")]
+                    sub_sessions = driver.execute_script(sub_session_discovery_js) or []
+                    if not sub_sessions:
+                        # Also check for already loaded view if no tabs discovered
+                        sub_sessions = [{'label': 'Combined', 'id': '99'}]
 
-                    for rc_label, rc_id in scrape_targets:
-                        # Normalization
-                        clean_rc_label = rc_label.replace('AllAround', 'All Around')
-                        safe_rc_name = re.sub(r'[\s/\\:*?"<>|]+', '_', clean_rc_label).strip().replace('__', '_')
+                    for sub_info in sub_sessions:
+                        sub_label = sub_info['label']
+                        sub_id = sub_info['id']
+                        print(f"    -> Entering Sub-Session: {sub_label} (ID: {sub_id})")
                         
-                        print(f"    -> Processing: {rc_label} (ID: {rc_id})")
+                        if sub_id:
+                            try:
+                                driver.execute_script(f"gotoSessionTab('{sub_id}');")
+                                time.sleep(3)
+                            except:
+                                pass
+
+                        # 2. Discover Apparatuses available for THIS sub-session
+                        apparatus_discovery_js = r"""
+                        var apps = [];
+                        var app_links = document.querySelectorAll('a');
+                        app_links.forEach(function(a) {
+                            var val = a.getAttribute('onclick') || a.getAttribute('href') || "";
+                            var match = val.match(/ChangeApparatus\('(\d+)'\)/i);
+                            if (match) {
+                                var lbl = a.innerText.trim();
+                                if (!lbl && a.querySelector('span')) lbl = a.querySelector('span').innerText.trim();
+                                apps.push({ label: lbl, id: match[1] });
+                            }
+                        });
+                        var uniq = [];
+                        var seen = {};
+                        apps.forEach(function(app) {
+                            if (!seen[app.id]) {
+                                uniq.push(app);
+                                seen[app.id] = true;
+                            }
+                        });
+                        return uniq;
+                        """
+                        session_apparatuses = driver.execute_script(apparatus_discovery_js) or []
                         
-                        # FETCH DATA VIA REQUESTS
-                        # CRITICAL FIX: Do NOT include SelectSession/ResultsForSessionId when fetching a specific category.
-                        # Including it resets the filter to "All". The session is already active from the switching step.
-                        if rc_id != "0":
-                            ajax_url = f"{base_data_url}?ReportingCategory={rc_id}&SessionId={web_session_id}&ReportOnly=1"
-                        else:
-                            # For "Session Overall" (ID 0) or if we need to force the session view
-                            ajax_url = f"{base_data_url}?{base_data_url_param}={comp_session_id}&SessionId={web_session_id}&ReportingCategory={rc_id}&ReportOnly=1"
+                        # Ensure All Around is included (ID '0')
+                        if not any(app.get('id') == '0' for app in session_apparatuses):
+                            session_apparatuses.append({'label': 'AllAround', 'id': '0'})
                         
-                        try:
-                            resp = s.get(ajax_url, timeout=15)
-                            data = resp.json()
-                            decoded_html = html.unescape(data['html'])
-                            results_soup = BeautifulSoup(decoded_html, 'html.parser')
+                        # 3. Aggregation Buffer for THIS Sub-Session
+                        athlete_data_wide = {}
+
+                        for app_info in session_apparatuses:
+                            app_label = app_info['label']
+                            app_id = app_info['id']
+                            print(f"    -> Fetching apparatus: {app_label} (ID: {app_id})")
                             
-                            table_wrappers = results_soup.find_all('div', class_='resultsTableWrapper')
-                            if not table_wrappers:
-                                 single_table = results_soup.find('table', id='sessionEventResults')
-                                 if single_table:
-                                     dummy_wrapper = results_soup.new_tag("div")
-                                     dummy_wrapper.append(single_table)
-                                     table_wrappers = [dummy_wrapper]
+                            try:
+                                # Trigger ChangeApparatus in Selenium
+                                driver.execute_script(f"ChangeApparatus('{app_id}');")
+                                time.sleep(6) # Increase wait for slower multi-table loads
+                                
+                                # Extract HTML directly from DOM
+                                page_html = driver.page_source
+                                results_soup = BeautifulSoup(page_html, 'html.parser')
+                                
+                                # Find ALL tables that look like results
+                                table_elements = results_soup.find_all('table', class_='resultsTable') or \
+                                                 results_soup.find_all('table', id='sessionEventResults') or \
+                                                 results_soup.find_all('table', id='PerEventScores')
+                                
+                                # Fallback to wrappers if no explicit tables found
+                                if not table_elements:
+                                    wrappers = results_soup.find_all('div', class_='resultsTableWrapper')
+                                    table_elements = [w.find('table') for w in wrappers if w.find('table')]
+                                
+                                print(f"      -> Found {len(table_elements)} tables in DOM for {app_label}")
+                                athletes_found_this_app = 0
 
-                            tables_in_group_counter = 1
-                            for wrapper in table_wrappers:
-                                age_group = "N/A"
-                                title_element = wrapper.select_one(".resultsTitle .rpSubTitle")
-                                if title_element:
-                                    title_text = title_element.get_text(strip=True)
-                                    age_group = title_text.replace('(Age Group:', '').replace(')', '').strip()
+                                for table_element in table_elements:
+                                    if not table_element: continue
+                                    
+                                    # Find Age Group for THIS specific table
+                                    # It's usually in a .rpSubTitle DIV right before the table
+                                    age_group = "N/A"
+                                    prev_sib = table_element.find_previous(['div', 'span'], class_='resultsTitle') or \
+                                               table_element.find_previous('div', class_='resultsTableWrapper')
+                                    
+                                    if prev_sib:
+                                        sub_titles = prev_sib.select(".rpSubTitle")
+                                        for st in sub_titles:
+                                            st_text = st.get_text(strip=True)
+                                            if "(Age Group:" in st_text:
+                                                age_group = st_text.replace('(Age Group:', '').replace(')', '').strip()
+                                                break
+                                    
+                                    # Final sanity check for table element
+                                    if table_element:
+                                        table_html = str(table_element)
+                                        df_list = pd.read_html(io.StringIO(table_html))
+                                        if df_list:
+                                            df = df_list[0].copy()
+                                            suffix = app_label.replace(' ', '_')
+                                            
+                                            # Identify Identity Columns (Fuzzy match)
+                                            name_col = None
+                                            for c in df.columns:
+                                                if str(c).lower() in ['name', 'athlete', 'competitor']:
+                                                    name_col = c
+                                                    break
+                                            if not name_col and len(df.columns) > 0:
+                                                name_col = df.columns[0]
+                                            
+                                            club_col = None
+                                            for c in df.columns:
+                                                if str(c).lower() in ['club', 'team', 'org', 'province', 'prov']:
+                                                    club_col = c
+                                                    if str(c).lower() == 'club': break
+                                            
+                                            print(f"      -> Table shape: {df.shape}, Columns: {list(df.columns)}")
+                                            if len(df) > 0:
+                                                print(f"      -> First row Name: {df.iloc[0].get(name_col)}")
+                                            else:
+                                                print(f"      -> WARNING: DataFrame is empty for {app_label}. Snippet: {table_html[:200]}")
+                                            
+                                            info_cols = [name_col, club_col, 'Prov', 'Level', '#', 'Age', 'Age Group', 'Age_Group', 'Qual']
+                                            
+                                            # --- Fallback: Manual TR Parsing if df is empty or Name is missing ---
+                                            if len(df) == 0 or not any(str(df.iloc[i].get(name_col)).strip() for i in range(min(len(df), 5))):
+                                                print("      -> Attempting manual TR parsing fallback...")
+                                                rows = table_element.find_all('tr')
+                                                # Try to find headers manually too? No, just use indices
+                                                for tr in rows:
+                                                    tds = tr.find_all(['td', 'th'])
+                                                    if len(tds) < 3: continue
+                                                    
+                                                    # Assume second or third col is Name
+                                                    potential_name = tds[2].get_text(strip=True) if len(tds) > 2 else ""
+                                                    potential_club = tds[3].get_text(strip=True) if len(tds) > 3 else ""
+                                                    
+                                                    if potential_name.lower() in ['name', 'athlete', 'competitor', 'nan', '']:
+                                                        potential_name = tds[1].get_text(strip=True) # Try col 1
+                                                        potential_club = tds[2].get_text(strip=True)
+                                                        
+                                                    if not potential_name or potential_name.lower() in ['name', 'athlete', 'competitor', 'nan']: continue
+                                                    
+                                                    athletes_found_this_app += 1
+                                                    key = (potential_name, potential_club, age_group)
+                                                    if key not in athlete_data_wide:
+                                                        athlete_data_wide[key] = {
+                                                            'Name': potential_name,
+                                                            'Club': potential_club,
+                                                            'Age_Group': age_group,
+                                                            'Group': f"{group_name} - {sub_label}",
+                                                            'Meet': meet_name,
+                                                            'Prov': "",
+                                                            'Level': ""
+                                                        }
+                                                    # Manual score extraction is too complex here, 
+                                                    # but we can at least see if athletes are found.
+                                            
+                                            # STANDARD PATH
+                                            for _, row_data in df.iterrows():
+                                                athlete_name = str(row_data.get(name_col, '')).strip()
+                                                athlete_club = str(row_data.get(club_col, '')).strip() if club_col else ""
+                                                if not athlete_name or athlete_name.lower() in ['name', 'nan', 'athlete']: continue
+                                                
+                                                athletes_found_this_app += 1
+                                                key = (athlete_name, athlete_club, age_group)
+                                                if key not in athlete_data_wide:
+                                                    athlete_data_wide[key] = {
+                                                        'Name': athlete_name,
+                                                        'Club': athlete_club,
+                                                        'Age_Group': age_group,
+                                                        'Group': f"{group_name} - {sub_label}",
+                                                        'Meet': meet_name,
+                                                        'Prov': str(row_data.get('Prov', '')),
+                                                        'Level': str(row_data.get('Level', ''))
+                                                    }
+                                                
+                                                # Map columns
+                                                for col in df.columns:
+                                                    if col in info_cols or 'Unnamed' in str(col): continue
+                                                    
+                                                    val = row_data.get(col)
+                                                    if pd.isna(val): continue
 
-                                table_element = wrapper.find('table', id='sessionEventResults') or wrapper.find('table')
-                                if table_element:
-                                    df_list = pd.read_html(io.StringIO(str(table_element)))
-                                    if df_list:
-                                        df = df_list[0].copy()
-                                        df['Group'] = group_name
-                                        df['Meet'] = meet_name
-                                        df['Age_Group'] = age_group
-                                        df['Reporting_Category'] = rc_label
-                                        
-                                        safe_group_name = re.sub(r'[\s/\\:*?"<>|]+', '_', group_name)
-                                        safe_age_group = re.sub(r'[\s/\\:*?"<>|]+', '_', age_group)
-                                        
-                                        filename = f"{meet_id_for_filename}_MESSY_{safe_group_name}_{safe_age_group}_{safe_rc_name}_{tables_in_group_counter}.csv"
-                                        df.to_csv(os.path.join(output_directory, filename), index=False)
-                                        print(f"    -> Saved: {filename}")
-                                        total_files_saved += 1
-                                        tables_in_group_counter += 1
-                        except Exception as ajax_err:
-                            print(f"    -> AJAX Error for {rc_label}: {ajax_err}")
+                                                    target_suffix = str(col)
+                                                    if col == 'D-Score': target_suffix = 'D'
+                                                    elif col == 'E Score': target_suffix = 'E'
+                                                    elif col == 'Rank': target_suffix = 'Rnk'
+                                                    elif col == 'Final' or col == app_label: target_suffix = 'Score'
+                                                    
+                                                    clean_suffix = re.sub(r'[^a-zA-Z0-9]+', '_', target_suffix)
+                                                    athlete_data_wide[key][f'Result_{suffix}_{clean_suffix}'] = val
+                                
+                                print(f"      -> Processed {athletes_found_this_app} athlete records for {app_label}")
+                            except Exception as driver_err:
+                                print(f"      -> Driver Extraction Error: {driver_err}")
+
+                        # 4. Save Sub-Session CSV
+                        if athlete_data_wide:
+                            final_df = pd.DataFrame(athlete_data_wide.values())
+                            info_cols_order = ['Name', 'Club', 'Level', 'Prov', 'Age_Group', 'Meet', 'Group']
+                            res_cols = [c for c in final_df.columns if c not in info_cols_order]
+                            final_df = final_df[info_cols_order + res_cols]
+                            
+                            safe_name = re.sub(r'[\s/\\:*?"<>|]+', '_', f"{group_name}_{sub_label}")
+                            filename = f"{meet_id_for_filename}_FINAL_{safe_name}_DETAILED.csv"
+                            final_df.to_csv(os.path.join(output_directory, filename), index=False)
+                            print(f"    -> Saved Sub-Session: {filename}")
+                            total_files_saved += 1
 
                 except Exception as e:
                     print(f"  -> Error processing '{group_name}': {e}")
@@ -532,7 +660,7 @@ def fix_and_standardize_headers(input_filename, output_filename):
 if __name__ == "__main__":
     
     # --- CONFIGURATION ---
-    MEET_IDS_CSV = "discovered_meet_ids_livemeet.csv"
+    MEET_IDS_CSV = "target_livemeet.csv"
     MESSY_FOLDER = "CSVs_Livemeet_messy"
     FINAL_FOLDER = "CSVs_Livemeet_final" 
     BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
@@ -579,27 +707,33 @@ if __name__ == "__main__":
             print(f"Scraping complete. Found {files_saved} tables for Meet ID {file_base_id}.")
             print("--- Starting Step 2: Finalizing Files ---")
             
-            # --- THIS IS THE KEY FIX ---
-            # Instead of guessing filenames with a loop from 1 to N,
-            # we find all the messy files that were actually created for this meet.
-            search_pattern = os.path.join(MESSY_FOLDER, f"{file_base_id}_MESSY_*.csv")
-            messy_files_to_process = glob.glob(search_pattern)
+            # 1. Process Messy files (legacy or fallback)
+            search_pattern_messy = os.path.join(MESSY_FOLDER, f"{file_base_id}_MESSY_*.csv")
+            messy_files_to_process = glob.glob(search_pattern_messy)
             
-            all_successful = True
             for messy_file_path in messy_files_to_process:
-                # Construct the final filename from the messy one
                 messy_filename = os.path.basename(messy_file_path)
                 final_filename = messy_filename.replace('_MESSY_', '_FINAL_')
                 final_file_path = os.path.join(FINAL_FOLDER, final_filename)
-
                 if not fix_and_standardize_headers(messy_file_path, final_file_path):
                     print(f"--- ❌ FAILED at Step 2 (Finalizing) for: {messy_file_path} ---")
-                    all_successful = False
-                    # We can choose to break or continue with other files
-                    # break 
 
-            if all_successful:
-                print(f"--- ✅ Successfully processed all {len(messy_files_to_process)} tables for Meet ID: {meet_id} ---")
+            # 2. Process already Finalized files (from new Detailed mode)
+            search_pattern_final = os.path.join(MESSY_FOLDER, f"{file_base_id}_FINAL_*_DETAILED.csv")
+            already_finalized = glob.glob(search_pattern_final)
+            
+            for finalized_path in already_finalized:
+                final_filename = os.path.basename(finalized_path)
+                target_path = os.path.join(FINAL_FOLDER, final_filename)
+                # Move or Copy (Move is better to keep MESSY_FOLDER clean)
+                try:
+                    import shutil
+                    shutil.move(finalized_path, target_path)
+                    print(f"--- ✅ Acknowledged and moved finalized file: {final_filename} ---")
+                except Exception as e:
+                    print(f"--- ❌ Failed to move finalized file {final_filename}: {e} ---")
+
+            print(f"--- ✅ Successfully processed all generated tables for Meet ID: {meet_id} ---")
         else:
             print(f"--- ❌ FAILED or SKIPPED at Step 1 (Scraping) for Meet ID: {meet_id} ---")
         

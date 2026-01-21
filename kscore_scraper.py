@@ -1,5 +1,4 @@
 import pandas as pd
-import requests
 import time
 import os
 import json
@@ -15,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # --- CONFIGURATION ---
-KSCORE_MEETS_CSV = "discovered_meet_ids_kscore.csv"
+KSCORE_MEETS_CSV = "target_kscore.csv"
 OUTPUT_DIR_KSCORE = "CSVs_kscore_final"
 DEBUG_LIMIT = 0
 
@@ -114,95 +113,134 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir):
         driver = webdriver.Chrome(service=service, options=options)
         
         driver.get(base_url)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "#sel-sess option:not([value=''])"))
-        )
-        
-        user_agent = driver.execute_script("return navigator.userAgent;")
-        headers = { 'User-Agent': user_agent, 'Referer': base_url, 'X-Requested-With': 'XMLHttpRequest' }
-        cookies = {cookie['name']: cookie['value'] for cookie in driver.get_cookies()}
-        
-        sessions = [{'id': el.get_attribute('value'), 'name': el.text} for el in driver.find_elements(By.CSS_SELECTOR, "#sel-sess option:not([value=''])")]
+        # --- EXTRACT RICH METADATA (Service Columns) ---
+        raw_meet_name = ""
+        try:
+            raw_meet_name_el = driver.find_element(By.ID, "event-title")
+            raw_meet_name = raw_meet_name_el.text.strip()
+        except:
+            pass
+
+        sessions = []
+        for el in driver.find_elements(By.CSS_SELECTOR, "#sel-sess option:not([value=''])"):
+            sessions.append({
+                'id': el.get_attribute('value'),
+                'name': el.text.strip()
+            })
         print(f"Found {len(sessions)} sessions.")
 
         for session in sessions:
             print(f"  -- Processing session: {session['name']} (ID: {session['id']}) --")
             
-            js_script = f"""
-                var callback = arguments[0];
-                $.ajax({{
-                    url: 'src/query_scoring_groups.php',
-                    data: 'sess=["{session['id']}"]',
-                    dataType: 'json', type: 'GET',
-                    success: function (resultArray) {{ callback(resultArray); }},
-                    error: function() {{ callback(null); }}
-                }});
-            """
-            categories_result = driver.execute_async_script(js_script)
-            
-            if not categories_result:
-                print("    Could not retrieve categories for this session.")
+            # 1. Select the session in the UI
+            try:
+                sess_select = driver.find_element(By.ID, "sel-sess")
+                for option in sess_select.find_elements(By.TAG_NAME, "option"):
+                    if option.get_attribute("value") == session['id']:
+                        option.click()
+                        time.sleep(2) # Wait for category dropdown to populate
+                        break
+            except Exception as e:
+                print(f"    Warning: Could not select session {session['name']}: {e}")
                 continue
 
-            for cat_id, cat_info in enumerate(categories_result):
-                if not cat_info: continue
-                group_name = session['name']
-                age_group = cat_info['name']
-                print(f"    -> Scraping category: {age_group} (ID: {cat_id})")
+            # 2. Identify Categories from the Level/Category Dropdown (#sel-cat)
+            categories = []
+            try:
+                cat_select_el = driver.find_element(By.ID, "sel-cat")
+                for el in cat_select_el.find_elements(By.CSS_SELECTOR, "option:not([value=''])"):
+                    name = el.text.strip()
+                    # Skip placeholders like "Select Category" or "All Categories"
+                    if any(x in name for x in ["Select", "Category", "All ", "---"]):
+                        continue
+                    categories.append({
+                        'value': el.get_attribute('value'),
+                        'name': name
+                    })
+            except Exception as e:
+                print(f"    Warning: Could not find categories for session {session['name']}: {e}")
+                continue
 
-                results_url = f"https://live.kscore.ca/results/{raw_meet_id}/src/query_custom_results.php"
-                params = {
-                    'event': 0, 'discip': cat_info.get('discip'),
-                    'cat': json.dumps(cat_info.get('members')),
-                    'sess': json.dumps(cat_info.get('mSess', cat_info.get('sess')))
-                }
-                
-                response = requests.get(results_url, params=params, cookies=cookies, headers=headers)
-                response.raise_for_status()
-                
-                html_content = response.text
+            print(f"    Found {len(categories)} categories (levels).")
+
+            for cat_idx, cat in enumerate(categories):
+                level_name = cat['name']
+                print(f"    -> Scraping level: {level_name} (ID: {cat['value']})")
+
+                # 3. Select the Category/Level in the UI
+                try:
+                    # Re-fetch the select element to avoid stale reference
+                    cat_select_el = driver.find_element(By.ID, "sel-cat")
+                    for option in cat_select_el.find_elements(By.TAG_NAME, "option"):
+                        if option.get_attribute("value") == cat['value']:
+                            option.click()
+                            # Wait for the table to refresh or update. 
+                            # A simple sleep is often most reliable for K-Score's older AJAX.
+                            time.sleep(2) 
+                            break
+                except Exception as e:
+                    print(f"       Warning: Could not select level {level_name}: {e}")
+                    continue
+
+                # 4. Grab the HTML from the live DOM
+                try:
+                    # Ensure #results-name has updated to match expectation or just grab what's there
+                    results_name_el = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.ID, "results-name"))
+                    )
+                    group_label = results_name_el.text.strip()
+                    
+                    # Find the table. Class 'a-results' is the standard results table.
+                    table_el = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "table.a-results"))
+                    )
+                    html_content = table_el.get_attribute('outerHTML')
+                    
+                    # Wrap in the headers/thead/tbody if outerHTML doesn't include it (it should)
+                    # Use a full HTML snippet for Standardization function
+                    full_html = f"<html><body>{html_content}</body></html>"
+                except Exception as e:
+                    print(f"       Warning: Could not find results table for {level_name}: {e}")
+                    continue
+
                 if not html_content or "There are no results" in html_content:
                     print("       No results table found in this category.")
                     continue
 
-                df = standardize_kscore_columns(html_content)
+                df = standardize_kscore_columns(full_html)
 
                 if df is None or df.empty:
                     print("       Failed to create a DataFrame from the table.")
                     continue
                 
-                # The first column from the raw HTML is the Gymnast ID. We don't need it.
-                # Let's drop the 'Rank' column as it's the ID, not the placement rank.
-                # The real ranks are in the Result_*_Rnk columns.
                 if 'Rank' in df.columns:
                     df = df.drop(columns=['Rank'])
                 
                 # --- APPLY SERVICE COLUMN STANDARDIZATION ---
-                # 1. Map 'Category' to 'Level' if it looks like a level
-                extracted_level = ""
-                if "Level" in age_group or "CCP" in age_group:
-                    extracted_level = age_group
-                
                 df['Meet'] = meet_name
-                df['Group'] = group_name
-                df['Age_Group'] = age_group
-                df['Level'] = extracted_level
-                df['Age'] = ""   # Not provided by K-Score
-                df['Prov'] = ""  # Not provided by K-Score
+                df['Raw_Meet_Name'] = raw_meet_name
+                df['Session'] = session['name']
+                df['Group'] = group_label # e.g. Provincial 2A
+                df['Age_Group'] = level_name
+                # User Feedback: "Ignore age group as they do not give it". Use Group (HTML Header) as Level.
+                # Prioritize group_label for Level, fallback to level_name if empty.
+                df['Level'] = group_label if group_label else level_name 
+                df['Age'] = ""   
+                df['Prov'] = ""  
 
                 # Drop 'Category' if it was picked up from the table headers
                 if 'Category' in df.columns:
                     df = df.drop(columns=['Category'])
 
                 # 2. Enforce the Standard Column Order
-                standard_info_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Group']
+                standard_info_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Meet', 'Raw_Meet_Name', 'Session', 'Group']
                 # filter for columns that actually exist or were just created
                 existing_info_cols = [col for col in standard_info_cols if col in df.columns]
                 result_cols = [col for col in df.columns if col not in existing_info_cols]
                 
                 df = df[existing_info_cols + result_cols]
                 
-                output_filename = f"{meet_id}_FINAL_{session['id']}_{cat_id}.csv"
+                output_filename = f"{meet_id}_FINAL_{session['id']}_{cat_idx}.csv"
                 output_path = os.path.join(output_dir, output_filename)
                 df.to_csv(output_path, index=False)
                 saved_files_count += 1
