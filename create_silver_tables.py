@@ -268,6 +268,47 @@ def create_silver_tables():
             mag_df.to_sql("Silver_MAG_Export", conn, if_exists='replace', index=False)
             print(f"  -> Created {len(mag_df)} MAG export records.")
             
+            # --- AA VALIDATION for MAG ---
+            print("  -> Validating AA scores (MAG)...")
+            aa_mismatch_log = []
+            aa_threshold = 0.1  # Allow 0.1 point tolerance for rounding
+            
+            for _, row in mag_df.iterrows():
+                # Calculate sum of 6 apparatus scores
+                apparatus_scores = [
+                    row.get('fx_score'), row.get('ph_score'), row.get('sr_score'),
+                    row.get('vt_score'), row.get('pb_score'), row.get('hb_score')
+                ]
+                # Only validate if we have all 6 scores and an AA score
+                if all(s is not None and pd.notna(s) for s in apparatus_scores) and pd.notna(row.get('aa_score')):
+                    calculated_aa = sum(float(s) for s in apparatus_scores)
+                    scraped_aa = float(row['aa_score'])
+                    diff = abs(calculated_aa - scraped_aa)
+                    
+                    if diff > aa_threshold:
+                        aa_mismatch_log.append({
+                            'athlete': row['athlete_name'],
+                            'meet': row['meet_name'],
+                            'calculated_aa': round(calculated_aa, 3),
+                            'scraped_aa': scraped_aa,
+                            'difference': round(diff, 3)
+                        })
+            
+            if aa_mismatch_log:
+                print(f"  -> WARNING: {len(aa_mismatch_log)} AA mismatches detected!")
+                with open('aa_validation_log.txt', 'w') as f:
+                    f.write("AA Validation Mismatches (MAG)\\n")
+                    f.write("=" * 60 + "\\n\\n")
+                    for m in aa_mismatch_log:
+                        f.write(f"Athlete: {m['athlete']}\\n")
+                        f.write(f"  Meet: {m['meet']}\\n")
+                        f.write(f"  Calculated AA: {m['calculated_aa']}\\n")
+                        f.write(f"  Scraped AA: {m['scraped_aa']}\\n")
+                        f.write(f"  Difference: {m['difference']}\\n\\n")
+                print(f"  -> Mismatches logged to: aa_validation_log.txt")
+            else:
+                print(f"  -> All AA scores validated successfully!")
+            
             # --- 5. Silver WAG Export Table (Wide Format) ---
             print("Creating Silver_WAG_Export table...")
             cursor.execute("DROP TABLE IF EXISTS Silver_WAG_Export")

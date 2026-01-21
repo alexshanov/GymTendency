@@ -8,6 +8,7 @@ import re
 import html
 import os
 import time
+import logging
 
 import numpy as np
 
@@ -337,9 +338,9 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                         """
                         session_apparatuses = driver.execute_script(apparatus_discovery_js) or []
                         
-                        # Ensure All Around is included (ID '0')
-                        if not any(app.get('id') == '0' for app in session_apparatuses):
-                            session_apparatuses.append({'label': 'AllAround', 'id': '0'})
+                        # NOTE: AA data cannot be scraped from per-event view.
+                        # Do NOT add fake ID '0' here - it just re-scrapes the last apparatus.
+                        # AA totals must come from a separate scrape of the Combined/All-Around view.
                         
                         # 3. Aggregation Buffer for THIS Sub-Session
                         athlete_data_wide = {}
@@ -487,12 +488,15 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                                     
                                                     clean_suffix = re.sub(r'[^a-zA-Z0-9]+', '_', target_suffix)
                                                     athlete_data_wide[key][f'Result_{suffix}_{clean_suffix}'] = val
-                                
+
+                                                # NOTE: AllAround is NOT scraped here via ID '0' - it doesn't work.
+                                                # AA data is scraped separately from the dedicated All-Around view.
+
                                 print(f"      -> Processed {athletes_found_this_app} athlete records for {app_label}")
                             except Exception as driver_err:
                                 print(f"      -> Driver Extraction Error: {driver_err}")
 
-                        # 4. Save Sub-Session CSV
+                        # 4. Save Per-Event CSV (apparatus data)
                         if athlete_data_wide:
                             final_df = pd.DataFrame(athlete_data_wide.values())
                             info_cols_order = ['Name', 'Club', 'Level', 'Prov', 'Age_Group', 'Meet', 'Group']
@@ -500,10 +504,68 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                             final_df = final_df[info_cols_order + res_cols]
                             
                             safe_name = re.sub(r'[\s/\\:*?"<>|]+', '_', f"{group_name}_{sub_label}")
-                            filename = f"{meet_id_for_filename}_FINAL_{safe_name}_DETAILED.csv"
+                            filename = f"{meet_id_for_filename}_PEREVENT_{safe_name}_DETAILED.csv"
                             final_df.to_csv(os.path.join(output_directory, filename), index=False)
-                            print(f"    -> Saved Sub-Session: {filename}")
+                            print(f"    -> Saved Per-Event: {filename}")
                             total_files_saved += 1
+
+                        # 5. Switch to By-Event view and save full table (for AA data)
+                        print("    -> Switching to By-Event view for AA data...")
+                        try:
+                            driver.execute_script("ChangeReportType('E');")  # 'E' = By Event view
+                            time.sleep(3)
+                            
+                            # Scrape all tables from By-Event view (try multiple selectors)
+                            be_html = driver.page_source
+                            be_soup = BeautifulSoup(be_html, 'lxml')
+                            # Try gridData first, then any table with id containing 'scores'
+                            be_tables = be_soup.find_all('table', class_='gridData')
+                            if not be_tables:
+                                be_tables = be_soup.find_all('table', id=lambda x: x and 'score' in x.lower())
+                            if not be_tables:
+                                be_tables = be_soup.find_all('table')
+                            
+                            all_be_rows = []
+                            for be_table in be_tables:
+                                try:
+                                    be_df = pd.read_html(str(be_table), header=0)[0]
+                                    if be_df.empty:
+                                        continue
+                                    # Add age group from table attribute if present
+                                    age_part = be_table.get('data-agepartitioncd', '')
+                                    if age_part:
+                                        be_df['Age_Group_Code'] = age_part
+                                    # Add metadata
+                                    be_df['Meet'] = meet_name
+                                    be_df['Group'] = f"{group_name} - {sub_label}"
+                                    be_df['Level'] = group_name
+                                    all_be_rows.append(be_df)
+                                except Exception:
+                                    continue
+                            
+                            if all_be_rows:
+                                be_final_df = pd.concat(all_be_rows, ignore_index=True)
+                                
+                                # Reorder columns: service columns first, then result columns
+                                service_cols = ['Name', 'Club', 'Level', 'Prov', 'Age', 'Age_Group_Code', 'Meet', 'Group']
+                                service_cols = [c for c in service_cols if c in be_final_df.columns]
+                                result_cols = [c for c in be_final_df.columns if c not in service_cols]
+                                be_final_df = be_final_df[service_cols + result_cols]
+                                
+                                safe_name = re.sub(r'[\s/\\:*?"<>|]+', '_', f"{group_name}_{sub_label}")
+                                be_filename = f"{meet_id_for_filename}_BYEVENT_{safe_name}.csv"
+                                be_final_df.to_csv(os.path.join(output_directory, be_filename), index=False)
+                                print(f"      -> Saved By-Event: {be_filename} ({len(be_final_df)} rows)")
+                                total_files_saved += 1
+                            else:
+                                print("      -> No By-Event data found")
+                            
+                            # Switch back to Per-Event for next sub-session
+                            driver.execute_script("ChangeReportType('P');")
+                            time.sleep(2)
+                            
+                        except Exception as be_err:
+                            print(f"      -> Error scraping By-Event view: {be_err}")
 
                 except Exception as e:
                     print(f"  -> Error processing '{group_name}': {e}")

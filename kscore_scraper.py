@@ -4,6 +4,7 @@ import os
 import json
 import io
 import traceback
+import glob
 from bs4 import BeautifulSoup
 
 from selenium import webdriver
@@ -291,6 +292,14 @@ def main():
         total_meets_processed += 1
         meet_id = str(row['MeetID'])
         meet_name = str(row['MeetName'])
+
+        # --- SKIP LOGIC ---
+        # Note: KScore files have naming pattern: {meet_id}_FINAL_{session['id']}_{cat_idx}.csv
+        existing_files = glob.glob(os.path.join(OUTPUT_DIR_KSCORE, f"{meet_id}_FINAL_*.csv"))
+        if existing_files:
+            print(f"Skipping already scraped meet: {meet_name} (ID: {meet_id}). Found {len(existing_files)} files.")
+            continue
+        # ------------------
 
         print("\n" + "="*70)
         print(f"[{total_meets_processed}/{total_meets_in_queue}] Processing: {meet_name} (ID: {meet_id})")
