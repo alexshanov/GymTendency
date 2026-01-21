@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # --- CONFIGURATION ---
-KSCORE_MEETS_CSV = "target_kscore.csv"
+KSCORE_MEETS_CSV = "discovered_meet_ids_kscore.csv"
 OUTPUT_DIR_KSCORE = "CSVs_kscore_final"
 DEBUG_LIMIT = 0
 

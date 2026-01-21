@@ -298,6 +298,9 @@ def setup_database(db_file):
             num TEXT,
             bonus REAL,
             execution_bonus REAL,
+            score_sv REAL,
+            score_e REAL,
+            penalty REAL,
             FOREIGN KEY (meet_db_id) REFERENCES Meets (meet_db_id),
             FOREIGN KEY (athlete_id) REFERENCES Athletes (athlete_id),
             FOREIGN KEY (apparatus_id) REFERENCES Apparatus (apparatus_id)
@@ -578,8 +581,11 @@ def get_or_create_athlete_link(conn, person_id, club_id, cache):
     if result:
         athlete_id = result[0]
     else:
-        cursor.execute("INSERT INTO Athletes (person_id, club_id) VALUES (?, ?)", athlete_key)
-        athlete_id = cursor.lastrowid
+        # Use INSERT OR IGNORE for thread-safety and robustness
+        cursor.execute("INSERT OR IGNORE INTO Athletes (person_id, club_id) VALUES (?, ?)", athlete_key)
+        # If it was ignored, we need to fetch the existing ID
+        cursor.execute("SELECT athlete_id FROM Athletes WHERE person_id = ? AND club_id IS " + ("NULL" if club_id is None else "?"), (person_id,) if club_id is None else athlete_key)
+        athlete_id = cursor.fetchone()[0]
     cache[athlete_key] = athlete_id
     return athlete_id
 

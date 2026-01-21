@@ -1,6 +1,5 @@
-
 import sqlite3
-import pandas as pd
+import csv
 import os
 import glob
 import traceback
@@ -22,7 +21,13 @@ from etl_functions import (
     get_or_create_meet,
     calculate_file_hash,
     is_file_processed,
-    mark_file_processed
+    mark_file_processed,
+    sanitize_column_name,
+    ensure_column_exists,
+    check_duplicate_result,
+    validate_score,
+    standardize_score_status,
+    parse_rank
 )
 
 # --- CONFIGURATION (Specific to MSO) ---
@@ -31,23 +36,17 @@ MSO_CSVS_DIR = "CSVs_mso_final"
 MSO_MANIFEST_FILE = "discovered_meet_ids_mso.csv"
 
 # --- MSO Column Mappings ---
-# Maps raw CSV headers to internal/standard names
 COLUMN_MAP = {
-    # Service Columns
     'Gymnast': 'Name',
     'Team': 'Club',
     'Sess': 'Session',
     'Lvl': 'Level',
     'Div': 'Age_Group',
-    
-    # Apparatus - WAG
     'VT': 'Vault', 'VAULT': 'Vault',
     'UB': 'Uneven Bars', 'BARS': 'Uneven Bars', 'UNEVEN BARS': 'Uneven Bars',
     'BB': 'Beam', 'BEAM': 'Beam', 'Balance Beam': 'Beam',
     'FX': 'Floor', 'FLR': 'Floor', 'FLOOR': 'Floor',
     'AA': 'All Around', 'ALL AROUND': 'All Around',
-    
-    # Apparatus - MAG
     'PH': 'Pommel Horse', 'POMMEL HORSE': 'Pommel Horse', 'POMML': 'Pommel Horse',
     'SR': 'Rings', 'RINGS': 'Rings',
     'PB': 'Parallel Bars', 'PBARS': 'Parallel Bars', 'PARALLEL BARS': 'Parallel Bars',
@@ -57,32 +56,29 @@ COLUMN_MAP = {
 def load_meet_manifest(manifest_file):
     print(f"--- Loading MSO meet manifest from '{manifest_file}' ---")
     try:
-        manifest_df = pd.read_csv(manifest_file)
-        manifest = {
-            str(row['MeetID']): {
-                'name': row['MeetName'],
-                'start_date_iso': row['Date'], 
-                'location': row['State'],
-                'year': None
+        with open(manifest_file, mode='r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            manifest = {
+                str(row['MeetID']): {
+                    'name': row['MeetName'],
+                    'start_date_iso': row['Date'], 
+                    'location': row['State'],
+                    'year': None
+                }
+                for row in reader
             }
-            for _, row in manifest_df.iterrows()
-        }
         return manifest
     except (FileNotFoundError, KeyError) as e:
         print(f"Warning: Could not load MSO manifest. Error: {e}")
         return {} 
 
 def parse_cell_value(cell_str):
-    """
-    Parses a raw cell string from MSO into (score, d_score, rank).
-    Improved logic to handle [Score] [Rank] format common in MSO.
-    """
     if not isinstance(cell_str, str) or not cell_str.strip():
-        return None, None, None, None
+        return None, None, None, None, None
         
     parts = cell_str.split()
     if not parts:
-        return None, None, None, None
+        return None, None, None, None, None
     
     score_final = None
     d_score = None
@@ -96,66 +92,49 @@ def parse_cell_value(cell_str):
         except ValueError:
             return False
             
-    def parse_rank(s):
+    def _parse_rank_local(s):
         clean = re.sub(r'\D', '', s)
         return int(clean) if clean else None
         
-    def is_likely_rank(s):
-        # Rank is typically integer-like, or "T"+int. 
-        # Should NOT be a float like "8.500".
-        if is_float(s) and '.' in s: return False # It's a score
-        if parse_rank(s) is not None: return True
-        return False
-
     # --- LOGIC ---
-    
-    # 1. Single Token: "8.800" or "8"
     if len(parts) == 1:
         if is_float(parts[0]):
             return float(parts[0]), None, None, None, None
             
-    # 2. Two Tokens: "[Fractional] [Integer]" (e.g., "800 8")
     if len(parts) == 2:
         p0, p1 = parts[0], parts[1]
         if is_float(p0) and is_float(p1):
             score_final = float(p1) + (float(p0) / 1000.0)
             return score_final, None, None, None, None
             
-    # 3. Three Tokens: "[Rank] [Fractional] [Integer]" (e.g., "1 500 11")
     if len(parts) == 3:
         rank_part = parts[0]
         frac_part = parts[1]
         int_part = parts[2]
-        
         if is_float(frac_part) and is_float(int_part):
             score_final = float(int_part) + (float(frac_part) / 1000.0)
-            rank_numeric = parse_rank(rank_part)
+            rank_numeric = _parse_rank_local(rank_part)
             rank_text = rank_part
             return score_final, None, rank_numeric, rank_text, None
 
-    # 4. Four Tokens: "[Rank] [Fractional] [Integer] [Bonus/D]" (e.g., "1 500 11 0.5")
     if len(parts) == 4:
         rank_part = parts[0]
         frac_part = parts[1]
         int_part = parts[2]
         extra_part = parts[3]
-        
         if is_float(frac_part) and is_float(int_part):
             score_final = float(int_part) + (float(frac_part) / 1000.0)
-            rank_numeric = parse_rank(rank_part)
+            rank_numeric = _parse_rank_local(rank_part)
             rank_text = rank_part
-            # In MSO, the 4th token is often a bonus or execution bonus.
-            # We'll return it as 'bonus' for now.
             bonus = float(extra_part) if is_float(extra_part) else None
             return score_final, None, rank_numeric, rank_text, bonus
-            
-    # Fallback for other patterns
+
     if is_float(parts[-1]):
         score_final = float(parts[-1])
         remaining = parts[:-1]
         if len(remaining) == 1:
              rank_text = remaining[0]
-             rank_numeric = parse_rank(remaining[0])
+             rank_numeric = _parse_rank_local(remaining[0])
     
     return score_final, None, rank_numeric, rank_text, None
 
@@ -173,69 +152,65 @@ def process_mso_files(meet_manifest, club_alias_map, sample_rate=1):
         
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            # Caches
+            # Initial Caches
             person_cache = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
             club_cache = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
             athlete_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
             apparatus_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT apparatus_id, name, discipline_id FROM Apparatus").fetchall()}
             meet_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
 
-            for filepath in csv_files:
+            for i, filepath in enumerate(csv_files):
                 filename = os.path.basename(filepath)
                 file_hash = calculate_file_hash(filepath)
                 
                 if is_file_processed(conn, filepath, file_hash):
-                    print(f"  Skipping: {filename} (Already processed and unchanged)")
+                    if i % 100 == 0: print(f"  Skipping: {filename} (Already processed)")
                     continue
 
-                print(f"\nProcessing file: {filename}")
+                print(f"[{i}/{len(csv_files)}] Processing file: {filename}")
                 success = parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
                 
                 if success:
                     mark_file_processed(conn, filepath, file_hash)
                 
-                # Force garbage collection to prevent OOM on large batches
-                gc.collect()
+                # Periodically clear caches if they get too large (every 500 files)
+                if i > 0 and i % 500 == 0:
+                    print("  -> Periodic cache refresh to manage memory...")
+                    person_cache = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
+                    club_cache = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
+                    athlete_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
+                    gc.collect()
 
     except Exception as e:
         print(f"Critical error: {e}")
         traceback.print_exc()
 
 def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map):
+    filename = os.path.basename(filepath)
+    source_meet_id = filename.split('_mso.csv')[0]
+    
+    rows = []
     try:
-        df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
-        if df.empty: return True
+        with open(filepath, mode='r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
     except Exception as e:
         print(f"Error reading {filepath}: {e}")
         return False
 
-    filename = os.path.basename(filepath)
-    source_meet_id = filename.split('_mso.csv')[0]
-    
+    if not rows: return True
+
     # Determine Meet Metadata
     meet_details = meet_manifest.get(source_meet_id, {})
-    if not meet_details.get('name') and 'Meet' in df.columns:
-        meet_details['name'] = df['Meet'].iloc[0]
+    if not meet_details.get('name') and 'Meet' in rows[0]:
+        meet_details['name'] = rows[0]['Meet']
         
     meet_db_id = get_or_create_meet(conn, 'mso', source_meet_id, meet_details, meet_cache)
     
-    # --- MSO DATA LOADING LOGIC (Dynamic) ---
+    headers = list(rows[0].keys())
     
-    # Identify Apparatus Columns based on the map
-    # We still use the map just to identify "Is this an apparatus?"
-    # But for metadata, we export everything else.
-    
-    col_map = {} 
-    # Use lowercase matching for resilience
-    for col in df.columns:
-        clean = col.strip().upper() # MSO HEADERS ARE OFTEN ALL CAPS
-        # But our key map is case sensitive keys? "Gymnast" vs "GYMNAST"
-        # Let's map strict if possible.
-        col_map[col] = col # Default to self
-
-    # Helper to find core identity columns
     def find_col_by_fuzzy(candidates):
-        for c in df.columns:
+        for c in headers:
             if c.upper().strip() in [cand.upper() for cand in candidates]:
                 return c
         return None
@@ -245,129 +220,90 @@ def parse_mso_file(filepath, conn, person_cache, club_cache, athlete_cache, appa
     
     if not name_col:
         print(f"  Skipping {filename}: No Name column identified.")
-        return
+        return False
 
-    # Identify Apparatus columns using our known map
     apparatus_cols = []
     dynamic_metadata_cols = []
+    known_apparatus_keys = ['Vault', 'Uneven Bars', 'Beam', 'Floor', 'All Around', 'Pommel Horse', 'Rings', 'Parallel Bars', 'High Bar']
     
-    known_apparatus_keys = ['Vault', 'Uneven Bars', 'Beam', 'Floor', 'AllAround', 'Pommel Horse', 'Rings', 'Parallel Bars', 'High Bar']
-    
-    for col in df.columns:
+    for col in headers:
         norm_key = COLUMN_MAP.get(col.strip(), col)
         if norm_key in known_apparatus_keys:
             apparatus_cols.append(col)
         elif col not in [name_col, club_col]:
              dynamic_metadata_cols.append(col)
 
-    # Determine Discipline
-    # If we found MAG-specific apparatus, it's MAG.
     detected_apparatus_names = [COLUMN_MAP.get(c.strip(), c) for c in apparatus_cols]
     if any(x in ['Pommel Horse', 'Rings', 'Parallel Bars', 'High Bar'] for x in detected_apparatus_names):
         discipline_id = 2 # MAG
         gender_heuristic = 'M'
-        print(f"  {filename}: Detected MAG")
     else:
         discipline_id = 1 # WAG
         gender_heuristic = 'F'
-        print(f"  {filename}: Detected WAG")
 
-    # Dynamic Schema Check
-    from etl_functions import sanitize_column_name, ensure_column_exists, check_duplicate_result, validate_score, standardize_score_status, parse_rank
     cursor = conn.cursor()
-    
-    dynamic_mapping = [] # (raw_col, safe_col_name)
+    dynamic_mapping = []
     for raw_col in dynamic_metadata_cols:
-        # Check if we should ignore standard ones that we handle explicitly elsewhere?
-        # Actually, for MSO we want ALL metadata (SESS, LVL, DIV) to go into columns.
-        
-        # Now relies on column_aliases.json via etl_functions.py
         safe_name = sanitize_column_name(raw_col)
-        
         ensure_column_exists(cursor, 'Results', safe_name, 'TEXT')
         dynamic_mapping.append((raw_col, safe_name))
 
-    # Ensure apparatus-specific bonus columns exist
     ensure_column_exists(cursor, 'Results', 'bonus', 'REAL')
     ensure_column_exists(cursor, 'Results', 'execution_bonus', 'REAL')
 
     results_inserted = 0
-    
-    for index, row in df.iterrows():
-        # 1. Identity
+    for row in rows:
         raw_name = row.get(name_col)
         person_name = standardize_athlete_name(raw_name)
         if not person_name: continue
         
         person_id = get_or_create_person(conn, person_name, gender_heuristic, person_cache)
-        
         raw_club = row.get(club_col) if club_col else ""
         club_name = standardize_club_name(raw_club, club_alias_map)
         club_id = get_or_create_club(conn, club_name, club_cache)
         athlete_id = get_or_create_athlete_link(conn, person_id, club_id, athlete_cache)
         
-        # 2. Extract Metadata
         dynamic_vals = {}
         for r_col, s_col in dynamic_mapping:
             val = row.get(r_col)
             if val: dynamic_vals[s_col] = str(val)
             
-        # 3. Process Apparatus
         for raw_app_col in apparatus_cols:
             cell_value = row.get(raw_app_col)
             if not cell_value: continue
             
-            clean_app_name = COLUMN_MAP.get(raw_app_col.strip())
+            clean_app_name = COLUMN_MAP.get(raw_app_col.strip(), raw_app_col)
             app_key = (clean_app_name, discipline_id)
             if app_key not in apparatus_cache: app_key = (clean_app_name, 99)
             if app_key not in apparatus_cache: continue
             
             apparatus_id = apparatus_cache[app_key]
-            
-            # --- PARSE MSO CELL VALUE ---
-            # Returns (score_final, d_score, rank_numeric, rank_text, bonus)
             mso_vals = parse_cell_value(cell_value)
             score_final, d_score, rank_numeric_mso, rank_text, bonus = mso_vals
             
-            # Use standardized parse_rank if available? 
-            # Actually, parse_cell_value already uses a local version.
-            # But the Result table expects rank_numeric. 
-            # Consolidate:
             rank_numeric = rank_numeric_mso if rank_numeric_mso is not None else parse_rank(rank_text)
-            
             if score_final is None and d_score is None: continue
-            
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
-            # Ensure native types for SQLite
-            if score_final is not None: score_final = float(score_final)
-            if d_score is not None: d_score = float(d_score)
-            if rank_numeric is not None: rank_numeric = int(rank_numeric)
-            if bonus is not None: bonus = float(bonus)
-            
-            # Dynamic INSERT Construction
             cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'rank_text', 'score_text']
-            vals = [int(meet_db_id), int(athlete_id), int(apparatus_id), gender_heuristic, score_final, d_score, rank_numeric, rank_text, str(cell_value) if cell_value else None]
+            vals = [int(meet_db_id), int(athlete_id), int(apparatus_id), gender_heuristic, score_final, d_score, rank_numeric, rank_text, str(cell_value)]
             
             if bonus is not None:
                 cols.append('bonus')
                 vals.append(bonus)
-            
             for col_name, col_val in dynamic_vals.items():
                 cols.append(col_name)
                 vals.append(col_val)
                 
             placeholders = ', '.join(['?'] * len(cols))
-            quoted_cols = [f'"{c}"' for c in cols]
-            col_str = ', '.join(quoted_cols)
-            
+            col_str = ', '.join([f'"{c}"' for c in cols])
             sql = f"INSERT INTO Results ({col_str}) VALUES ({placeholders})"
             cursor.execute(sql, vals)
             results_inserted += 1
             
     conn.commit()
-    print(f"  Inserted {results_inserted} results from {filename} (Dynamic Schema)")
-    del df
+    # Explicitly clear the row list to free memory sooner
+    rows.clear()
     return True
 
 def main():

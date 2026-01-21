@@ -188,37 +188,65 @@ def create_silver_tables():
                     
                     -- Floor (FX)
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_final END) as fx_score,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.score_sv END) as fx_sv,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_d END) as fx_d,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.score_e END) as fx_e,
+                    MAX(CASE WHEN a.name = 'Floor' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as fx_eb,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.penalty END) as fx_penalty,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_numeric END) as fx_rank,
                     
                     -- Pommel Horse (PH)
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_final END) as ph_score,
+                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_sv END) as ph_sv,
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_d END) as ph_d,
+                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.score_e END) as ph_e,
+                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as ph_eb,
+                    MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.penalty END) as ph_penalty,
                     MAX(CASE WHEN a.name = 'Pommel Horse' THEN r.rank_numeric END) as ph_rank,
                     
                     -- Rings (SR)
                     MAX(CASE WHEN a.name = 'Rings' THEN r.score_final END) as sr_score,
+                    MAX(CASE WHEN a.name = 'Rings' THEN r.score_sv END) as sr_sv,
                     MAX(CASE WHEN a.name = 'Rings' THEN r.score_d END) as sr_d,
+                    MAX(CASE WHEN a.name = 'Rings' THEN r.score_e END) as sr_e,
+                    MAX(CASE WHEN a.name = 'Rings' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as sr_eb,
+                    MAX(CASE WHEN a.name = 'Rings' THEN r.penalty END) as sr_penalty,
                     MAX(CASE WHEN a.name = 'Rings' THEN r.rank_numeric END) as sr_rank,
                     
                     -- Vault (VT)
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_final END) as vt_score,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.score_sv END) as vt_sv,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_d END) as vt_d,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.score_e END) as vt_e,
+                    MAX(CASE WHEN a.name = 'Vault' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as vt_eb,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.penalty END) as vt_penalty,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.rank_numeric END) as vt_rank,
                     
                     -- Parallel Bars (PB)
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_final END) as pb_score,
+                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_sv END) as pb_sv,
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_d END) as pb_d,
+                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.score_e END) as pb_e,
+                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as pb_eb,
+                    MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.penalty END) as pb_penalty,
                     MAX(CASE WHEN a.name = 'Parallel Bars' THEN r.rank_numeric END) as pb_rank,
                     
                     -- High Bar (HB)
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.score_final END) as hb_score,
+                    MAX(CASE WHEN a.name = 'High Bar' THEN r.score_sv END) as hb_sv,
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.score_d END) as hb_d,
+                    MAX(CASE WHEN a.name = 'High Bar' THEN r.score_e END) as hb_e,
+                    MAX(CASE WHEN a.name = 'High Bar' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as hb_eb,
+                    MAX(CASE WHEN a.name = 'High Bar' THEN r.penalty END) as hb_penalty,
                     MAX(CASE WHEN a.name = 'High Bar' THEN r.rank_numeric END) as hb_rank,
                     
                     -- All Around (AA)
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_final END) as aa_score,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_sv END) as aa_sv,
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_d END) as aa_d,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_e END) as aa_e,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as aa_eb,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.penalty END) as aa_penalty,
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_numeric END) as aa_rank
                     
                 FROM Results r
@@ -259,27 +287,47 @@ def create_silver_tables():
                     
                     -- Vault (VT)
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_final END) as vt_score,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.score_sv END) as vt_sv,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.score_d END) as vt_d,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.score_e END) as vt_e,
+                    MAX(CASE WHEN a.name = 'Vault' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as vt_eb,
+                    MAX(CASE WHEN a.name = 'Vault' THEN r.penalty END) as vt_penalty,
                     MAX(CASE WHEN a.name = 'Vault' THEN r.rank_numeric END) as vt_rank,
                     
                     -- Uneven Bars (UB)
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_final END) as ub_score,
+                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_sv END) as ub_sv,
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_d END) as ub_d,
+                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.score_e END) as ub_e,
+                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as ub_eb,
+                    MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.penalty END) as ub_penalty,
                     MAX(CASE WHEN a.name = 'Uneven Bars' THEN r.rank_numeric END) as ub_rank,
                     
                     -- Beam (BB)
                     MAX(CASE WHEN a.name = 'Beam' THEN r.score_final END) as bb_score,
+                    MAX(CASE WHEN a.name = 'Beam' THEN r.score_sv END) as bb_sv,
                     MAX(CASE WHEN a.name = 'Beam' THEN r.score_d END) as bb_d,
+                    MAX(CASE WHEN a.name = 'Beam' THEN r.score_e END) as bb_e,
+                    MAX(CASE WHEN a.name = 'Beam' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as bb_eb,
+                    MAX(CASE WHEN a.name = 'Beam' THEN r.penalty END) as bb_penalty,
                     MAX(CASE WHEN a.name = 'Beam' THEN r.rank_numeric END) as bb_rank,
                     
                     -- Floor (FX)
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_final END) as fx_score,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.score_sv END) as fx_sv,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.score_d END) as fx_d,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.score_e END) as fx_e,
+                    MAX(CASE WHEN a.name = 'Floor' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as fx_eb,
+                    MAX(CASE WHEN a.name = 'Floor' THEN r.penalty END) as fx_penalty,
                     MAX(CASE WHEN a.name = 'Floor' THEN r.rank_numeric END) as fx_rank,
                     
                     -- All Around (AA)
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_final END) as aa_score,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_sv END) as aa_sv,
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_d END) as aa_d,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.score_e END) as aa_e,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN COALESCE(r.bonus, 0) + COALESCE(r.execution_bonus, 0) END) as aa_eb,
+                    MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.penalty END) as aa_penalty,
                     MAX(CASE WHEN a.name LIKE 'All%Around%' THEN r.rank_numeric END) as aa_rank
                     
                 FROM Results r

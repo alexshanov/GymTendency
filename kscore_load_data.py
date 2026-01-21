@@ -56,7 +56,7 @@ def load_meet_manifest(manifest_file):
         print(f"Warning: Could not load Kscore manifest. Meet details will be incomplete. Error: {e}")
         return {} 
 
-def process_kscore_files(meet_manifest, club_alias_map, sample_rate=1):
+def process_kscore_files(meet_manifest, club_alias_map, level_alias_map, sample_rate=1):
     """
     Main function to find and process all Kscore result CSV files.
     """
@@ -92,7 +92,7 @@ def process_kscore_files(meet_manifest, club_alias_map, sample_rate=1):
 
                 print(f"\nProcessing file: {filename}")
                 # Pass all the new caches to the parsing function
-                success = parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map)
+                success = parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map, level_alias_map)
                 
                 if success:
                     mark_file_processed(conn, filepath, file_hash)
@@ -101,7 +101,18 @@ def process_kscore_files(meet_manifest, club_alias_map, sample_rate=1):
         print(f"A critical error occurred during file processing: {e}")
         traceback.print_exc()
 
-def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map):
+# --- New Alias Loading ---
+def load_kscore_level_aliases():
+    alias_file = "kscore_level_aliases.json"
+    if os.path.exists(alias_file):
+        try:
+            with open(alias_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load {alias_file}: {e}")
+    return {}
+
+def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_alias_map, level_alias_map):
     """
     Parses a single Kscore CSV and loads its data into the database using the new schema.
     """
@@ -118,24 +129,24 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
     source_meet_id = full_source_id.replace('kscore_', '', 1)
     meet_details = meet_manifest.get(full_source_id, {})
     if not meet_details.get('name'):
-        meet_details['name'] = df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Kscore {source_meet_id}"
+        # Fallback to Raw_Meet_Name if provided in CSV
+        meet_details['name'] = df['Raw_Meet_Name'].iloc[0] if 'Raw_Meet_Name' in df.columns else (df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Kscore {source_meet_id}")
+    
     meet_db_id = get_or_create_meet(conn, 'kscore', source_meet_id, meet_details, meet_cache)
 
     discipline_id, discipline_name, gender_heuristic = detect_discipline(df)
     print(f"  Detected Discipline: {discipline_name}")
 
     # --- KEY MAPPING FOR IDS ---
-    # We still need to know which columns hold the Identity info
     KEY_MAP = {
         'Gymnast': 'Name', 'Athlete': 'Name', 'Name': 'Name',
         'Club': 'Club', 'Team': 'Club',
         'Level': 'Level',
         'Age': 'Age',
-        'Prov': 'Prov',
-        'Meets': 'Meet' # Fallback
+        'Prov': 'Prov'
     }
 
-    # Find the critical columns in this specific file
+    # Find the name column
     col_map = {col: KEY_MAP.get(col, col) for col in df.columns}
     name_col = next((c for c, v in col_map.items() if v == 'Name'), None)
     
@@ -150,14 +161,6 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
     athletes_processed = 0
     results_inserted = 0
 
-    # Pre-calculate which columns are "Dynamic Results" vs "Apparatus Results"
-    # K-Score structure: Result_Event_D, Result_Event_Score
-    # We will treat "Result_" columns as apparatus data to be normalized into rows?
-    # WAIT. The user wants "columns as is". 
-    # BUT we are inserting into a relational 'Results' table which has `apparatus_id`.
-    # So we MUST pivot the apparatus columns (D/Score/Rank) into rows.
-    # The *Dynamic* columns are things like "Start Value" or "Execution" that are NOT part of the standard triplet.
-    
     # Identify apparatus triplets
     result_columns = [col for col in df.columns if col.startswith('Result_')]
     event_bases = {}
@@ -167,15 +170,16 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
             raw_event_name = match.group(1)
             event_bases[raw_event_name] = raw_event_name
 
-    # Identify other dynamic columns (Metadata that isn't Name/Club/Apparatus)
-    # These will be added as columns to the Results table
+    # Identify other dynamic columns
     ignore_cols = list(event_bases.keys()) + result_columns + [name_col]
     if 'Club' in df.columns: ignore_cols.append('Club')
     
     dynamic_cols_to_add = []
+    # Explicitly include these standard service columns as dynamic if they don't exist in schema
+    standard_service_cols = ['Raw_Meet_Name', 'Session', 'Group', 'Age_Group']
+    
     for col in df.columns:
         if col not in ignore_cols and not col.startswith('Result_'):
-            # This is a candidate for a new column (e.g. "USAG #", "Session")
             sanitized = sanitize_column_name(col)
             ensure_column_exists(cursor, 'Results', sanitized, 'TEXT')
             dynamic_cols_to_add.append((col, sanitized))
@@ -198,10 +202,16 @@ def parse_kscore_file(filepath, conn, person_cache, club_cache, athlete_cache, a
         club_id = get_or_create_club(conn, club_name, club_cache)
         athlete_id = get_or_create_athlete_link(conn, person_id, club_id, athlete_cache)
         
-        # 2. Extract Dynamic Values for this row
+        # 2. Level Mapping
+        raw_level = row.get('Level', '')
+        mapped_level = level_alias_map.get(raw_level, raw_level)
+        
+        # 3. Extract Dynamic Values for this row
         dynamic_values = {}
         for raw_col, safe_col in dynamic_cols_to_add:
             val = row.get(raw_col)
+            # Apply mapping if this is the Level column in dynamic values
+            if raw_col == 'Level': val = mapped_level
             if val: dynamic_values[safe_col] = str(val)
 
         # 3. Process Apparatus (Pivot)
@@ -304,6 +314,7 @@ def main():
     args = parser.parse_args()
 
     club_aliases = load_club_aliases()
+    level_aliases = load_kscore_level_aliases()
     meet_manifest = load_meet_manifest(KSCORE_MEET_MANIFEST_FILE)
     
     if args.file:
@@ -314,9 +325,9 @@ def main():
             athlete_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
             apparatus_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT apparatus_id, name, discipline_id FROM Apparatus").fetchall()}
             meet_cache = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
-            parse_kscore_file(args.file, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_aliases)
+            parse_kscore_file(args.file, conn, person_cache, club_cache, athlete_cache, apparatus_cache, meet_cache, meet_manifest, club_aliases, level_aliases)
     else:
-        process_kscore_files(meet_manifest, club_aliases, sample_rate=args.sample)
+        process_kscore_files(meet_manifest, club_aliases, level_aliases, sample_rate=args.sample)
     
     print("\n--- Kscore data loading script finished ---")
 

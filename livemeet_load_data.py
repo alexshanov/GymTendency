@@ -240,41 +240,39 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             
             apparatus_id = apparatus_cache[app_key]
             
-            # Extract Triplet + Bonuses
+            # Extract Detailed Columns
             d_val = row.get(f'Result_{raw_event}_D')
+            sv_val = row.get(f'Result_{raw_event}_SV')
             score_val = row.get(f'Result_{raw_event}_Score')
+            e_val = row.get(f'Result_{raw_event}_E')
+            bonus_val = row.get(f'Result_{raw_event}_Bonus')
+            penalty_val = row.get(f'Result_{raw_event}_Penalty')
             rank_val = row.get(f'Result_{raw_event}_Rnk')
             
-            # Look for per-event bonuses
-            bonus_val = row.get(f'Result_{raw_event}_Bonus')
+            # Legacy/Fallback execution bonus
             exec_bonus_val = row.get(f'Result_{raw_event}_Exec_Bonus') or row.get(f'Result_{raw_event}_Execution_Bonus')
             
-            if not score_val and not d_val: continue
+            if not score_val and not d_val and not sv_val: continue
             
-            # Numeric conversion (Ensure native types for SQLite)
-            score_numeric = pd.to_numeric(score_val, errors='coerce')
-            if not pd.isna(score_numeric): score_numeric = float(score_numeric)
-            else: score_numeric = None
+            # Numeric conversion
+            def to_float(val):
+                n = pd.to_numeric(val, errors='coerce')
+                return float(n) if not pd.isna(n) else None
 
-            d_numeric = pd.to_numeric(d_val, errors='coerce')
-            if not pd.isna(d_numeric): d_numeric = float(d_numeric)
-            else: d_numeric = None
-
+            score_numeric = to_float(score_val)
+            d_numeric = to_float(d_val)
+            sv_numeric = to_float(sv_val)
+            e_numeric = to_float(e_val)
+            bonus_numeric = to_float(bonus_val)
+            penalty_numeric = to_float(penalty_val)
+            exec_bonus_numeric = to_float(exec_bonus_val)
             rank_numeric = parse_rank(str(rank_val)) if rank_val else None
-
-            bonus_numeric = pd.to_numeric(bonus_val, errors='coerce')
-            if not pd.isna(bonus_numeric): bonus_numeric = float(bonus_numeric)
-            else: bonus_numeric = None
-
-            exec_bonus_numeric = pd.to_numeric(exec_bonus_val, errors='coerce')
-            if not pd.isna(exec_bonus_numeric): exec_bonus_numeric = float(exec_bonus_numeric)
-            else: exec_bonus_numeric = None
             
             if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
             
             # Dynamic INSERT Construction
-            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'rank_numeric', 'score_text', 'rank_text']
-            vals = [int(meet_db_id), int(athlete_id), int(apparatus_id), gender_heuristic, score_numeric, d_numeric, rank_numeric, str(score_val) if score_val else None, str(rank_val) if rank_val else None]
+            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'score_sv', 'score_e', 'penalty', 'rank_numeric', 'score_text', 'rank_text']
+            vals = [int(meet_db_id), int(athlete_id), int(apparatus_id), gender_heuristic, score_numeric, d_numeric, sv_numeric, e_numeric, penalty_numeric, rank_numeric, str(score_val) if score_val else None, str(rank_val) if rank_val else None]
             
             if bonus_numeric is not None:
                 cols.append('bonus')
