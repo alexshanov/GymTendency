@@ -184,7 +184,7 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
     result_columns = [col for col in df.columns if col.startswith('Result_')]
     event_bases = {}
     for col in result_columns:
-        match = re.search(r'Result_(.*)_(Score|D|Rnk)$', col)
+        match = re.search(r'Result_(.*)_(Score|D|E|Rnk|Total)$', col)
         if match:
             raw_event_name = match.group(1)
             event_bases[raw_event_name] = raw_event_name
