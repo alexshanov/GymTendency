@@ -433,6 +433,12 @@ def standardize_athlete_name(name_str, remove_middle_initial=True):
     if not isinstance(name_str, str) or not name_str.strip(): 
         return None
     
+    # Filter out garbage values from uncollapsed headers or data issues
+    garbage_values = {'#', 'name', 'athlete', 'competitor', 'gymnast', 'nan', ''}
+    cleaned = name_str.strip().lower()
+    if cleaned in garbage_values or len(cleaned) <= 1 or cleaned.isdigit():
+        return None
+    
     # 1. Clean up extra whitespace
     name_str = ' '.join(name_str.strip().split())
     
