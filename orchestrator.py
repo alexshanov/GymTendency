@@ -24,9 +24,9 @@ LIVEMEET_FINAL_DIR = "CSVs_Livemeet_final"
 MSO_DIR = "CSVs_mso_final"
 
 WORKERS = {
-    'kscore': 1,
-    'livemeet': 3,
-    'mso': 10
+    'kscore': 2,
+    'livemeet': 8,
+    'mso': 15
 }
 
 # --- WORKER FUNCTIONS ---

@@ -39,9 +39,7 @@ def main():
     
     scripts = [
         ("create_db.py", []),
-        ("kscore_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
-        ("livemeet_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
-        ("mso_load_data.py", ["--sample", str(args.sample)] if args.sample else []),
+        ("load_orchestrator.py", ["--sample", str(args.sample)] if args.sample else []),
         ("create_silver_tables.py", [])
     ]
     
