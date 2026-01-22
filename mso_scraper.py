@@ -31,11 +31,24 @@ def setup_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    # Anti-detection
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    service = Service(ChromeDriverManager().install())
+    options.page_load_strategy = 'eager'  # Don't wait for all images/ads to load
+    
+    try:
+        service = Service(ChromeDriverManager().install())
+    except Exception as e:
+        print(f"  -> Warning: ChromeDriverManager failed ({e}), trying cached fallback...")
+        fallback_path = "/home/alex-shanov/.wdm/drivers/chromedriver/linux64/144.0.7559.96/chromedriver-linux64/chromedriver"
+        if os.path.exists(fallback_path):
+             service = Service(fallback_path)
+             print(f"  -> Using cached driver at: {fallback_path}")
+        else:
+             raise e
+
     driver = webdriver.Chrome(service=service, options=options)
+    driver.set_page_load_timeout(20) # Strict timeout for initial page load
+    driver.set_script_timeout(20)
     return driver
 
 def clean_text(text):

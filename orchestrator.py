@@ -6,6 +6,7 @@ import time
 import re
 import contextlib
 import shutil
+import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Import Scrapers
@@ -89,8 +90,12 @@ def mso_task(meet_id, meet_name):
             driver = mso_scraper.setup_driver()
             # process_meet signature: (driver, meet_id, meet_name, index, total)
             # We don't really need index/total here for the single meet scrape
-            mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
-        return f"DONE: {meet_id}"
+            success = mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
+        
+        if success:
+            return f"DONE: {meet_id}"
+        else:
+            return f"ERROR: {meet_id} (Internal Scraper Logic Returned False)"
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
     finally:
@@ -103,57 +108,27 @@ def mso_task(meet_id, meet_name):
 # --- MAIN ORCHESTRATOR ---
 
 def run_scraper(scraper_type, manifest_path, task_func, max_workers):
-    """Runs a specific scraper type in parallel."""
-    if not os.path.exists(manifest_path):
-        print(f"Manifest missing: {manifest_path}")
-        return
-
-    df = pd.read_csv(manifest_path)
-    # Handle different column names
-    id_col = [c for c in df.columns if 'MeetID' in c][0]
-    name_col = [c for c in df.columns if 'MeetName' in c][0]
-    
-    tasks = []
-    for _, row in df.iterrows():
-        tasks.append((row[id_col], row[name_col]))
-
-    print(f"\n--- Starting {scraper_type.upper()} Scraper with {max_workers} workers ({len(tasks)} meets) ---")
-    
-    completed = 0
-    total = len(tasks)
-    
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(task_func, mid, mname): (mid, mname) for mid, mname in tasks}
-        
-        for future in as_completed(futures):
-            completed += 1
-            mid, mname = futures[future]
-            try:
-                result = future.result()
-                # Clean Output: [Count/Total] ID: Progress
-                # e.g. [1/100] mso_1234: DONE
-                print(f"[{completed}/{total}] {mid}: {result.split(':', 1)[0]}")
-            except Exception as e:
-                print(f"[{completed}/{total}] {mid}: EXCEPTION ({e})")
+    # (This function is not actually used in main() anymore, but keeping consistent if needed later)
+    pass 
 
 def main():
+    # Setup Logging
+    logging.basicConfig(
+        filename='scraper_orchestrator.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filemode='w'
+    )
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARNING) # Only show warnings/errors to console
+    logging.getLogger('').addHandler(console)
+
+    print("--- Scraper Orchestrator Started (Detailed logs in 'scraper_orchestrator.log') ---")
+
     # Ensure directories exist
     for d in [KSCORE_DIR, LIVEMEET_MESSY_DIR, LIVEMEET_FINAL_DIR, MSO_DIR]:
         os.makedirs(d, exist_ok=True)
 
-    # Note: We run KSCORE, LIVEMEET, and MSO sequentially in terms of scraper types, 
-    # but each scraper type runs its internal tasks in parallel with the specified worker count.
-    # The user request asks for them to run "in parallel", which could mean all three types at once,
-    # or just that the scrapers themselves are parallelized. 
-    # To be safe and efficient, I'll run one scraper type at a time but with their own parallel workers.
-    # If the user wants ALL three scrapers running simultaneously, I would need a different structure.
-    # However, KScore (1) + LiveMeet (3) + MSO (10) = 14 browser instances. 
-    # Running all 14 at once is likely what they want.
-    
-    # Actually, let's run all of them in one big pool with a total of 14 workers?
-    # No, the user specified DIFFERENT worker counts for each. 
-    # I'll create one overall pool and distribute the tasks.
-    
     all_tasks = []
     
     # Load KScore
@@ -180,11 +155,8 @@ def main():
         for _, row in df.iterrows():
             all_tasks.append(('mso', str(row[id_col]), str(row[name_col])))
 
+    logging.info(f"Total tasks loaded: {len(all_tasks)}")
     print(f"Total tasks loaded: {len(all_tasks)}")
-    
-    # We need to respect worker counts per type. 
-    # This is tricky with a single pool. 
-    # I'll use separate executors for each type to ensure the counts are respected.
     
     with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
          ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
@@ -215,10 +187,27 @@ def main():
             completed[stype] += 1
             try:
                 result = future.result()
-                # Clean Output: [kscore 1/268] mid: DONE
-                print(f"[{stype} {completed[stype]}/{totals[stype]}] {mid}: {result.split(':', 1)[0]}")
+                
+                parts = result.split(':', 1)
+                status = parts[0]
+                message = parts[1].strip() if len(parts) > 1 else ""
+                
+                log_msg = f"[{stype} {completed[stype]}/{totals[stype]}] {mid}: {status} - {message}"
+                
+                if "ERROR" in status:
+                     logging.error(log_msg)
+                     # Optional: print error to stdout too, or keep it silent as requested
+                elif "SKIP" in status:
+                     logging.info(log_msg)
+                else:
+                     logging.info(log_msg)
+
             except Exception as e:
-                print(f"[{stype} {completed[stype]}/{totals[stype]}] {mid}: EXCEPTION ({e})")
+                err_msg = f"[{stype} {completed[stype]}/{totals[stype]}] {mid}: EXCEPTION ({e})"
+                logging.error(err_msg)
+
+    logging.info("Orchestrator finished.")
+
 
 if __name__ == "__main__":
     main()

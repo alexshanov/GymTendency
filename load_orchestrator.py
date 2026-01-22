@@ -10,6 +10,7 @@ import json
 import argparse
 import traceback
 import signal
+import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Import extraction library
@@ -237,8 +238,10 @@ def main():
             if not is_file_processed(conn, fpath, fhash):
                 unprocessed.append((stype, fpath, fhash, manifest, aliases))
     
-    print(f"Total files: {len(files_to_process)}, Unprocessed: {len(unprocessed)}")
-    if not unprocessed: return
+    logging.info(f"Total files: {len(files_to_process)}, Unprocessed: {len(unprocessed)}")
+    if not unprocessed:
+        logging.info("No unprocessed files found.")
+        return
 
     # 4. Process in Parallel
     caches = {}
@@ -257,7 +260,7 @@ def main():
     stop_requested = False
     def signal_handler(sig, frame):
         nonlocal stop_requested
-        print("\n🛑 Shutdown requested... finishing current tasks and closing DB.")
+        logging.warning("Shutdown requested... finishing current tasks and closing DB.")
         stop_requested = True
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -286,19 +289,31 @@ def main():
                     if write_to_db(conn, data_package, caches, club_aliases):
                         mark_file_processed(conn, fpath, fhash)
                 except Exception as e:
-                    print(f"  ❌ Error processing {fpath}: {e}")
-                    traceback.print_exc()
+                    logging.error(f"Error processing {fpath}: {e}")
+                    # traceback.print_exc() # removing to keep stdout clean
                 
                 if completed % batch_size == 0:
                     conn.commit()
                     elapsed = time.time() - start_time
                     rate = completed / elapsed
                     remaining = (total - completed) / rate if rate > 0 else 0
-                    print(f"[{completed}/{total}] {fpath} ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
+                    logging.info(f"[{completed}/{total}] {os.path.basename(fpath)} ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
         
         conn.commit()
 
-    print(f"\n✅ Finished! Processed {completed} files in {time.time() - start_time:.2f}s.")
+    logging.info(f"Finished! Processed {completed} files in {time.time() - start_time:.2f}s.")
 
 if __name__ == "__main__":
+    # Setup Logging
+    logging.basicConfig(
+        filename='loader_orchestrator.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filemode='w'
+    )
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARNING) # Only warnings/errors to console
+    logging.getLogger('').addHandler(console)
+    
+    logging.info("Loader Orchestrator Started")
     main()
