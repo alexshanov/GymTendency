@@ -1,8 +1,8 @@
-
 import os
 import time
 import pandas as pd
 import re
+import random
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -54,6 +54,10 @@ def setup_driver():
 def clean_text(text):
     if not text: return ""
     return re.sub(r'\s+', ' ', str(text)).strip()
+
+def random_sleep(min_seconds=2, max_seconds=5):
+    """Sleeps for a random amount of time to mimic human behavior."""
+    time.sleep(random.uniform(min_seconds, max_seconds))
 
 def select_combined_filter(driver, element_id):
     """
@@ -149,52 +153,62 @@ def process_meet(driver, meet_id, meet_name, index, total):
     url = f"https://www.meetscoresonline.com/Results/{meet_id}"
     print(f"[{index}/{total}] Processing Meet: {meet_name} ({meet_id}) -> {url}")
     
-    try:
-        driver.get(url)
-        time.sleep(3) # Let page load
-        
-        # 1. Handle Popups (MSO ALL ACCESS)
+    max_retries = 3
+    for attempt in range(max_retries + 1):
         try:
-            close_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'modal')]//button[@class='close'] | //a[contains(text(), 'Close')] | //i[contains(@class, 'fa-times')]"))
-            )
-            close_btn.click()
-            print("  -> Closed popup")
-            time.sleep(1)
-        except:
-            pass 
+            # Random jitter before request
+            random_sleep(2, 5)
             
-        # 2. Select "Combined" filters
-        # Session first, then Level (order might matter for AJAX)
-        select_combined_filter(driver, "session_dd")
-        select_combined_filter(driver, "level_dd")
-        select_combined_filter(driver, "division_dd") # Try division too just in case
-        
-        time.sleep(2) # Final wait for table update
-        
-        # 3. Extract Raw Table
-        # soup = BeautifulSoup(driver.page_source, "html.parser") # Handled inside extract_table_raw
-        df = extract_table_raw(driver, meet_name)
-        
-        if df is None or df.empty:
-            msg = "No results found"
-            print(f"  -> {msg}")
-            return False, msg
+            driver.get(url)
+            # time.sleep(3) # Let page load (handled by wait+jitter now)
             
-        print(f"  -> Extracted {len(df)} rows. Columns: {list(df.columns)}")
-        
-        # 4. Save Raw CSV
-        filename = f"{meet_id}_mso.csv"
-        os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-        filepath = os.path.join(OUTPUT_FOLDER, filename)
-        df.to_csv(filepath, index=False)
-        print(f"  -> Saved raw data to {filepath}")
-        return True, f"Saved {len(df)} rows"
+            # 1. Handle Popups (MSO ALL ACCESS)
+            try:
+                close_btn = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'modal')]//button[@class='close'] | //a[contains(text(), 'Close')] | //i[contains(@class, 'fa-times')]"))
+                )
+                close_btn.click()
+                print("  -> Closed popup")
+                time.sleep(1)
+            except:
+                pass 
+                
+            # 2. Select "Combined" filters
+            # Session first, then Level (order might matter for AJAX)
+            select_combined_filter(driver, "session_dd")
+            select_combined_filter(driver, "level_dd")
+            select_combined_filter(driver, "division_dd") # Try division too just in case
+            
+            time.sleep(2) # Final wait for table update
+            
+            # 3. Extract Raw Table
+            # soup = BeautifulSoup(driver.page_source, "html.parser") # Handled inside extract_table_raw
+            df = extract_table_raw(driver, meet_name)
+            
+            if df is None or df.empty:
+                msg = "No results found"
+                print(f"  -> {msg}")
+                return False, msg
+                
+            print(f"  -> Extracted {len(df)} rows. Columns: {list(df.columns)}")
+            
+            # 4. Save Raw CSV
+            filename = f"{meet_id}_mso.csv"
+            os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+            filepath = os.path.join(OUTPUT_FOLDER, filename)
+            df.to_csv(filepath, index=False)
+            print(f"  -> Saved raw data to {filepath}")
+            return True, f"Saved {len(df)} rows"
 
-    except Exception as e:
-        msg = f"Error: {e}"
-        print(f"  -> {msg}")
-        return False, msg
+        except Exception as e:
+            if attempt < max_retries:
+                wait_time = 10 * (attempt + 1)
+                print(f"  -> Error: {e}. Retrying in {wait_time}s (Attempt {attempt+1}/{max_retries})...")
+                time.sleep(wait_time)
+            else:
+                msg = f"Error: {e} (Max retries reached)"
+                print(f"  -> {msg}")
+                return False, msg
 
 def main():
     if not os.path.exists(INPUT_MANIFEST):

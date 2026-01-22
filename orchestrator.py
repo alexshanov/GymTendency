@@ -174,12 +174,12 @@ def main():
             futures[l_pool.submit(livemeet_task, mid, mname)] = (mid, 'livemeet')
             
         # Submit MSO
-        m_tasks = [t for t in all_tasks if t[0] == 'mso']
-        for _, mid, mname in m_tasks:
-            futures[m_pool.submit(mso_task, mid, mname)] = (mid, 'mso')
+        # m_tasks = [t for t in all_tasks if t[0] == 'mso']
+        # for _, mid, mname in m_tasks:
+        #     futures[m_pool.submit(mso_task, mid, mname)] = (mid, 'mso')
             
         completed = { 'kscore': 0, 'livemeet': 0, 'mso': 0 }
-        totals = { 'kscore': len(k_tasks), 'livemeet': len(l_tasks), 'mso': len(m_tasks) }
+        totals = { 'kscore': len(k_tasks), 'livemeet': len(l_tasks), 'mso': 0 } # mso: len(m_tasks)
         
         for future in as_completed(futures):
             mid, stype = futures[future]
