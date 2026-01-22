@@ -74,7 +74,7 @@ def write_to_db(conn, data_package, caches, club_alias_map):
     """
     if not data_package or 'error' in data_package:
         if data_package and 'error' in data_package:
-             print(f"  ❌ Extraction Error: {data_package['error']} ({data_package.get('filepath')})")
+             logging.error(f"Extraction Error: {data_package['error']} ({data_package.get('filepath')})")
         return False
     
     source = data_package['source']
@@ -284,20 +284,22 @@ def main():
                 stype, fpath, fhash = future_to_file[future]
                 completed += 1
                 
+                # Terminal Progress (Concise)
+                print(f"[{stype} {completed}/{total}] {os.path.basename(fpath)}")
+                
                 try:
                     data_package = future.result()
                     if write_to_db(conn, data_package, caches, club_aliases):
                         mark_file_processed(conn, fpath, fhash)
                 except Exception as e:
                     logging.error(f"Error processing {fpath}: {e}")
-                    # traceback.print_exc() # removing to keep stdout clean
                 
                 if completed % batch_size == 0:
                     conn.commit()
                     elapsed = time.time() - start_time
                     rate = completed / elapsed
                     remaining = (total - completed) / rate if rate > 0 else 0
-                    logging.info(f"[{completed}/{total}] {os.path.basename(fpath)} ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
+                    logging.info(f"Progress: [{completed}/{total}] ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
         
         conn.commit()
 
