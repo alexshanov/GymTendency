@@ -184,6 +184,7 @@ def main():
         for future in as_completed(futures):
             mid, stype = futures[future]
             completed[stype] += 1
+            print(f"[{stype} {completed[stype]}/{totals[stype]}] {mid}")
             try:
                 result = future.result()
                 
