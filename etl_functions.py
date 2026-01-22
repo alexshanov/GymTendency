@@ -617,10 +617,55 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
         )
     
     cursor = conn.cursor()
-    cursor.execute("SELECT meet_db_id FROM Meets WHERE source = ? AND source_meet_id = ?", meet_key)
+    cursor.execute("SELECT meet_db_id, comp_year, start_date_iso, location, country, name FROM Meets WHERE source = ? AND source_meet_id = ?", meet_key)
     result = cursor.fetchone()
+    
     if result:
         meet_db_id = result[0]
+        db_year, db_date, db_loc, db_country, db_name = result[1], result[2], result[3], result[4], result[5]
+        
+        # --- SELF-HEALING LOGIC ---
+        updates = []
+        params = []
+        
+        # Check Year
+        if not db_year and comp_year:
+             updates.append("comp_year = ?")
+             params.append(comp_year)
+             
+        # Check Date
+        new_date = meet_details.get('start_date_iso')
+        if not db_date and new_date:
+             updates.append("start_date_iso = ?")
+             params.append(new_date)
+             
+        # Check Location
+        new_loc = meet_details.get('location')
+        if not db_loc and new_loc and new_loc != 'N/A':
+             updates.append("location = ?")
+             params.append(new_loc)
+             
+        # Check Country
+        if not db_country and country:
+             updates.append("country = ?")
+             params.append(country)
+
+        # Check Name (Fill if missing or specific placeholder)
+        new_name = meet_details.get('name')
+        if (not db_name or "Kscore" in db_name) and new_name:
+             updates.append("name = ?")
+             params.append(new_name)
+
+        if updates:
+             sql = f"UPDATE Meets SET {', '.join(updates)} WHERE meet_db_id = ?"
+             params.append(meet_db_id)
+             try:
+                cursor.execute(sql, params)
+                # We do not commit here to piggyback on the caller's transaction
+                print(f"  -> Updated metadata for meet: {source_meet_id} (Updated: {', '.join(updates)})")
+             except Exception as e:
+                print(f"  -> Warning: Failed to update meet metadata: {e}")
+
     else:
         cursor.execute("""INSERT INTO Meets 
             (source, source_meet_id, name, start_date_iso, comp_year, location, country, competition_type) 
