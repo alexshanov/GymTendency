@@ -177,8 +177,9 @@ def process_meet(driver, meet_id, meet_name, index, total):
         df = extract_table_raw(driver, meet_name)
         
         if df is None or df.empty:
-            print("  -> No results found.")
-            return False
+            msg = "No results found"
+            print(f"  -> {msg}")
+            return False, msg
             
         print(f"  -> Extracted {len(df)} rows. Columns: {list(df.columns)}")
         
@@ -188,11 +189,12 @@ def process_meet(driver, meet_id, meet_name, index, total):
         filepath = os.path.join(OUTPUT_FOLDER, filename)
         df.to_csv(filepath, index=False)
         print(f"  -> Saved raw data to {filepath}")
-        return True
+        return True, f"Saved {len(df)} rows"
 
     except Exception as e:
-        print(f"  -> Error: {e}")
-        return False
+        msg = f"Error: {e}"
+        print(f"  -> {msg}")
+        return False, msg
 
 def main():
     if not os.path.exists(INPUT_MANIFEST):

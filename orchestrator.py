@@ -24,10 +24,10 @@ LIVEMEET_MESSY_DIR = "CSVs_Livemeet_messy"
 LIVEMEET_FINAL_DIR = "CSVs_Livemeet_final"
 MSO_DIR = "CSVs_mso_final"
 
-WORKERS = {
+    WORKERS = {
     'kscore': 2,
     'livemeet': 8,
-    'mso': 15
+    'mso': 8  # Reduced from 15 to prevent connection exhaustion
 }
 
 # --- WORKER FUNCTIONS ---
@@ -88,14 +88,13 @@ def mso_task(meet_id, meet_name):
 
         with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
             driver = mso_scraper.setup_driver()
-            # process_meet signature: (driver, meet_id, meet_name, index, total)
-            # We don't really need index/total here for the single meet scrape
-            success = mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
+            # process_meet returns (success, message)
+            success, msg = mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
         
         if success:
             return f"DONE: {meet_id}"
         else:
-            return f"ERROR: {meet_id} (Internal Scraper Logic Returned False)"
+            return f"ERROR: {meet_id} ({msg})"
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
     finally:
