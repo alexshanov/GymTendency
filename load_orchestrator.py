@@ -172,6 +172,80 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             
     return inserted_count > 0
 
+def refresh_gold_tables(conn):
+    """
+    Creates/Updates a flattened 'Gold' table with a row-per-athlete-per-meet.
+    Includes MAG (7 triples) and WAG apparatuses.
+    """
+    logging.info("Refreshing Gold_Results table...")
+    cursor = conn.cursor()
+    
+    # We drop and recreate for simplicity since it's an aggregation table
+    cursor.execute("DROP TABLE IF EXISTS Gold_Results;")
+    
+    query = """
+    CREATE TABLE Gold_Results AS
+    SELECT
+        p.full_name AS athlete_name,
+        m.comp_year AS year,
+        m.name AS meet_name,
+        MAX(r.level) AS level,
+        MAX(r.age) AS age,
+        c.name AS club,
+        
+        -- Floor (fx)
+        MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS fx_score,
+        MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS fx_d,
+        MAX(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS fx_rank,
+        
+        -- Pommel Horse (ph)
+        MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_final END) AS ph_score,
+        MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_d END) AS ph_d,
+        MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_numeric END) AS ph_rank,
+        
+        -- Rings (sr)
+        MAX(CASE WHEN app.name = 'Rings' THEN r.score_final END) AS sr_score,
+        MAX(CASE WHEN app.name = 'Rings' THEN r.score_d END) AS sr_d,
+        MAX(CASE WHEN app.name = 'Rings' THEN r.rank_numeric END) AS sr_rank,
+        
+        -- Vault (vt)
+        MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS vt_score,
+        MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS vt_d,
+        MAX(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS vt_rank,
+        
+        -- Parallel Bars (pb)
+        MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_final END) AS pb_score,
+        MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_d END) AS pb_d,
+        MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_numeric END) AS pb_rank,
+        
+        -- High Bar (hb)
+        MAX(CASE WHEN app.name = 'High Bar' THEN r.score_final END) AS hb_score,
+        MAX(CASE WHEN app.name = 'High Bar' THEN r.score_d END) AS hb_d,
+        MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_numeric END) AS hb_rank,
+        
+        -- Uneven Bars (ub) - Not in MAG
+        -- Beam (bb) - Not in MAG
+        
+        -- All Around (aa)
+        MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS aa_score,
+        MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS aa_d,
+        MAX(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS aa_rank
+        
+    FROM Results r
+    JOIN Athletes a ON r.athlete_id = a.athlete_id
+    JOIN Persons p ON a.person_id = p.person_id
+    LEFT JOIN Clubs c ON a.club_id = c.club_id
+    JOIN Meets m ON r.meet_db_id = m.meet_db_id
+    JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
+    WHERE r.gender = 'M' -- Ensure MAG only
+    GROUP BY p.person_id, m.meet_db_id
+    ORDER BY p.full_name, m.comp_year DESC;
+    """
+    cursor.execute(query)
+    conn.commit()
+    logging.info("Gold_Results table (MAG) updated successfully.")
+
+
 # ==============================================================================
 #  MAIN ORCHESTRATOR
 # ==============================================================================
@@ -302,6 +376,8 @@ def main():
                     logging.info(f"Progress: [{completed}/{total}] ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
         
         conn.commit()
+        refresh_gold_tables(conn)
+
 
     logging.info(f"Finished! Processed {completed} files in {time.time() - start_time:.2f}s.")
 
