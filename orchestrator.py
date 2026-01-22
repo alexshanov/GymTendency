@@ -24,7 +24,7 @@ LIVEMEET_MESSY_DIR = "CSVs_Livemeet_messy"
 LIVEMEET_FINAL_DIR = "CSVs_Livemeet_final"
 MSO_DIR = "CSVs_mso_final"
 
-    WORKERS = {
+WORKERS = {
     'kscore': 2,
     'livemeet': 8,
     'mso': 8  # Reduced from 15 to prevent connection exhaustion
