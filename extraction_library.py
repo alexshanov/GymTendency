@@ -28,9 +28,13 @@ def extract_kscore_data(filepath, meet_manifest, level_alias_map):
     meet_details = meet_manifest.get(full_source_id, {})
     if not meet_details.get('name'):
         meet_details['name'] = df['Raw_Meet_Name'].iloc[0] if 'Raw_Meet_Name' in df.columns else (df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Kscore {source_meet_id}")
+    
+    if not meet_details.get('year'):
+        if 'Year' in df.columns and not df.empty:
+            meet_details['year'] = df['Year'].iloc[0]
 
     # Detect Discipline
-    MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar'}
+    MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar', 'Horizontal_Bar'}
     WAG_INDICATORS = {'Uneven_Bars', 'UnevenBars', 'Beam'}
     discipline_id = 99
     discipline_name = 'Other'

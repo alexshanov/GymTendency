@@ -116,9 +116,18 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir):
         driver.get(base_url)
         # --- EXTRACT RICH METADATA (Service Columns) ---
         raw_meet_name = ""
+        raw_year = ""
         try:
             raw_meet_name_el = driver.find_element(By.ID, "event-title")
             raw_meet_name = raw_meet_name_el.text.strip()
+            
+            # Extract Year from header-text
+            header_el = driver.find_element(By.CLASS_NAME, "header-text")
+            header_text = header_el.text
+            import re
+            year_match = re.search(r'\b(20\d{2})\b', header_text)
+            if year_match:
+                raw_year = year_match.group(1)
         except:
             pass
 
@@ -228,6 +237,7 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir):
                 df['Level'] = group_label if group_label else level_name 
                 df['Age'] = ""   
                 df['Prov'] = ""  
+                df['Year'] = raw_year
 
                 # Drop 'Category' if it was picked up from the table headers
                 if 'Category' in df.columns:
