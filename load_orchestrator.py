@@ -266,6 +266,7 @@ def main():
     parser = argparse.ArgumentParser(description="Parallel GymTendency Data Loader")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel readers")
     parser.add_argument("--sample", type=int, default=1, help="Process every Nth file")
+    parser.add_argument("--gold-only", action="store_true", help="Skip file processing and only refresh Gold tables")
     args = parser.parse_args()
 
     # 1. Load context
@@ -300,86 +301,97 @@ def main():
     files_to_process.sort() # Consistency
     if args.sample > 1: files_to_process = files_to_process[::args.sample]
 
-    if not files_to_process:
+    if not files_to_process and not args.gold_only:
         print("No files found to process.")
         return
 
-    # 3. Filter by processed state
-    unprocessed = []
-    with sqlite3.connect(DB_FILE) as conn:
-        for stype, fpath, manifest, aliases in files_to_process:
-            fhash = calculate_file_hash(fpath)
-            if not is_file_processed(conn, fpath, fhash):
-                unprocessed.append((stype, fpath, fhash, manifest, aliases))
-    
-    logging.info(f"Total files: {len(files_to_process)}, Unprocessed: {len(unprocessed)}")
-    if not unprocessed:
-        logging.info("No unprocessed files found.")
-        return
-
-    # 4. Process in Parallel
-    caches = {}
-    with sqlite3.connect(DB_FILE) as conn:
-        caches['person'] = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
-        caches['club'] = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
-        caches['athlete'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
-        caches['apparatus'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT apparatus_id, name, discipline_id FROM Apparatus").fetchall()}
-        caches['meet'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
-
-    total = len(unprocessed)
     completed = 0
     start_time = time.time()
-    batch_size = 100
-    
-    stop_requested = False
-    def signal_handler(sig, frame):
-        nonlocal stop_requested
-        logging.warning("Shutdown requested... finishing current tasks and closing DB.")
-        stop_requested = True
 
-    signal.signal(signal.SIGINT, signal_handler)
-
-    with sqlite3.connect(DB_FILE) as conn:
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
+    if not args.gold_only:
+        # 3. Filter by processed state
+        unprocessed = []
+        with sqlite3.connect(DB_FILE) as conn:
+            for stype, fpath, manifest, aliases in files_to_process:
+                fhash = calculate_file_hash(fpath)
+                if not is_file_processed(conn, fpath, fhash):
+                    unprocessed.append((stype, fpath, fhash, manifest, aliases))
         
-        with ProcessPoolExecutor(max_workers=args.workers) as executor:
-            # Submit all tasks
-            future_to_file = {
-                executor.submit(reader_worker, stype, fpath, manifest, aliases): (stype, fpath, fhash) 
-                for stype, fpath, fhash, manifest, aliases in unprocessed
-            }
+        logging.info(f"Total files: {len(files_to_process)}, Unprocessed: {len(unprocessed)}")
+        if not unprocessed:
+            logging.info("No unprocessed files found.")
+            # Even if no files, we might still want to refresh Gold tables later
+        else:
+            # 4. Process in Parallel
+            caches = {}
+            with sqlite3.connect(DB_FILE) as conn:
+                caches['person'] = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
+                caches['club'] = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
+                caches['athlete'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
+                caches['apparatus'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT apparatus_id, name, discipline_id FROM Apparatus").fetchall()}
+                caches['meet'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
+
+            total = len(unprocessed)
             
-            for future in as_completed(future_to_file):
-                if stop_requested:
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
+            batch_size = 100
+            
+            stop_requested = False
+            def signal_handler(sig, frame):
+                nonlocal stop_requested
+                logging.warning("Shutdown requested... finishing current tasks and closing DB.")
+                stop_requested = True
 
-                stype, fpath, fhash = future_to_file[future]
-                completed += 1
+            signal.signal(signal.SIGINT, signal_handler)
+
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("PRAGMA synchronous=NORMAL;")
                 
-                # Terminal Progress (Concise)
-                print(f"[{stype} {completed}/{total}] {os.path.basename(fpath)}")
+                with ProcessPoolExecutor(max_workers=args.workers) as executor:
+                    # Submit all tasks
+                    future_to_file = {
+                        executor.submit(reader_worker, stype, fpath, manifest, aliases): (stype, fpath, fhash) 
+                        for stype, fpath, fhash, manifest, aliases in unprocessed
+                    }
+                    
+                    for future in as_completed(future_to_file):
+                        if stop_requested:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            break
+
+                        stype, fpath, fhash = future_to_file[future]
+                        completed += 1
+                        
+                        # Terminal Progress (Concise)
+                        print(f"[{stype} {completed}/{total}] {os.path.basename(fpath)}")
+                        
+                        try:
+                            data_package = future.result()
+                            if write_to_db(conn, data_package, caches, club_aliases):
+                                mark_file_processed(conn, fpath, fhash)
+                        except Exception as e:
+                            logging.error(f"Error processing {fpath}: {e}")
+                        
+                        if completed % batch_size == 0:
+                            conn.commit()
+                            elapsed = time.time() - start_time
+                            rate = completed / elapsed
+                            remaining = (total - completed) / rate if rate > 0 else 0
+                            logging.info(f"Progress: [{completed}/{total}] ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
                 
-                try:
-                    data_package = future.result()
-                    if write_to_db(conn, data_package, caches, club_aliases):
-                        mark_file_processed(conn, fpath, fhash)
-                except Exception as e:
-                    logging.error(f"Error processing {fpath}: {e}")
-                
-                if completed % batch_size == 0:
-                    conn.commit()
-                    elapsed = time.time() - start_time
-                    rate = completed / elapsed
-                    remaining = (total - completed) / rate if rate > 0 else 0
-                    logging.info(f"Progress: [{completed}/{total}] ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
-        
-        conn.commit()
+                conn.commit()
+    else:
+        logging.info("Skipping CSV processing due to --gold-only flag.")
+
+    # 5. Refresh Gold Tables
+    with sqlite3.connect(DB_FILE) as conn:
         refresh_gold_tables(conn)
 
 
-    logging.info(f"Finished! Processed {completed} files in {time.time() - start_time:.2f}s.")
+    if not args.gold_only:
+        logging.info(f"Finished! Processed {completed} files in {time.time() - start_time:.2f}s.")
+    else:
+        logging.info(f"Gold table refresh complete in {time.time() - start_time:.2f}s.")
 
 if __name__ == "__main__":
     # Setup Logging
