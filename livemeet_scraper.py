@@ -552,10 +552,10 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 result_cols = [c for c in be_final_df.columns if c not in service_cols]
                                 be_final_df = be_final_df[service_cols + result_cols]
                                 
-                                safe_name = re.sub(r'[\s/\\:*?"<>|]+', '_', f"{group_name}_{sub_label}")
-                                be_filename = f"{meet_id_for_filename}_BYEVENT_{safe_name}.csv"
+                                 safe_name = re.sub(r'[\s/\\:*?"<>|]+', '_', f"{group_name}_{sub_label}")
+                                be_filename = f"{meet_id_for_filename}_MESSY_BYEVENT_{safe_name}.csv"
                                 be_final_df.to_csv(os.path.join(output_directory, be_filename), index=False)
-                                print(f"      -> Saved By-Event: {be_filename} ({len(be_final_df)} rows)")
+                                print(f"      -> Saved By-Event (Messy): {be_filename} ({len(be_final_df)} rows)")
                                 total_files_saved += 1
                             else:
                                 print("      -> No By-Event data found")
@@ -604,7 +604,16 @@ def fix_and_standardize_headers(input_filename, output_filename):
         print(f"Warning: Input file is empty. Nothing to process.")
         return True
         
-    df = df.iloc[:, 1:].copy()
+    # Check if first column is an index (Unnamed 0)
+    if 'Unnamed' in str(df.iloc[0, 0]) or str(df.iloc[0, 0]) == '0':
+        # Historically, many scrapers saved with an index. If so, drop it.
+        # But only if it looks like an index.
+        try:
+             first_col_is_index = all(str(x).isdigit() for x in df.iloc[1:10, 0])
+             if first_col_is_index:
+                 df = df.iloc[:, 1:].copy()
+        except:
+             pass
 
     header_row_index = -1
     for i, row in df.iterrows():
@@ -625,8 +634,12 @@ def fix_and_standardize_headers(input_filename, output_filename):
 
     # --- THIS IS THE NEW, CORRECTED LOGIC ---
     main_header_row = df.iloc[header_row_index]
-    sub_header_row = df.iloc[header_row_index + 1]
-    main_header = pd.Series(main_header_row).ffill() # Forward-fill is still correct
+    # Check if we have a sub-header row
+    has_sub_header = (header_row_index + 1 < len(df)) and any(x in ['Score', 'Rnk', 'D', 'SV'] for x in df.iloc[header_row_index+1].values)
+    
+    sub_header_row = df.iloc[header_row_index + 1] if has_sub_header else pd.Series([""] * len(main_header_row))
+    
+    main_header = pd.Series(main_header_row).ffill() 
     sub_header = pd.Series(sub_header_row)
     
     clean_header = []
@@ -775,7 +788,7 @@ if __name__ == "__main__":
             
             for messy_file_path in messy_files_to_process:
                 messy_filename = os.path.basename(messy_file_path)
-                final_filename = messy_filename.replace('_MESSY_', '_FINAL_')
+                final_filename = messy_filename.replace('_MESSY_', '_FINAL_').replace('_BYEVENT_', '_AA_')
                 final_file_path = os.path.join(FINAL_FOLDER, final_filename)
                 if not fix_and_standardize_headers(messy_file_path, final_file_path):
                     print(f"--- ❌ FAILED at Step 2 (Finalizing) for: {messy_file_path} ---")

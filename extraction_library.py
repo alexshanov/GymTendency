@@ -146,9 +146,16 @@ def extract_livemeet_data(filepath, meet_manifest):
     meet_details = meet_manifest.get(source_meet_id, {})
     if not meet_details.get('name'):
         meet_details['name'] = df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Livemeet {source_meet_id}"
+    
+    # FETCH YEAR FROM MANIFEST IF MISSING
+    if not meet_details.get('year'):
+        if 'Year' in meet_details:
+             meet_details['year'] = meet_details['Year']
+        elif 'comp_year' in meet_details:
+             meet_details['year'] = meet_details['comp_year']
 
     # Normalize Headers (Sportzsoft triplet logic)
-    raw_apps = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar', 'AllAround']
+    raw_apps = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar', 'AllAround', 'All_Around']
     new_headers = []
     seen_counts = {}
     for col in df.columns:
@@ -204,8 +211,10 @@ def extract_livemeet_data(filepath, meet_manifest):
             rank_val = row.get(f'Result_{raw_event}_Rnk')
             exec_bonus_val = row.get(f'Result_{raw_event}_Exec_Bonus') or row.get(f'Result_{raw_event}_Execution_Bonus')
             
-            if not score_val and not d_val and not sv_val: continue
-            
+            # Fallback: SV is often used for Difficulty in lower levels
+            if (not d_val or str(d_val).strip() == '') and (sv_val and str(sv_val).strip() != ''):
+                d_val = sv_val
+
             apparatus_results.append({
                 'raw_event': raw_event,
                 'score_final': score_val,
