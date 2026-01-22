@@ -119,7 +119,7 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             if clean_name == "Balance Beam": clean_name = "Beam"
             if clean_name == "Uneven Bars": clean_name = "Uneven Bars"
             if clean_name == "AllAround" or clean_name == "All Around": clean_name = "All Around"
-            if clean_name == "High Bar": clean_name = "High Bar"
+            if clean_name == "High Bar" or clean_name == "Horizontal Bar": clean_name = "High Bar"
             if clean_name == "Parallel Bars": clean_name = "Parallel Bars"
             if clean_name == "Pommel Horse": clean_name = "Pommel Horse"
             
