@@ -78,10 +78,10 @@ def kscore_task(meet_id, meet_name):
         time.sleep(random.random() * 3)
 
         with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            success = kscore_scraper.scrape_kscore_meet(str(meet_id), str(meet_name), KSCORE_DIR)
+            success, count = kscore_scraper.scrape_kscore_meet(str(meet_id), str(meet_name), KSCORE_DIR)
         
         if success:
-            return f"DONE: {meet_id}"
+            return f"DONE: {meet_id}:{count}"
         else:
             return f"ERROR: {meet_id} (Scraper reported failure or partial data)"
     except Exception as e:
@@ -93,7 +93,7 @@ def livemeet_task(meet_id, meet_name):
         meet_url = f"https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id={meet_id}"
         
         with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            success, file_base_id = livemeet_scraper.scrape_raw_data_to_separate_files(meet_url, str(meet_id), LIVEMEET_MESSY_DIR)
+            success, count, file_base_id = livemeet_scraper.scrape_raw_data_to_separate_files(meet_url, str(meet_id), LIVEMEET_MESSY_DIR)
             
             if success:
                 # Process messy files
@@ -113,7 +113,7 @@ def livemeet_task(meet_id, meet_name):
                         shutil.move(finalized_path, target_path)
 
         if success:
-            return f"DONE: {meet_id}"
+            return f"DONE: {meet_id}:{count}"
         else:
             return f"ERROR: {meet_id} (Scraper failed or results disabled)"
     except Exception as e:
@@ -132,7 +132,7 @@ def mso_task(meet_id, meet_name):
             success, msg = mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
         
         if success:
-            return f"DONE: {meet_id}"
+            return f"DONE: {meet_id}:1" # MSO usually 1 file
         else:
             return f"ERROR: {meet_id} ({msg})"
     except Exception as e:
@@ -169,9 +169,15 @@ def main():
 
     # PRE-INSTALL WEBDRIVER
     print("Pre-installing/checking WebDriver...")
-    os.environ['WDM_LOG_LEVEL'] = '0'
+    # Force clear cache if needed or just trust manager
+    # os.environ['WDM_LOG_LEVEL'] = '0' 
     try:
-        ChromeDriverManager().install()
+        # from webdriver_manager.core.utils import ChromeType
+        # Explicitly requesting the version matching the installed browser if accessible,
+        # but usually .install() handles this. The ERROR says 114 vs 144.
+        # Let's try to print what we are getting.
+        driver_path = ChromeDriverManager().install()
+        print(f"WebDriver installed at: {driver_path}")
     except Exception as e:
         print(f"Warning: WebDriver pre-install failed: {e}")
 
@@ -244,20 +250,21 @@ def main():
             # Resource cleanup before each attempt
             cleanup_orphaned_processes()
             
-            # Chunk the queue for incremental processing (User Request: 1000 scraping -> 1 load)
-            BATCH_SIZE = 1000
+            # Chunk the queue for incremental processing based on file count
+            # User Request: 1000 CSVs -> 1 load
+            # We process in small chunks of meets to check the file count frequently
+            MEET_CHUNK_SIZE = 50 
+            CSV_BATCH_THRESHOLD = 1000
             
-            # Calculate total expected batches
-            total_batches = (len(queue) + BATCH_SIZE - 1) // BATCH_SIZE
+            current_csv_count = 0
             
-            for i in range(0, len(queue), BATCH_SIZE):
+            for i in range(0, len(queue), MEET_CHUNK_SIZE):
                 if stop_requested:
                     break
                     
-                chunk = queue[i : i + BATCH_SIZE]
-                current_batch = (i // BATCH_SIZE) + 1
+                chunk = queue[i : i + MEET_CHUNK_SIZE]
                 
-                print(f"\nProcessing Batch {current_batch}/{total_batches} ({len(chunk)} meets)...")
+                print(f"\nProcessing Checkpoint ({i}/{len(queue)} meets)... Current CSV Batch: {current_csv_count}/{CSV_BATCH_THRESHOLD}")
                 
                 futures = {}
                 for stype, mid, mname in chunk:
@@ -265,7 +272,7 @@ def main():
                     func = task_functions[stype]
                     futures[pool.submit(func, mid, mname)] = (stype, mid, mname)
                 
-                # Wait for this batch to complete
+                # Wait for this chunk to complete
                 for future in as_completed(futures):
                     if stop_requested:
                         break
@@ -275,30 +282,46 @@ def main():
                     
                     try:
                         result = future.result()
-                        parts = result.split(':', 1)
+                        parts = result.split(':', 2) # Expect DONE:mid:count or ERROR:mid:msg
                         status = parts[0]
-                        message = parts[1].strip() if len(parts) > 1 else ""
                         
-                        log_msg = f"[{stype}] {mid}: {status} - {message}"
+                        message = ""
+                        count = 0
                         
                         if "DONE" in status:
-                            logging.info(log_msg)
+                            if len(parts) >= 3:
+                                mid_res = parts[1]
+                                try:
+                                    count = int(parts[2])
+                                except:
+                                    count = 0
+                                message = f"{count} files"
+                            else:
+                                message = "0 files" # Should not happen with new logic
+                                
                             status_manifest[key] = "DONE"
-                            print(f"  [OK] {mid}")
+                            current_csv_count += count
+                            logging.info(f"[{stype}] {mid}: {status} - {message}")
+                            print(f"  [OK] {mid} ({count} files)")
+                            
                         else:
+                            # ERROR logic
+                            message = parts[1] if len(parts) > 1 else "Unknown Error"
                             logging.error(f"  [FAIL] {mid}: {message}")
+                            
                     except Exception as e:
                         logging.error(f"  [EXCEPTION] {mid}: {e}")
                 
-                # Update status after batch
+                # Update status after chunk
                 save_status(status_manifest)
                 
-                # Run Incremental Loader
-                if not stop_requested:
-                    print(f"Batch {current_batch} complete. Running incremental load...")
+                # CHECK IF WE HIT THE CSV THRESHOLD
+                if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:
+                    print(f"\n>>> Batch Threshold Hit ({current_csv_count} >= {CSV_BATCH_THRESHOLD} CSVs). Running Loader... <<<")
                     try:
-                        # Use sys.executable to ensure we use the same venv python
                         subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
+                        current_csv_count = 0 # Reset counter after load
+                        print(">>> Loader Complete. Resuming Scraper... <<<")
                     except Exception as e:
                         logging.error(f"Failed to run incremental load: {e}")
 

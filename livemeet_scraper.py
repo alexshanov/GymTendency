@@ -9,6 +9,7 @@ import html
 import os
 import time
 import logging
+import traceback
 
 import numpy as np
 
@@ -169,7 +170,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
 
             # Re-get the web session ID from the URL or state
             session_id_match = re.search(r'SessionId=([a-zA-Z0-9]+)', driver.current_url)
-            web_session_id = session_id_match.group(1) if session_id_match else active_session_id
+            web_session_id = session_id_match.group(1) if session_id_match else None
             
             # Prepare requests session for fast fetching
             s = requests.Session()
@@ -576,6 +577,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             return False, None
         except Exception as e:
             print(f"--> FATAL ERROR in scrape_raw_data_to_separate_files: {e}")
+            traceback.print_exc()
             return False, None
             
     finally:
