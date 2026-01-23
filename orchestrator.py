@@ -29,8 +29,8 @@ MSO_DIR = "CSVs_mso_final"
 
 WORKERS = {
     'kscore': 2,
-    'livemeet': 6,
-    'mso': 3  # Set to 3 as requested
+    'livemeet': 3,  # Reduced from 6 to 3 for stability (heavy Selenium usage)
+    'mso': 2        # Reduced from 3 to 2 for stability
 }
 
 # --- WORKER FUNCTIONS ---

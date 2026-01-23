@@ -7,7 +7,37 @@ import json
 import traceback
 import re
 import hashlib
-from datetime import datetime
+import time
+import random
+
+# ==============================================================================
+#  DATABASE UTILS
+# ==============================================================================
+
+def retry_on_lock(max_retries=5, initial_delay=0.1):
+    """
+    Decorator to retry database operations when locked.
+    Exponential backoff with jitter.
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            for i in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    if 'database is locked' in str(e) or 'disk I/O error' in str(e):
+                        if i == max_retries - 1:
+                            raise
+                        sleep_time = delay + (random.random() * 0.1)
+                        print(f"  [DB Locked] Retrying in {sleep_time:.2f}s... ({i+1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        delay *= 2
+                    else:
+                        raise
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 # ==============================================================================
 #  T&T (TRAMPOLINE & TUMBLING) EXCLUSION
@@ -204,6 +234,7 @@ def ensure_column_exists(cursor, table_name, column_name, col_type='TEXT'):
             return False
     return True
 
+@retry_on_lock()
 def setup_database(db_file):
     """
     Creates the new database schema if it doesn't already exist.
@@ -317,10 +348,11 @@ def standardize_athlete_name(name_str, remove_middle_initial=True):
     if not isinstance(name_str, str) or not name_str.strip(): 
         return None
     
-    # Filter out garbage values from uncollapsed headers or data issues
+    # Filter out garbage values from uncollapsed headers or unformatted data
+    # Matches strings like "Unnamed: 1", "Unnamed: 24", etc.
     garbage_values = {'#', 'name', 'athlete', 'competitor', 'gymnast', 'nan', ''}
     cleaned = name_str.strip().lower()
-    if cleaned in garbage_values or len(cleaned) <= 1 or cleaned.isdigit():
+    if cleaned in garbage_values or len(cleaned) <= 1 or cleaned.isdigit() or 'unnamed:' in cleaned:
         return None
     
     # 1. Clean up extra whitespace
@@ -378,6 +410,7 @@ def parse_rank(rank_str):
 #  NEW DATABASE INTERACTION FUNCTIONS
 # ==============================================================================
 
+@retry_on_lock()
 def get_or_create_person(conn, full_name, gender, cache):
     """
     Get or create a person record.
@@ -421,6 +454,7 @@ def get_or_create_person(conn, full_name, gender, cache):
     cache[full_name] = person_id
     return person_id
 
+@retry_on_lock()
 def get_or_create_club(conn, club_name, cache):
     """
     Get or create a club record.
@@ -437,7 +471,7 @@ def get_or_create_club(conn, club_name, cache):
     cursor = conn.cursor()
     
     # 2. Check Database Alias Table
-    cursor.execute("SELECT canonical_club_id FROM ClubAliases WHERE club_alias_name = ?", (club_name,))
+    cursor.execute("SELECT canonical_club_id FROM ClubAliases WHERE UPPER(club_alias_name) = UPPER(?)", (club_name,))
     result = cursor.fetchone()
     if result:
         club_id = result[0]
@@ -445,7 +479,7 @@ def get_or_create_club(conn, club_name, cache):
         return club_id
 
     # 3. Check Clubs Table Directly
-    cursor.execute("SELECT club_id FROM Clubs WHERE name = ?", (club_name,))
+    cursor.execute("SELECT club_id FROM Clubs WHERE UPPER(name) = UPPER(?)", (club_name,))
     result = cursor.fetchone()
     if result:
         club_id = result[0]
@@ -459,6 +493,7 @@ def get_or_create_club(conn, club_name, cache):
     cache[club_name] = club_id
     return club_id
 
+@retry_on_lock()
 def get_or_create_athlete_link(conn, person_id, club_id, cache):
     athlete_key = (person_id, club_id)
     if athlete_key in cache: return cache[athlete_key]
@@ -479,6 +514,7 @@ def get_or_create_athlete_link(conn, person_id, club_id, cache):
     cache[athlete_key] = athlete_id
     return athlete_id
 
+@retry_on_lock()
 def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
     meet_key = (source, source_meet_id)
     if meet_key in cache: return cache[meet_key]
@@ -564,6 +600,7 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
 
 
 # --- ERROR LOGGING ---
+@retry_on_lock()
 def log_scrape_error(conn, source, source_meet_id, error_message):
     """Log a scraping error to the ScrapeErrors table."""
     cursor = conn.cursor()
@@ -574,6 +611,7 @@ def log_scrape_error(conn, source, source_meet_id, error_message):
     conn.commit()
 
 # --- DUPLICATE DETECTION ---
+@retry_on_lock()
 def check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id):
     """Check if a result already exists. Returns existing result_id or None."""
     cursor = conn.cursor()
@@ -646,6 +684,7 @@ def calculate_file_hash(filepath):
         return hasher.hexdigest()
     except: return None
 
+@retry_on_lock()
 def is_file_processed(conn, filepath, file_hash):
     """Checks if file hash already processed."""
     cursor = conn.cursor()
@@ -653,6 +692,7 @@ def is_file_processed(conn, filepath, file_hash):
     res = cursor.fetchone()
     return True if res and res[0] == file_hash else False
 
+@retry_on_lock()
 def mark_file_processed(conn, filepath, file_hash):
     """Updates processed state of a file."""
     cursor = conn.cursor()

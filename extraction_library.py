@@ -159,8 +159,26 @@ def extract_livemeet_data(filepath, meet_manifest):
     """
     try:
         df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
-        if df.empty or 'Name' not in df.columns:
+        if df.empty:
             return None
+            
+        # --- Handle Multi-row / Messy Headers ---
+        # If 'Name' is not in columns, it might be a Sportzsoft CSV with junk rows at the top
+        if 'Name' not in df.columns:
+            found_header = False
+            # Check the first 10 rows for a valid header row
+            for i in range(min(10, len(df))):
+                row_vals = [str(x).strip() for x in df.iloc[i].values]
+                if 'Name' in row_vals and 'Club' in row_vals:
+                    # Found it! Set columns and drop the junk rows above
+                    df.columns = row_vals
+                    df = df.iloc[i+1:].reset_index(drop=True)
+                    found_header = True
+                    break
+            if not found_header:
+                # Still didn't find it? Check if we have 'Unnamed: 4' as Name (common offset)
+                # But safer to skip if we can't find 'Name' explicitly
+                return None
     except Exception as e:
         print(f"Warning: Could not read CSV file '{filepath}'. Error: {e}")
         return None
@@ -192,10 +210,22 @@ def extract_livemeet_data(filepath, meet_manifest):
             triplet_num = count // 3
             suffix = ['D', 'Score', 'Rnk'][triplet_pos]
             proposed_name = f"Result_{base}_{suffix}" if triplet_num == 0 else f"EXTRA_{base}_{triplet_num}_{suffix}"
-            if proposed_name in df.columns: new_headers.append(col)
-            else: new_headers.append(proposed_name)
-        else: new_headers.append(col)
-    df.columns = new_headers
+            new_headers.append(proposed_name)
+        else:
+            new_headers.append(col)
+    
+    # --- Ensure Uniqueness ---
+    unique_headers = []
+    counts = {}
+    for h in new_headers:
+        if h in counts:
+            counts[h] += 1
+            unique_headers.append(f"{h}_{counts[h]}")
+        else:
+            counts[h] = 0
+            unique_headers.append(h)
+            
+    df.columns = unique_headers
 
     # Detect Discipline
     MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar'}

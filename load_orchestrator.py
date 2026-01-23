@@ -135,7 +135,20 @@ def write_to_db(conn, data_package, caches, club_alias_map):
                 
             apparatus_id = caches['apparatus'][app_key]
             
-            if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id):
+            existing_result_id = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id)
+            if existing_result_id:
+                # Rank Backfill Logic:
+                # If the DB has the score but NO rank, and we HAVE a rank now, update it.
+                rank_text = app_res.get('rank_text')
+                rank_numeric = parse_rank(rank_text) if rank_text else None
+                if rank_text and str(rank_text).strip() != '':
+                    cursor.execute("SELECT rank_text FROM Results WHERE result_id = ?", (existing_result_id,))
+                    db_rank_row = cursor.fetchone()
+                    db_rank = db_rank_row[0] if db_rank_row else None
+                    if not db_rank or str(db_rank).strip() == '':
+                        print(f"  [Backfill] Adding missing rank '{rank_text}' to existing result ID {existing_result_id} ({app_res.get('raw_event')})")
+                        cursor.execute("UPDATE Results SET rank_numeric = ?, rank_text = ? WHERE result_id = ?", 
+                                       (rank_numeric, rank_text, existing_result_id))
                 continue
             
             # Numeric conversions
@@ -457,13 +470,15 @@ def main():
     m_files = glob.glob(os.path.join(MSO_DIR, "*_mso.csv"))
     for f in m_files: files_to_process.append(('mso', f, mso_manifest.get(os.path.basename(f).split('_mso.csv')[0], {}), None))
 
-    files_to_process.sort() # Consistency
+    import random
+    random.shuffle(files_to_process) # Shuffle to ensure parallel processing of different sources
     if args.sample > 1: files_to_process = files_to_process[::args.sample]
 
     if not files_to_process and not args.gold_only:
         print("No files found to process.")
         return
 
+    completed = 0
     start_time = time.time()
     
     # 3. Filter by processed state AND apply limit
@@ -517,7 +532,8 @@ def main():
 
             total = len(unprocessed)
             
-            batch_size = 100
+            # Reduced batch size to minimize lock duration
+            batch_size = 10 
             
             stop_requested = False
             def signal_handler(sig, frame):
