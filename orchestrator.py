@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 import pandas as pd
 import glob
 import time
@@ -207,6 +208,9 @@ def main():
         name_col = [c for c in df.columns if 'MeetName' in c][0]
         for _, row in df.iterrows():
             all_tasks.append(('mso', str(row[id_col]), str(row[name_col])))
+
+    # INTERLEAVE SOURCES: Shuffle the list so we process a mix of KScore, LiveMeet, and MSO
+    random.shuffle(all_tasks)
 
     # Filter out already finished tasks
     queue = [t for t in all_tasks if status_manifest.get(f"{t[0]}_{t[1]}") != "DONE"]
