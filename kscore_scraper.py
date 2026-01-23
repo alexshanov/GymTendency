@@ -108,6 +108,7 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
 
     driver = None
     saved_files_count = 0
+    full_success = True
     
     try:
         if driver_path:
@@ -157,6 +158,7 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
                         break
             except Exception as e:
                 print(f"    Warning: Could not select session {session['name']}: {e}")
+                full_success = False
                 continue
 
             # 2. Identify Categories from the Level/Category Dropdown (#sel-cat)
@@ -174,6 +176,7 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
                     })
             except Exception as e:
                 print(f"    Warning: Could not find categories for session {session['name']}: {e}")
+                full_success = False
                 continue
 
             print(f"    Found {len(categories)} categories (levels).")
@@ -195,6 +198,7 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
                             break
                 except Exception as e:
                     print(f"       Warning: Could not select level {level_name}: {e}")
+                    full_success = False
                     continue
 
                 # 4. Grab the HTML from the live DOM
@@ -215,8 +219,15 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
                     # Use a full HTML snippet for Standardization function
                     full_html = f"<html><body>{html_content}</body></html>"
                 except Exception as e:
-                    print(f"       Warning: Could not find results table for {level_name}: {e}")
-                    continue
+                    # Check if it's just empty data on the server
+                    page_text = driver.page_source
+                    if "There are no results which match this criteria" in page_text or "No information found" in page_text:
+                        print(f"       Info: Category {level_name} is empty on server. Skipping.")
+                        continue
+                    else:
+                        print(f"       Warning: Could not find results table for {level_name}: {e}")
+                        full_success = False
+                        continue
 
                 if not html_content or "There are no results" in html_content:
                     print("       No results table found in this category.")
@@ -226,6 +237,7 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
 
                 if df is None or df.empty:
                     print("       Failed to create a DataFrame from the table.")
+                    full_success = False
                     continue
                 
                 if 'Rank' in df.columns:
@@ -261,7 +273,7 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
                 df.to_csv(output_path, index=False)
                 saved_files_count += 1
                 
-        return True, saved_files_count
+        return full_success, saved_files_count
     except Exception as e:
         print(f"A critical error occurred while processing {meet_id}: {e}")
         traceback.print_exc()
@@ -319,7 +331,7 @@ def main():
         print(f"[{total_meets_processed}/{total_meets_in_queue}] Processing: {meet_name} (ID: {meet_id})")
         print("="*70)
 
-        files_count = scrape_kscore_meet(
+        success, files_count = scrape_kscore_meet(
             meet_id=meet_id,
             meet_name=meet_name,
             output_dir=OUTPUT_DIR_KSCORE
