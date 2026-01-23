@@ -46,6 +46,10 @@ def cleanup_orphaned_processes():
         # Use pkill if available for efficiency
         subprocess.run(["pkill", "-f", "chrome"], capture_output=True)
         subprocess.run(["pkill", "-f", "chromedriver"], capture_output=True)
+        # Aggressive fallback
+        subprocess.run(["killall", "-9", "chrome"], capture_output=True)
+        subprocess.run(["killall", "-9", "chromedriver"], capture_output=True)
+        time.sleep(2) # Allow system to release ports
     except:
         pass
 
