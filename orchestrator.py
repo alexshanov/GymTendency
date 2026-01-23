@@ -95,22 +95,22 @@ def livemeet_task(meet_id, meet_name, driver_path=None):
         # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
         success, count, file_base_id = livemeet_scraper.scrape_raw_data_to_separate_files(meet_url, str(meet_id), LIVEMEET_MESSY_DIR, driver_path=driver_path)
             
-            if success:
-                # Process messy files
-                search_pattern_messy = os.path.join(LIVEMEET_MESSY_DIR, f"{file_base_id}_MESSY_*.csv")
-                for messy_path in glob.glob(search_pattern_messy):
-                    messy_filename = os.path.basename(messy_path)
-                    final_filename = messy_filename.replace('_MESSY_', '_FINAL_')
-                    final_path = os.path.join(LIVEMEET_FINAL_DIR, final_filename)
-                    livemeet_scraper.fix_and_standardize_headers(messy_path, final_path)
-                
-                # Process finalized files (PEREVENT and BYEVENT)
-                search_pattern_final = os.path.join(LIVEMEET_MESSY_DIR, f"{file_base_id}_*EVENT_*.csv")
-                for finalized_path in glob.glob(search_pattern_final):
-                    final_filename = os.path.basename(finalized_path)
-                    target_path = os.path.join(LIVEMEET_FINAL_DIR, final_filename)
-                    if os.path.exists(finalized_path):
-                        shutil.move(finalized_path, target_path)
+        if success:
+            # Process messy files
+            search_pattern_messy = os.path.join(LIVEMEET_MESSY_DIR, f"{file_base_id}_MESSY_*.csv")
+            for messy_path in glob.glob(search_pattern_messy):
+                messy_filename = os.path.basename(messy_path)
+                final_filename = messy_filename.replace('_MESSY_', '_FINAL_')
+                final_path = os.path.join(LIVEMEET_FINAL_DIR, final_filename)
+                livemeet_scraper.fix_and_standardize_headers(messy_path, final_path)
+            
+            # Process finalized files (PEREVENT and BYEVENT)
+            search_pattern_final = os.path.join(LIVEMEET_MESSY_DIR, f"{file_base_id}_*EVENT_*.csv")
+            for finalized_path in glob.glob(search_pattern_final):
+                final_filename = os.path.basename(finalized_path)
+                target_path = os.path.join(LIVEMEET_FINAL_DIR, final_filename)
+                if os.path.exists(finalized_path):
+                    shutil.move(finalized_path, target_path)
 
         if success:
             return f"DONE: {meet_id}:{count}"
