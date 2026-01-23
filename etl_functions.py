@@ -537,8 +537,17 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
         )
     
     cursor = conn.cursor()
+    
+    # 1. Check by source + source_meet_id (exact match)
     cursor.execute("SELECT meet_db_id, comp_year, start_date_iso, location, country, name FROM Meets WHERE source = ? AND source_meet_id = ?", meet_key)
     result = cursor.fetchone()
+    
+    # 2. IF NOT FOUND: Try to unify based on Name + Year (Prevent logical duplication)
+    if not result and meet_details.get('name') and comp_year:
+        cursor.execute("SELECT meet_db_id, comp_year, start_date_iso, location, country, name FROM Meets WHERE name = ? AND comp_year = ?", (meet_details['name'], comp_year))
+        result = cursor.fetchone()
+        if result:
+            print(f"  -> Unified new file '{source_meet_id}' into existing meet: '{meet_details['name']}' (ID: {result[0]})")
     
     if result:
         meet_db_id = result[0]

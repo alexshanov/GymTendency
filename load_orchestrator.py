@@ -137,8 +137,18 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             
             existing_result_id = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id)
             if existing_result_id:
-                # Rank Backfill Logic:
-                # If the DB has the score but NO rank, and we HAVE a rank now, update it.
+                # OVERWRITE LOGIC:
+                # If current source file is 'DETAILED' or 'PEREVENT' and we are seeing different data, update.
+                is_detailed = "DETAILED" in data_package.get('filepath', '') or "PEREVENT" in data_package.get('filepath', '')
+                
+                if is_detailed:
+                     score_final = to_float(app_res.get('score_final'))
+                     # Simple check: update if numeric score is provided
+                     if score_final is not None:
+                         cursor.execute("UPDATE Results SET score_final = ?, score_d = ?, rank_numeric = ?, rank_text = ? WHERE result_id = ?", 
+                                        (score_final, to_float(app_res.get('score_d')), parse_rank(app_res.get('rank_text')), app_res.get('rank_text'), existing_result_id))
+                
+                # Rank Backfill Logic (Original)
                 rank_text = app_res.get('rank_text')
                 rank_numeric = parse_rank(rank_text) if rank_text else None
                 if rank_text and str(rank_text).strip() != '':
@@ -214,37 +224,37 @@ def refresh_gold_tables(conn):
         -- Floor (fx)
         MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS fx_score,
         MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS fx_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
         
         -- Pommel Horse (ph)
         MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_final END) AS ph_score,
         MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_d END) AS ph_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_text END)) AS ph_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_text END)) AS ph_rank,
         
         -- Rings (sr)
         MAX(CASE WHEN app.name = 'Rings' THEN r.score_final END) AS sr_score,
         MAX(CASE WHEN app.name = 'Rings' THEN r.score_d END) AS sr_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Rings' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.rank_text END)) AS sr_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Rings' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.rank_text END)) AS sr_rank,
         
         -- Vault (vt)
         MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS vt_score,
         MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS vt_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
         
         -- Parallel Bars (pb)
         MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_final END) AS pb_score,
         MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_d END) AS pb_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_text END)) AS pb_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_text END)) AS pb_rank,
         
         -- High Bar (hb)
         MAX(CASE WHEN app.name = 'High Bar' THEN r.score_final END) AS hb_score,
         MAX(CASE WHEN app.name = 'High Bar' THEN r.score_d END) AS hb_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_text END)) AS hb_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'High Bar' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_text END)) AS hb_rank,
         
         -- All Around (aa)
         MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS aa_score,
         MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS aa_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id
@@ -272,27 +282,27 @@ def refresh_gold_tables(conn):
         -- Vault (vt)
         MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS vt_score,
         MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS vt_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
         
         -- Uneven Bars (ub)
         MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_final END) AS ub_score,
         MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_d END) AS ub_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_text END)) AS ub_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_text END)) AS ub_rank,
         
         -- Beam (bb)
         MAX(CASE WHEN app.name = 'Beam' THEN r.score_final END) AS bb_score,
         MAX(CASE WHEN app.name = 'Beam' THEN r.score_d END) AS bb_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Beam' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.rank_text END)) AS bb_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Beam' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.rank_text END)) AS bb_rank,
         
         -- Floor (fx)
         MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS fx_score,
         MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS fx_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
         
         -- All Around (aa)
         MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS aa_score,
         MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS aa_d,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
+        COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id

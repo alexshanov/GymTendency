@@ -197,35 +197,28 @@ def extract_livemeet_data(filepath, meet_manifest):
         elif 'comp_year' in meet_details:
              meet_details['year'] = meet_details['comp_year']
 
-    # Normalize Headers (Sportzsoft triplet logic)
-    raw_apps = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar', 'AllAround', 'All_Around']
-    new_headers = []
-    seen_counts = {}
-    for col in df.columns:
-        base = col.split('.')[0]
-        if base in raw_apps:
-            count = seen_counts.get(base, 0)
-            seen_counts[base] = count + 1
-            triplet_pos = count % 3
-            triplet_num = count // 3
-            suffix = ['D', 'Score', 'Rnk'][triplet_pos]
-            proposed_name = f"Result_{base}_{suffix}" if triplet_num == 0 else f"EXTRA_{base}_{triplet_num}_{suffix}"
-            new_headers.append(proposed_name)
-        else:
-            new_headers.append(col)
-    
-    # --- Ensure Uniqueness ---
-    unique_headers = []
-    counts = {}
-    for h in new_headers:
-        if h in counts:
-            counts[h] += 1
-            unique_headers.append(f"{h}_{counts[h]}")
-        else:
-            counts[h] = 0
-            unique_headers.append(h)
-            
-    df.columns = unique_headers
+    # Recognize Already-Normalized Headers (DETAILED files)
+    if any(col.startswith('Result_') for col in df.columns):
+        # Already normalized, don't apply triplet logic
+        pass
+    else:
+        # Normalize Headers (Sportzsoft triplet logic)
+        raw_apps = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar', 'AllAround', 'All_Around', 'PommelHorse', 'ParallelBars', 'HighBar']
+        new_headers = []
+        seen_counts = {}
+        for col in df.columns:
+            base = col.split('.')[0]
+            if base in raw_apps:
+                count = seen_counts.get(base, 0)
+                seen_counts[base] = count + 1
+                triplet_pos = count % 3
+                triplet_num = count // 3
+                suffix = ['D', 'Score', 'Rnk'][triplet_pos]
+                proposed_name = f"Result_{base}_{suffix}" if triplet_num == 0 else f"EXTRA_{base}_{triplet_num}_{suffix}"
+                new_headers.append(proposed_name)
+            else:
+                new_headers.append(col)
+        df.columns = new_headers
 
     # Detect Discipline
     MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar'}
@@ -426,10 +419,26 @@ def extract_mso_data(filepath, meet_manifest):
         elif col not in [name_col, club_col]: dynamic_metadata_cols.append(col)
 
     detected_names = [COLUMN_MAP_MSO.get(c.strip(), c) for c in apparatus_cols]
-    if any(x in ['Pommel Horse', 'Rings', 'Parallel Bars', 'High Bar'] for x in detected_names):
+    
+    # Heuristic 1: Apparatus names
+    has_mag_apps = any(x in ['Pommel Horse', 'Rings', 'Parallel Bars', 'High Bar'] for x in detected_names)
+    has_wag_apps = any(x in ['Uneven Bars', 'Beam'] for x in detected_names)
+    
+    # Heuristic 2: Level codes (WAG-specific: XS, XG, XP, XB, Xcel, CCP; MAG-specific: P1, P2... PO)
+    # Check FIRST athlete's level as a sample
+    sample_level = str(df['Lvl'].iloc[0]).upper() if 'Lvl' in df.columns and not df.empty else ""
+    
+    is_wag_level = any(x in sample_level for x in ['XS', 'XG', 'XP', 'XB', 'XCEL', 'CCP'])
+    is_mag_level = any(re.match(r'^P\d', sample_level) for x in [sample_level]) or 'PO' in sample_level
+    
+    if is_wag_level:
+        discipline_id = 1; gender_heuristic = 'F'
+    elif is_mag_level:
+        discipline_id = 2; gender_heuristic = 'M'
+    elif has_mag_apps and not has_wag_apps:
         discipline_id = 2; gender_heuristic = 'M'
     else:
-        discipline_id = 1; gender_heuristic = 'F'
+        discipline_id = 1; gender_heuristic = 'F' # Default WAG
 
     extracted_results = []
     for _, row in df.iterrows():
