@@ -471,7 +471,7 @@ def get_or_create_club(conn, club_name, cache):
     cursor = conn.cursor()
     
     # 2. Check Database Alias Table
-    cursor.execute("SELECT canonical_club_id FROM ClubAliases WHERE UPPER(club_alias_name) = UPPER(?)", (club_name,))
+    cursor.execute("SELECT canonical_club_id FROM ClubAliases WHERE club_alias_name = ?", (club_name,))
     result = cursor.fetchone()
     if result:
         club_id = result[0]
@@ -479,7 +479,7 @@ def get_or_create_club(conn, club_name, cache):
         return club_id
 
     # 3. Check Clubs Table Directly
-    cursor.execute("SELECT club_id FROM Clubs WHERE UPPER(name) = UPPER(?)", (club_name,))
+    cursor.execute("SELECT club_id FROM Clubs WHERE name = ?", (club_name,))
     result = cursor.fetchone()
     if result:
         club_id = result[0]
