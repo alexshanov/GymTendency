@@ -552,7 +552,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 result_cols = [c for c in be_final_df.columns if c not in service_cols]
                                 be_final_df = be_final_df[service_cols + result_cols]
                                 
-                                 safe_name = re.sub(r'[\s/\\:*?"<>|]+', '_', f"{group_name}_{sub_label}")
+                                safe_name = re.sub(r'[\s/\\:*?"<>|]+', '_', f"{group_name}_{sub_label}")
                                 be_filename = f"{meet_id_for_filename}_MESSY_BYEVENT_{safe_name}.csv"
                                 be_final_df.to_csv(os.path.join(output_directory, be_filename), index=False)
                                 print(f"      -> Saved By-Event (Messy): {be_filename} ({len(be_final_df)} rows)")
