@@ -27,7 +27,7 @@ from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentE
 #  LIBRARY OF FUNCTIONS (The "Tools")
 # ==============================================================================
 
-def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, output_directory="raw_data"):
+def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, output_directory="raw_data", driver_path=None):
     """
     Scrapes all event data, saving each table into its own CSV file.
     This version uses a more robust file naming scheme to handle multiple
@@ -51,7 +51,10 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
     total_files_saved = 0
     
     try:
-        service = Service(ChromeDriverManager().install())
+        if driver_path:
+            service = Service(driver_path)
+        else:
+            service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         
         driver.get(main_page_url)

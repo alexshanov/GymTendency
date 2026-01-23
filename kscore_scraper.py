@@ -92,7 +92,7 @@ def standardize_kscore_columns(html_content):
 # ==============================================================================
 #  MAIN SCRAPING FUNCTION
 # ==============================================================================
-def scrape_kscore_meet(meet_id, meet_name, output_dir):
+def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
     """
     Main function to scrape a single competition from the Kscore website.
     """
@@ -110,7 +110,12 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir):
     saved_files_count = 0
     
     try:
-        service = Service(ChromeDriverManager().install())
+        if driver_path:
+            service = Service(driver_path)
+        else:
+            # Fallback (though this is what was failing)
+            service = Service(ChromeDriverManager().install())
+            
         driver = webdriver.Chrome(service=service, options=options)
         
         driver.get(base_url)

@@ -71,14 +71,14 @@ def save_status(status_dict):
 
 # --- WORKER FUNCTIONS ---
 
-def kscore_task(meet_id, meet_name):
+def kscore_task(meet_id, meet_name, driver_path=None):
     """Worker task for KScore scraping."""
     try:
         # Subtle staggered start to avoid resource spikes
         time.sleep(random.random() * 3)
 
-        with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            success, count = kscore_scraper.scrape_kscore_meet(str(meet_id), str(meet_name), KSCORE_DIR)
+        # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+        success, count = kscore_scraper.scrape_kscore_meet(str(meet_id), str(meet_name), KSCORE_DIR, driver_path=driver_path)
         
         if success:
             return f"DONE: {meet_id}:{count}"
@@ -87,13 +87,13 @@ def kscore_task(meet_id, meet_name):
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
 
-def livemeet_task(meet_id, meet_name):
+def livemeet_task(meet_id, meet_name, driver_path=None):
     """Worker task for LiveMeet scraping and cleaning."""
     try:
         meet_url = f"https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id={meet_id}"
         
-        with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            success, count, file_base_id = livemeet_scraper.scrape_raw_data_to_separate_files(meet_url, str(meet_id), LIVEMEET_MESSY_DIR)
+        # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+        success, count, file_base_id = livemeet_scraper.scrape_raw_data_to_separate_files(meet_url, str(meet_id), LIVEMEET_MESSY_DIR, driver_path=driver_path)
             
             if success:
                 # Process messy files
@@ -119,15 +119,15 @@ def livemeet_task(meet_id, meet_name):
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
 
-def mso_task(meet_id, meet_name):
+def mso_task(meet_id, meet_name, driver_path=None):
     """Worker task for MSO scraping."""
     driver = None
     try:
         # Subtle staggered start
         time.sleep(random.random() * 3)
 
-        with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            driver = mso_scraper.setup_driver()
+        # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+        driver = mso_scraper.setup_driver(driver_path=driver_path)
             # process_meet returns (success, message)
             success, msg = mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
         
@@ -171,13 +171,14 @@ def main():
     print("Pre-installing/checking WebDriver...")
     # Force clear cache if needed or just trust manager
     # os.environ['WDM_LOG_LEVEL'] = '0' 
+    valid_driver_path = None
     try:
         # from webdriver_manager.core.utils import ChromeType
         # Explicitly requesting the version matching the installed browser if accessible,
         # but usually .install() handles this. The ERROR says 114 vs 144.
         # Let's try to print what we are getting.
-        driver_path = ChromeDriverManager().install()
-        print(f"WebDriver installed at: {driver_path}")
+        valid_driver_path = ChromeDriverManager().install()
+        print(f"WebDriver installed at: {valid_driver_path}")
     except Exception as e:
         print(f"Warning: WebDriver pre-install failed: {e}")
 
@@ -276,7 +277,9 @@ def main():
                 for stype, mid, mname in chunk:
                     pool = pools[stype]
                     func = task_functions[stype]
-                    futures[pool.submit(func, mid, mname)] = (stype, mid, mname)
+                    
+                    # Pass driver_path to all Selenium-based tasks
+                    futures[pool.submit(func, mid, mname, valid_driver_path)] = (stype, mid, mname)
                 
                 # Wait for this chunk to complete
                 for future in as_completed(futures):

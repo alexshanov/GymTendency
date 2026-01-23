@@ -24,7 +24,7 @@ ALL_OPTION_VALUE = "---All"
 # Ensure output directory exists
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-def setup_driver():
+def setup_driver(driver_path=None):
     options = Options()
     options.add_argument("--headless")  # Run in headless mode
     options.add_argument("--disable-gpu")
@@ -36,7 +36,10 @@ def setup_driver():
     options.page_load_strategy = 'eager'  # Don't wait for all images/ads to load
     
     try:
-        service = Service(ChromeDriverManager().install())
+        if driver_path:
+            service = Service(driver_path)
+        else:
+            service = Service(ChromeDriverManager().install())
     except Exception as e:
         print(f"  -> Warning: ChromeDriverManager failed ({e}), trying cached fallback...")
         fallback_path = "/home/alex-shanov/.wdm/drivers/chromedriver/linux64/144.0.7559.96/chromedriver-linux64/chromedriver"
