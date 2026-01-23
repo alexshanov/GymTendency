@@ -9,6 +9,9 @@ import shutil
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import random
+from webdriver_manager.chrome import ChromeDriverManager
+
 # Import Scrapers
 import kscore_scraper
 import livemeet_scraper
@@ -26,8 +29,8 @@ MSO_DIR = "CSVs_mso_final"
 
 WORKERS = {
     'kscore': 2,
-    'livemeet': 8,
-    'mso': 8  # Reduced from 15 to prevent connection exhaustion
+    'livemeet': 6,  # Reduced from 8 for stability
+    'mso': 4        # Reduced from 8 for stability
 }
 
 # --- WORKER FUNCTIONS ---
@@ -35,6 +38,8 @@ WORKERS = {
 def kscore_task(meet_id, meet_name):
     """Worker task for KScore scraping."""
     try:
+        # Subtle staggered start to avoid resource spikes
+        time.sleep(random.random() * 3)
         # Check skip logic again within worker to be safe in parallel
         existing = glob.glob(os.path.join(KSCORE_DIR, f"{meet_id}_FINAL_*.csv"))
         if existing:
@@ -86,6 +91,9 @@ def mso_task(meet_id, meet_name):
         if os.path.exists(existing):
             return f"SKIP: {meet_id}"
 
+        # Subtle staggered start
+        time.sleep(random.random() * 3)
+
         with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
             driver = mso_scraper.setup_driver()
             # process_meet returns (success, message)
@@ -127,6 +135,14 @@ def main():
     # Ensure directories exist
     for d in [KSCORE_DIR, LIVEMEET_MESSY_DIR, LIVEMEET_FINAL_DIR, MSO_DIR]:
         os.makedirs(d, exist_ok=True)
+
+    # PRE-INSTALL WEBDRIVER to prevent concurrent lock issues
+    print("Pre-installing/checking WebDriver...")
+    os.environ['WDM_LOG_LEVEL'] = '0' # Silence WDM logs
+    try:
+        ChromeDriverManager().install()
+    except Exception as e:
+        print(f"Warning: WebDriver pre-install failed: {e}. Workers will attempt themselves.")
 
     all_tasks = []
     
