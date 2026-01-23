@@ -195,6 +195,57 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             
     return
 
+def unify_meets(conn):
+    """
+    Identifies logical meets (Name + Year) and merges them into canonical records.
+    Crucial for collapsing data gaps across multiple source files.
+    """
+    logging.info("Starting meet unification process...")
+    cursor = conn.cursor()
+    
+    # 1. Backfill missing years from meet names if possible (Regex pass)
+    cursor.execute("SELECT meet_db_id, name, comp_year FROM Meets WHERE comp_year IS NULL OR comp_year = ''")
+    missing_years = cursor.fetchall()
+    for m_id, name, _ in missing_years:
+        if not name: continue
+        match = re.search(r'(20\d{2})', name)
+        if match:
+            year = int(match.group(1))
+            cursor.execute("UPDATE Meets SET comp_year = ? WHERE meet_db_id = ?", (year, m_id))
+    
+    conn.commit()
+
+    # 2. Identify logical duplicates by (LOWER(TRIM(name)), comp_year)
+    # Exclude "Unnamed:" placeholders from grouping to avoid incorrect merging
+    cursor.execute("""
+        SELECT name, comp_year, MIN(meet_db_id) as canonical_id, GROUP_CONCAT(meet_db_id) as all_ids
+        FROM Meets
+        WHERE name IS NOT NULL AND name != '' AND name NOT LIKE 'Unnamed:%'
+        GROUP BY LOWER(TRIM(name)), comp_year
+        HAVING COUNT(*) > 1
+    """)
+    duplicates = cursor.fetchall()
+    
+    total_unified = 0
+    for name, year, canonical_id, all_ids_str in duplicates:
+        all_ids = [int(i) for i in all_ids_str.split(',')]
+        others = [i for i in all_ids if i != canonical_id]
+        if not others: continue
+        
+        logging.info(f"Unifying: '{name}' ({year}) -> Canonical ID: {canonical_id} (Merging IDs: {others})")
+        
+        # Merge results to canonical ID
+        for other_id in others:
+            cursor.execute("UPDATE Results SET meet_db_id = ? WHERE meet_db_id = ?", (canonical_id, other_id))
+            
+        # Delete duplicate meet headers
+        placeholders = ', '.join(['?'] * len(others))
+        cursor.execute(f"DELETE FROM Meets WHERE meet_db_id IN ({placeholders})", others)
+        total_unified += len(others)
+        
+    conn.commit()
+    logging.info(f"Meet unification complete. Removed {total_unified} duplicate meet records.")
+
 def refresh_gold_tables(conn):
     """
     Creates/Updates flattened 'Gold' tables for MAG and WAG.
@@ -411,7 +462,7 @@ def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest):
             params.append(str(manifest_year))
             
         manifest_name = details.get('name')
-        if manifest_name and (not db_name or "Kscore" in db_name or "Livemeet" in db_name or db_name == 'Title not set'):
+        if manifest_name and (not db_name or "Kscore" in db_name or "Livemeet" in db_name or "Unnamed:" in db_name or db_name == 'Title not set'):
             updates.append("name = ?")
             params.append(str(manifest_name).strip())
             
@@ -436,7 +487,7 @@ def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest):
 
 def main():
     parser = argparse.ArgumentParser(description="Parallel GymTendency Data Loader")
-    parser.add_argument("--workers", type=int, default=8, help="Number of parallel readers")
+    parser.add_argument("--workers", type=int, default=200, help="Number of parallel readers")
     parser.add_argument("--sample", type=int, default=1, help="Process every Nth file")
     parser.add_argument("--limit", type=int, default=0, help="Maximum number of files to process")
     parser.add_argument("--gold-only", action="store_true", help="Skip file processing and only refresh Gold tables")
@@ -595,14 +646,18 @@ def main():
     else:
         logging.info("Skipping CSV processing due to --gold-only flag.")
 
-    # 5. Refresh Gold Tables
-    # 5. Heal Metadata (AFTER loading files to catch new meets)
-    logging.info("Running Final Metadata Healing Pass...")
-    with sqlite3.connect(DB_FILE) as conn:
+    # 5. Autonomous Cleanup & Unification
+    with sqlite3.connect(DB_FILE, timeout=30) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        
+        # Heal Metadata Part 1 (Manifest-based)
+        logging.info("Running Metadata Healing Pass...")
         heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest)
-
-    # 6. Refresh Gold Tables
-    with sqlite3.connect(DB_FILE) as conn:
+        
+        # Unify Meets (Logical name-based grouping)
+        unify_meets(conn)
+        
+        # Refresh Gold Tables (Final flattened results)
         refresh_gold_tables(conn)
 
 
@@ -617,7 +672,7 @@ if __name__ == "__main__":
         filename='loader_orchestrator.log',
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
-        filemode='w'
+        filemode='a'
     )
     console = logging.StreamHandler()
     console.setLevel(logging.WARNING) # Only warnings/errors to console

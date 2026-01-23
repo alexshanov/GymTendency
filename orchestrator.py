@@ -7,9 +7,9 @@ import re
 import contextlib
 import shutil
 import logging
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
+import json
 import random
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from webdriver_manager.chrome import ChromeDriverManager
 
 # Import Scrapers
@@ -27,11 +27,33 @@ LIVEMEET_MESSY_DIR = "CSVs_Livemeet_messy"
 LIVEMEET_FINAL_DIR = "CSVs_Livemeet_final"
 MSO_DIR = "CSVs_mso_final"
 
+STATUS_MANIFEST = "scraped_meets_status.json"
+
 WORKERS = {
     'kscore': 2,
     'livemeet': 3,  # Reduced from 6 to 3 for stability (heavy Selenium usage)
     'mso': 2        # Reduced from 3 to 2 for stability
 }
+
+MAX_RETRIES = 3
+
+# --- UTILS ---
+
+def load_status():
+    if os.path.exists(STATUS_MANIFEST):
+        try:
+            with open(STATUS_MANIFEST, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_status(status_dict):
+    try:
+        with open(STATUS_MANIFEST, 'w') as f:
+            json.dump(status_dict, f, indent=4)
+    except Exception as e:
+        logging.error(f"Failed to save status manifest: {e}")
 
 # --- WORKER FUNCTIONS ---
 
@@ -40,10 +62,6 @@ def kscore_task(meet_id, meet_name):
     try:
         # Subtle staggered start to avoid resource spikes
         time.sleep(random.random() * 3)
-        # Check skip logic again within worker to be safe in parallel
-        existing = glob.glob(os.path.join(KSCORE_DIR, f"{meet_id}_FINAL_*.csv"))
-        if existing:
-            return f"SKIP: {meet_id}"
 
         with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
             kscore_scraper.scrape_kscore_meet(str(meet_id), str(meet_name), KSCORE_DIR)
@@ -54,10 +72,6 @@ def kscore_task(meet_id, meet_name):
 def livemeet_task(meet_id, meet_name):
     """Worker task for LiveMeet scraping and cleaning."""
     try:
-        existing = glob.glob(os.path.join(LIVEMEET_FINAL_DIR, f"{meet_id}_FINAL_*.csv"))
-        if existing:
-            return f"SKIP: {meet_id}"
-
         meet_url = f"https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id={meet_id}"
         
         with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
@@ -77,7 +91,8 @@ def livemeet_task(meet_id, meet_name):
                 for finalized_path in glob.glob(search_pattern_final):
                     final_filename = os.path.basename(finalized_path)
                     target_path = os.path.join(LIVEMEET_FINAL_DIR, final_filename)
-                    shutil.move(finalized_path, target_path)
+                    if os.path.exists(finalized_path):
+                        shutil.move(finalized_path, target_path)
 
         return f"DONE: {meet_id}"
     except Exception as e:
@@ -87,10 +102,6 @@ def mso_task(meet_id, meet_name):
     """Worker task for MSO scraping."""
     driver = None
     try:
-        existing = os.path.join(MSO_DIR, f"{meet_id}_mso.csv")
-        if os.path.exists(existing):
-            return f"SKIP: {meet_id}"
-
         # Subtle staggered start
         time.sleep(random.random() * 3)
 
@@ -114,17 +125,13 @@ def mso_task(meet_id, meet_name):
 
 # --- MAIN ORCHESTRATOR ---
 
-def run_scraper(scraper_type, manifest_path, task_func, max_workers):
-    # (This function is not actually used in main() anymore, but keeping consistent if needed later)
-    pass 
-
 def main():
     # Setup Logging
     logging.basicConfig(
         filename='scraper_orchestrator.log',
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
-        filemode='w'
+        filemode='a'
     )
     console = logging.StreamHandler()
     console.setLevel(logging.WARNING) # Only show warnings/errors to console
@@ -132,17 +139,20 @@ def main():
 
     print("--- Scraper Orchestrator Started (Detailed logs in 'scraper_orchestrator.log') ---")
 
+    # Load Status Manifest
+    status_manifest = load_status()
+
     # Ensure directories exist
     for d in [KSCORE_DIR, LIVEMEET_MESSY_DIR, LIVEMEET_FINAL_DIR, MSO_DIR]:
         os.makedirs(d, exist_ok=True)
 
-    # PRE-INSTALL WEBDRIVER to prevent concurrent lock issues
+    # PRE-INSTALL WEBDRIVER
     print("Pre-installing/checking WebDriver...")
-    os.environ['WDM_LOG_LEVEL'] = '0' # Silence WDM logs
+    os.environ['WDM_LOG_LEVEL'] = '0'
     try:
         ChromeDriverManager().install()
     except Exception as e:
-        print(f"Warning: WebDriver pre-install failed: {e}. Workers will attempt themselves.")
+        print(f"Warning: WebDriver pre-install failed: {e}")
 
     all_tasks = []
     
@@ -170,76 +180,89 @@ def main():
         for _, row in df.iterrows():
             all_tasks.append(('mso', str(row[id_col]), str(row[name_col])))
 
-    logging.info(f"Total tasks loaded: {len(all_tasks)}")
-    print(f"Total tasks loaded: {len(all_tasks)}")
+    # Filter out already finished tasks
+    queue = [t for t in all_tasks if status_manifest.get(f"{t[0]}_{t[1]}") != "DONE"]
+    
+    logging.info(f"Total tasks loaded: {len(all_tasks)}. Remaining: {len(queue)}")
+    print(f"Total tasks loaded: {len(all_tasks)}. Remaining to process: {len(queue)}")
     
     # Graceful Shutdown Handling
     import signal
     stop_requested = False
     def signal_handler(sig, frame):
         nonlocal stop_requested
-        print("\n\n!!! SHUTDOWN REQUESTED (Ctrl+C). Finishing current tasks and exiting... !!!\n")
+        print("\n\n!!! SHUTDOWN REQUESTED... !!!\n")
         stop_requested = True
 
     signal.signal(signal.SIGINT, signal_handler)
+
+    task_functions = {
+        'kscore': kscore_task,
+        'livemeet': livemeet_task,
+        'mso': mso_task
+    }
 
     with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
          ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
          ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool:
         
-        futures = {}
-        
-        # Submit KScore
-        k_tasks = [t for t in all_tasks if t[0] == 'kscore']
-        for _, mid, mname in k_tasks:
-            futures[k_pool.submit(kscore_task, mid, mname)] = (mid, 'kscore')
-            
-        # Submit LiveMeet
-        l_tasks = [t for t in all_tasks if t[0] == 'livemeet']
-        for _, mid, mname in l_tasks:
-            futures[l_pool.submit(livemeet_task, mid, mname)] = (mid, 'livemeet')
-            
-        # Submit MSO
-        m_tasks = [t for t in all_tasks if t[0] == 'mso']
-        for _, mid, mname in m_tasks:
-            futures[m_pool.submit(mso_task, mid, mname)] = (mid, 'mso')
-            
-        completed = { 'kscore': 0, 'livemeet': 0, 'mso': 0 }
-        totals = { 'kscore': len(k_tasks), 'livemeet': len(l_tasks), 'mso': len(m_tasks) }
-        
-        for future in as_completed(futures):
-            if stop_requested:
-                k_pool.shutdown(wait=False, cancel_futures=True)
-                l_pool.shutdown(wait=False, cancel_futures=True)
-                m_pool.shutdown(wait=False, cancel_futures=True)
+        pools = {
+            'kscore': k_pool,
+            'livemeet': l_pool,
+            'mso': m_pool
+        }
+
+        # Multi-attempt logic
+        for attempt in range(1, MAX_RETRIES + 1):
+            if stop_requested or not queue:
                 break
-
-            mid, stype = futures[future]
-            completed[stype] += 1
-            print(f"[{stype} {completed[stype]}/{totals[stype]}] {mid}")
-            try:
-                result = future.result()
                 
-                parts = result.split(':', 1)
-                status = parts[0]
-                message = parts[1].strip() if len(parts) > 1 else ""
+            print(f"\n--- ATTEMPT {attempt}/{MAX_RETRIES} ---")
+            logging.info(f"Starting attempt {attempt}/{MAX_RETRIES}")
+            
+            futures = {}
+            for stype, mid, mname in queue:
+                pool = pools[stype]
+                func = task_functions[stype]
+                futures[pool.submit(func, mid, mname)] = (stype, mid, mname)
+            
+            completed_this_pass = []
+            for future in as_completed(futures):
+                if stop_requested:
+                    break
+
+                stype, mid, mname = futures[future]
+                key = f"{stype}_{mid}"
                 
-                log_msg = f"[{stype} {completed[stype]}/{totals[stype]}] {mid}: {status} - {message}"
-                
-                if "ERROR" in status:
-                     logging.error(log_msg)
-                     # Optional: print error to stdout too, or keep it silent as requested
-                elif "SKIP" in status:
-                     logging.info(log_msg)
-                else:
-                     logging.info(log_msg)
+                try:
+                    result = future.result()
+                    parts = result.split(':', 1)
+                    status = parts[0]
+                    message = parts[1].strip() if len(parts) > 1 else ""
+                    
+                    log_msg = f"[{stype}] {mid}: {status} - {message}"
+                    
+                    if "DONE" in status:
+                        logging.info(log_msg)
+                        status_manifest[key] = "DONE"
+                        completed_this_pass.append((stype, mid, mname))
+                        print(f"  [OK] {mid}")
+                    else:
+                        logging.error(f"  [FAIL] {mid}: {message}")
+                except Exception as e:
+                    logging.error(f"  [EXCEPTION] {mid}: {e}")
 
-            except Exception as e:
-                err_msg = f"[{stype} {completed[stype]}/{totals[stype]}] {mid}: EXCEPTION ({e})"
-                logging.error(err_msg)
+            # Update queue for next attempt
+            queue = [t for t in queue if status_manifest.get(f"{t[0]}_{t[1]}") != "DONE"]
+            save_status(status_manifest)
 
-    logging.info("Orchestrator finished.")
+            if queue and attempt < MAX_RETRIES:
+                jitter = random.randint(5, 15)
+                print(f"Waiting {jitter}s before next retry attempt...")
+                time.sleep(jitter)
 
+    logging.info("Scraper Orchestration finished.")
+    print("\n--- Scraper Orchestration Finished ---")
 
 if __name__ == "__main__":
     main()
