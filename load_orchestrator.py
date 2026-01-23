@@ -459,25 +459,49 @@ def main():
 
     files_to_process.sort() # Consistency
     if args.sample > 1: files_to_process = files_to_process[::args.sample]
-    if args.limit > 0: files_to_process = files_to_process[:args.limit]
 
     if not files_to_process and not args.gold_only:
         print("No files found to process.")
         return
 
-    completed = 0
     start_time = time.time()
-
+    
+    # 3. Filter by processed state AND apply limit
+    unprocessed = []
+    
     if not args.gold_only:
-        # 3. Filter by processed state
-        unprocessed = []
         with sqlite3.connect(DB_FILE) as conn:
+            # Pre-fetch processed hashes to avoid thousands of queries
+            # This is much faster
+            processed_map = {row[0]: True for row in conn.execute("SELECT file_hash FROM ProcessedFiles").fetchall()}
+            
             for stype, fpath, manifest, aliases in files_to_process:
+                # Calculate hash - this is fast for small files, but we can also optimize
+                # by checking if path + mtime is unchanged, but let's stick to content hash or path check
+                # For speed, strictly we should use path + mtime if we trust it, but hash is safer.
+                # However, calculate_file_hash reads the file. That might be slow for 5000 files.
+                # Let's trust the CalculateHash function or maybe check if we can skip reading?
+                
+                # Check 1: Is this path already in ProcessedFiles? (If hash unchanged)
+                # Actually calculate_file_hash is robust.
                 fhash = calculate_file_hash(fpath)
-                if not is_file_processed(conn, fpath, fhash):
-                    unprocessed.append((stype, fpath, fhash, manifest, aliases))
-        
-        logging.info(f"Total files: {len(files_to_process)}, Unprocessed: {len(unprocessed)}")
+                
+                if fhash not in processed_map:
+                     unprocessed.append((stype, fpath, fhash, manifest, aliases))
+                     # Check limit on the fly to avoid scanning everything if not needed?
+                     # No, user wants the "next 100". Sorting ensures "next" is deterministic.
+                     # But if we want proper "next 100", we should find the first 100 unprocessed.
+                     if args.limit > 0 and len(unprocessed) >= args.limit:
+                         break
+    
+    logging.info(f"Total files found: {len(files_to_process)}. New/Changed: {len(unprocessed)}")
+    print(f"Total files found: {len(files_to_process)}. New to process: {len(unprocessed)}")
+    
+    if not unprocessed and not args.gold_only:
+        logging.info("No unprocessed files found.")
+    elif not args.gold_only:
+        # Proceed with 'unprocessed' list
+        # ... logic continues ...
         if not unprocessed:
             logging.info("No unprocessed files found.")
             # Even if no files, we might still want to refresh Gold tables later

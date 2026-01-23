@@ -29,8 +29,8 @@ MSO_DIR = "CSVs_mso_final"
 
 WORKERS = {
     'kscore': 2,
-    'livemeet': 6,  # Reduced from 8 for stability
-    'mso': 4        # Reduced from 8 for stability
+    'livemeet': 6,
+    'mso': 3  # Set to 3 as requested
 }
 
 # --- WORKER FUNCTIONS ---
@@ -173,6 +173,16 @@ def main():
     logging.info(f"Total tasks loaded: {len(all_tasks)}")
     print(f"Total tasks loaded: {len(all_tasks)}")
     
+    # Graceful Shutdown Handling
+    import signal
+    stop_requested = False
+    def signal_handler(sig, frame):
+        nonlocal stop_requested
+        print("\n\n!!! SHUTDOWN REQUESTED (Ctrl+C). Finishing current tasks and exiting... !!!\n")
+        stop_requested = True
+
+    signal.signal(signal.SIGINT, signal_handler)
+
     with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
          ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
          ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool:
@@ -190,14 +200,20 @@ def main():
             futures[l_pool.submit(livemeet_task, mid, mname)] = (mid, 'livemeet')
             
         # Submit MSO
-        # m_tasks = [t for t in all_tasks if t[0] == 'mso']
-        # for _, mid, mname in m_tasks:
-        #     futures[m_pool.submit(mso_task, mid, mname)] = (mid, 'mso')
+        m_tasks = [t for t in all_tasks if t[0] == 'mso']
+        for _, mid, mname in m_tasks:
+            futures[m_pool.submit(mso_task, mid, mname)] = (mid, 'mso')
             
         completed = { 'kscore': 0, 'livemeet': 0, 'mso': 0 }
-        totals = { 'kscore': len(k_tasks), 'livemeet': len(l_tasks), 'mso': 0 } # mso: len(m_tasks)
+        totals = { 'kscore': len(k_tasks), 'livemeet': len(l_tasks), 'mso': len(m_tasks) }
         
         for future in as_completed(futures):
+            if stop_requested:
+                k_pool.shutdown(wait=False, cancel_futures=True)
+                l_pool.shutdown(wait=False, cancel_futures=True)
+                m_pool.shutdown(wait=False, cancel_futures=True)
+                break
+
             mid, stype = futures[future]
             completed[stype] += 1
             print(f"[{stype} {completed[stype]}/{totals[stype]}] {mid}")

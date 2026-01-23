@@ -118,8 +118,11 @@ def extract_kscore_data(filepath, meet_manifest, level_alias_map):
                 # If rank is empty, move the non-numeric "Score" (e.g. "Gold") to rank_text
                 if not rank_val or str(rank_val).strip() == '':
                     actual_rank = score_val
-                # D remains whatever was there, or we can clear it if it's now the score
-                # Usually it was the same value, let's keep it as-is for now.
+            elif not is_numeric(score_val) and (score_val and str(score_val).strip() != ''):
+                # If Score is non-numeric (e.g. "Silver") and D is not a trigger,
+                # move the Score to rank_text if rank is empty.
+                if not rank_val or str(rank_val).strip() == '':
+                    actual_rank = score_val
             
             apparatus_results.append({
                 'raw_event': raw_event,
