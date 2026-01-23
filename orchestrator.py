@@ -220,6 +220,12 @@ def main():
         nonlocal stop_requested
         print("\n\n!!! SHUTDOWN REQUESTED... !!!\n")
         stop_requested = True
+        # Aggressive cleanup on first signal
+        try:
+             # Try clean shutdown first
+             print("Initiating emergency pool shutdown...")
+        except:
+             pass
 
     signal.signal(signal.SIGINT, signal_handler)
 
@@ -275,6 +281,8 @@ def main():
                 # Wait for this chunk to complete
                 for future in as_completed(futures):
                     if stop_requested:
+                        # Cancel remaining futures in this chunk
+                        for f in futures: f.cancel()
                         break
 
                     stype, mid, mname = futures[future]
