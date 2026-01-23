@@ -239,6 +239,7 @@ def main():
             
             # Resource cleanup before each attempt
             cleanup_orphaned_processes()
+            futures = {}
             for stype, mid, mname in queue:
                 pool = pools[stype]
                 func = task_functions[stype]
