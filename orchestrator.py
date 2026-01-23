@@ -128,8 +128,8 @@ def mso_task(meet_id, meet_name, driver_path=None):
 
         # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
         driver = mso_scraper.setup_driver(driver_path=driver_path)
-            # process_meet returns (success, message)
-            success, msg = mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
+        # process_meet returns (success, message)
+        success, msg = mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
         
         if success:
             return f"DONE: {meet_id}:1" # MSO usually 1 file
