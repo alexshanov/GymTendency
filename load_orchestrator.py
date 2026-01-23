@@ -262,6 +262,67 @@ def load_manifest(scraper_type, filepath):
         return {str(row['MeetID']): {'name': row['MeetName'], 'start_date_iso': row['Date'], 'location': row['State'], 'year': None} for _, row in df.iterrows()}
     return {}
 
+def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest):
+    """
+    Backfills missing metadata (year, name, date, etc.) for all existing meets
+    using the provided manifests. This is useful for meets that were processed
+    before self-healing logic was added.
+    """
+    logging.info("Starting metadata healing pass...")
+    cursor = conn.cursor()
+    
+    # Combined manifests for easier lookup
+    # Key should be (source, source_meet_id)
+    combined = {}
+    for mid, details in kscore_manifest.items():
+        # KScore source_meet_id in DB is without prefix
+        sid = mid.replace('kscore_', '', 1)
+        combined[('kscore', sid)] = details
+    for mid, details in livemeet_manifest.items():
+        combined[('livemeet', mid)] = details
+    for mid, details in mso_manifest.items():
+        combined[('mso', mid)] = details
+
+    cursor.execute("SELECT meet_db_id, source, source_meet_id, comp_year, name, start_date_iso, location FROM Meets")
+    meets = cursor.fetchall()
+    
+    updates_count = 0
+    for m_id, source, sid, db_year, db_name, db_date, db_loc in meets:
+        details = combined.get((source, sid))
+        if not details: continue
+        
+        updates = []
+        params = []
+        
+        manifest_year = str(details.get('year')) if details.get('year') else None
+        if manifest_year and manifest_year != 'None' and not db_year:
+            updates.append("comp_year = ?")
+            params.append(manifest_year)
+            
+        manifest_name = details.get('name')
+        if manifest_name and (not db_name or "Kscore" in db_name or "Livemeet" in db_name):
+            updates.append("name = ?")
+            params.append(manifest_name)
+            
+        manifest_date = details.get('start_date_iso')
+        if manifest_date and not db_date:
+            updates.append("start_date_iso = ?")
+            params.append(manifest_date)
+            
+        manifest_loc = details.get('location')
+        if manifest_loc and manifest_loc != 'N/A' and not db_loc:
+            updates.append("location = ?")
+            params.append(manifest_loc)
+            
+        if updates:
+            sql = f"UPDATE Meets SET {', '.join(updates)} WHERE meet_db_id = ?"
+            params.append(m_id)
+            cursor.execute(sql, params)
+            updates_count += 1
+            
+    conn.commit()
+    logging.info(f"Metadata healing pass complete. Updated {updates_count} meets.")
+
 def main():
     parser = argparse.ArgumentParser(description="Parallel GymTendency Data Loader")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel readers")
@@ -275,6 +336,10 @@ def main():
     livemeet_manifest = load_manifest('livemeet', LIVEMEET_MANIFEST)
     mso_manifest = load_manifest('mso', MSO_MANIFEST)
     
+    # HEAL METADATA FIRST
+    with sqlite3.connect(DB_FILE) as conn:
+        heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest)
+
     # 2. Find files
     files_to_process = []
     
