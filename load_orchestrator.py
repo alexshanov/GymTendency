@@ -251,16 +251,39 @@ def refresh_gold_tables(conn):
 # ==============================================================================
 
 def load_manifest(scraper_type, filepath):
-    if not os.path.exists(filepath): return {}
-    df = pd.read_csv(filepath)
-    if scraper_type == 'kscore':
-        return {str(row['MeetID']): {'name': row['MeetName'], 'start_date_iso': row['start_date_iso'], 'location': row['Location'], 'year': row['Year']} for _, row in df.iterrows()}
-    elif scraper_type == 'livemeet':
-        return {str(row['MeetID']): {'name': row['MeetName'], 'start_date_iso': row['start_date_iso'], 'location': row['Location'], 'year': row['Year']} for _, row in df.iterrows()}
-    elif scraper_type == 'mso':
-        # Date is 'Date' in MSO manifest
-        return {str(row['MeetID']): {'name': row['MeetName'], 'start_date_iso': row['Date'], 'location': row['State'], 'year': None} for _, row in df.iterrows()}
-    return {}
+    if not os.path.exists(filepath):
+        logging.warning(f"Manifest not found: {filepath}")
+        return {}
+    
+    try:
+        df = pd.read_csv(filepath)
+    except Exception as e:
+        logging.error(f"Error reading manifest {filepath}: {e}")
+        return {}
+
+    manifest_data = {}
+    for _, row in df.iterrows():
+        mid = str(row.get('MeetID', '')).strip()
+        if not mid or mid == 'nan': continue
+        
+        # Helper to safely get year as string without .0
+        raw_year = row.get('Year')
+        clean_year = None
+        if pd.notnull(raw_year) and str(raw_year).strip() != '':
+            try:
+                clean_year = str(int(float(raw_year)))
+            except:
+                clean_year = str(raw_year).strip()
+        
+        details = {
+            'name': row.get('MeetName'),
+            'start_date_iso': row.get('start_date_iso') if 'start_date_iso' in row else row.get('Date'),
+            'location': row.get('Location') if 'Location' in row else row.get('State'),
+            'year': clean_year
+        }
+        manifest_data[mid] = details
+        
+    return manifest_data
 
 def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest):
     """
@@ -288,31 +311,37 @@ def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest):
     
     updates_count = 0
     for m_id, source, sid, db_year, db_name, db_date, db_loc in meets:
+        # Try lookup with original sid and with scraper prefix if needed
         details = combined.get((source, sid))
+        if not details:
+            # Fallback: maybe sid in DB is just the ID but manifest has the prefix
+            prefixed_sid = f"{source}_{sid}"
+            details = combined.get((source, prefixed_sid))
+            
         if not details: continue
         
         updates = []
         params = []
         
-        manifest_year = str(details.get('year')) if details.get('year') else None
-        if manifest_year and manifest_year != 'None' and not db_year:
+        manifest_year = details.get('year')
+        if manifest_year and (not db_year or str(db_year).strip() == ''):
             updates.append("comp_year = ?")
-            params.append(manifest_year)
+            params.append(str(manifest_year))
             
         manifest_name = details.get('name')
-        if manifest_name and (not db_name or "Kscore" in db_name or "Livemeet" in db_name):
+        if manifest_name and (not db_name or "Kscore" in db_name or "Livemeet" in db_name or db_name == 'Title not set'):
             updates.append("name = ?")
-            params.append(manifest_name)
+            params.append(str(manifest_name).strip())
             
         manifest_date = details.get('start_date_iso')
-        if manifest_date and not db_date:
+        if manifest_date and (not db_date or str(db_date).strip() == ''):
             updates.append("start_date_iso = ?")
-            params.append(manifest_date)
+            params.append(str(manifest_date))
             
         manifest_loc = details.get('location')
-        if manifest_loc and manifest_loc != 'N/A' and not db_loc:
+        if manifest_loc and str(manifest_loc) != 'N/A' and (not db_loc or str(db_loc).strip() == ''):
             updates.append("location = ?")
-            params.append(manifest_loc)
+            params.append(str(manifest_loc))
             
         if updates:
             sql = f"UPDATE Meets SET {', '.join(updates)} WHERE meet_db_id = ?"
