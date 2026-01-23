@@ -98,12 +98,34 @@ def extract_kscore_data(filepath, meet_manifest, level_alias_map):
             exec_bonus_val = row.get(f'Result_{raw_event}_Exec_Bonus') or row.get(f'Result_{raw_event}_Execution_Bonus')
             
             if not score_val and not d_val: continue
+
+            # --- Score Swapping / Preference Logic ---
+            # For Interclub/Level 1, Kscore often puts numeric score in D and award text in Score.
+            def is_numeric(s):
+                try:
+                    float(str(s).strip().replace(',', ''))
+                    return True
+                except:
+                    return False
+            
+            actual_score = score_val
+            actual_d = d_val
+            actual_rank = rank_val
+            
+            if is_numeric(d_val) and not is_numeric(score_val):
+                # Swap: use numeric D as the actual score
+                actual_score = d_val
+                # If rank is empty, move the non-numeric "Score" (e.g. "Gold") to rank_text
+                if not rank_val or str(rank_val).strip() == '':
+                    actual_rank = score_val
+                # D remains whatever was there, or we can clear it if it's now the score
+                # Usually it was the same value, let's keep it as-is for now.
             
             apparatus_results.append({
                 'raw_event': raw_event,
-                'score_final': score_val,
-                'score_d': d_val,
-                'rank_text': rank_val,
+                'score_final': actual_score,
+                'score_d': actual_d,
+                'rank_text': actual_rank,
                 'bonus': bonus_val,
                 'execution_bonus': exec_bonus_val
             })
@@ -183,6 +205,11 @@ def extract_livemeet_data(filepath, meet_manifest):
             discipline_id = 2; gender_heuristic = 'M'; break
         if any(indicator in col for indicator in WAG_INDICATORS):
             discipline_id = 1; gender_heuristic = 'F'; break
+            
+    # Add AA to event bases if not implicitly caught
+    # Logic below catches Result_X_Score. We need to ensure Result_AllAround_Score is caught.
+    # The fix_and_standardize_headers in scraper should have produced Result_AllAround_Score if 'AA' or 'All Around' was present.
+    # If not, the AA fallback will catch it.
 
     result_columns = [col for col in df.columns if col.startswith('Result_')]
     event_bases = {}
@@ -226,6 +253,19 @@ def extract_livemeet_data(filepath, meet_manifest):
                 'rank_text': rank_val,
                 'execution_bonus': exec_bonus_val
             })
+            
+            # --- Score Swapping / Preference Logic ---
+            res = apparatus_results[-1]
+            def is_numeric(s):
+                try:
+                    float(str(s).strip().replace(',', ''))
+                    return True
+                except:
+                    return False
+            
+            if is_numeric(res['score_d']) and not is_numeric(res['score_final']):
+                res['score_final'] = res['score_d']
+                # Optionally keep the award text elsewhere, but the priority is the numeric score.
 
         extracted_results.append({
             'raw_name': raw_name,
@@ -235,6 +275,35 @@ def extract_livemeet_data(filepath, meet_manifest):
             'apparatus_results': apparatus_results,
             'dynamic_metadata': dynamic_values
         })
+
+        # --- AA Fallback Calculation ---
+        # If no AA result was found (which often happens with _BYEVENT_ files having partial headers),
+        # calculate it from the sum of valid apparatus scores.
+        has_aa = any(r['raw_event'] in ['AllAround', 'All Around', 'AA'] for r in apparatus_results)
+        
+        if not has_aa:
+            valid_sum = 0.0
+            valid_count = 0
+            # Sum all numeric scores for valid apparatuses
+            for res in apparatus_results:
+                evt = res['raw_event']
+                if evt in ['AllAround', 'All Around', 'AA', 'Team']: continue
+                
+                try:
+                    s = float(res['score_final'])
+                    valid_sum += s
+                    valid_count += 1
+                except (ValueError, TypeError):
+                    continue
+            
+            if valid_count > 0:
+                extracted_results[-1]['apparatus_results'].append({
+                    'raw_event': 'All Around',
+                    'score_final': f"{valid_sum:.3f}", 
+                    'score_d': '',
+                    'rank_text': '',
+                    'calculated': True
+                })
 
     return {
         'source': 'livemeet',

@@ -206,195 +206,73 @@ def ensure_column_exists(cursor, table_name, column_name, col_type='TEXT'):
 
 def setup_database(db_file):
     """
-    Creates the new, professional database schema with Persons, Clubs,
-    and a linking Athletes table.
+    Creates the new database schema if it doesn't already exist.
     """
-    print("--- Setting up new professional database schema ---")
-    
-    # schema_queries = [ # Moved below
-    
-    # We use CREATE TABLE IF NOT EXISTS, so no need to drop unless explicitly requested.
-    # drop_queries = [
-    #     "DROP TABLE IF EXISTS ScoringStandards;",
-    #     "DROP TABLE IF EXISTS Results;",
-    #     "DROP TABLE IF EXISTS Athletes;",
-    #     "DROP TABLE IF EXISTS Persons;",
-    #     "DROP TABLE IF EXISTS Clubs;",
-    #     "DROP TABLE IF EXISTS Apparatus;",
-    #     "DROP TABLE IF EXISTS Events;", 
-    #     "DROP TABLE IF EXISTS Disciplines;"
-    # ]
-
-    schema_queries = [
-        "CREATE TABLE IF NOT EXISTS Disciplines (discipline_id INTEGER PRIMARY KEY, discipline_name TEXT NOT NULL UNIQUE);",
-        "CREATE TABLE IF NOT EXISTS Apparatus (apparatus_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, discipline_id INTEGER NOT NULL, sort_order INTEGER, FOREIGN KEY (discipline_id) REFERENCES Disciplines (discipline_id), UNIQUE(name, discipline_id));",
-        
-        # --- NEW SCHEMA TABLES ---
-        """CREATE TABLE IF NOT EXISTS Persons (
-            person_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            full_name TEXT NOT NULL UNIQUE,
-            gender TEXT,
-            dob TEXT
-        );""",
-        """CREATE TABLE IF NOT EXISTS Clubs (
-            club_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE
-        );""",
-        """CREATE TABLE IF NOT EXISTS Athletes (
-            athlete_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            person_id INTEGER NOT NULL,
-            club_id INTEGER,
-            FOREIGN KEY (person_id) REFERENCES Persons (person_id),
-            FOREIGN KEY (club_id) REFERENCES Clubs (club_id),
-            UNIQUE(person_id, club_id)
-        );""",
-        """CREATE TABLE IF NOT EXISTS PersonAliases (
-            alias_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            alias_name TEXT NOT NULL UNIQUE,
-            canonical_person_id INTEGER NOT NULL,
-            FOREIGN KEY (canonical_person_id) REFERENCES Persons (person_id)
-        );""",
-        """CREATE TABLE IF NOT EXISTS ClubAliases (
-            alias_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            club_alias_name TEXT NOT NULL UNIQUE,
-            canonical_club_id INTEGER NOT NULL,
-            FOREIGN KEY (canonical_club_id) REFERENCES Clubs (club_id)
-        );""",
-        # --- END OF NEW SCHEMA TABLES ---
-
-        """CREATE TABLE IF NOT EXISTS Meets (
-            meet_db_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source TEXT NOT NULL,
-            source_meet_id TEXT NOT NULL,
-            name TEXT,
-            start_date_iso TEXT,
-            comp_year INTEGER,
-            location TEXT,
-            country TEXT,
-            competition_type TEXT,
-            UNIQUE(source, source_meet_id)
-        );""",
-
-        """CREATE TABLE IF NOT EXISTS Results (
-            result_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            meet_db_id INTEGER NOT NULL,
-            athlete_id INTEGER NOT NULL, 
-            apparatus_id INTEGER NOT NULL,
-            gender TEXT,
-            level TEXT,
-            age REAL,
-            province TEXT,
-            score_d REAL,
-            score_final REAL,
-            score_text TEXT,
-            rank_numeric INTEGER,
-            rank_text TEXT,
-            details_json TEXT,
-            age_group TEXT,
-            meet TEXT,
-            "group" TEXT,
-            state TEXT,
-            session TEXT,
-            num TEXT,
-            bonus REAL,
-            execution_bonus REAL,
-            score_sv REAL,
-            score_e REAL,
-            penalty REAL,
-            FOREIGN KEY (meet_db_id) REFERENCES Meets (meet_db_id),
-            FOREIGN KEY (athlete_id) REFERENCES Athletes (athlete_id),
-            FOREIGN KEY (apparatus_id) REFERENCES Apparatus (apparatus_id)
-        );""",
-        """CREATE TABLE IF NOT EXISTS ProcessedFiles (
-            file_path TEXT PRIMARY KEY,
-            file_hash TEXT,
-            last_processed TIMESTAMP
-        );""",
-        """CREATE TABLE IF NOT EXISTS ScrapeErrors (
-            error_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source TEXT NOT NULL,
-            source_meet_id TEXT,
-            error_message TEXT,
-            error_timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-        );""",
-
-        """CREATE TABLE IF NOT EXISTS ScoringStandards (
-            standard_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            country TEXT NOT NULL,
-            level_system TEXT NOT NULL,
-            level_name TEXT NOT NULL,
-            max_score REAL,
-            has_d_score BOOLEAN DEFAULT 0,
-            UNIQUE(country, level_system, level_name)
-        );"""
-    ]
-
-    # Initial data for Scoring Standards
-    scoring_data = [
-        # USA JO / DP (Development Program)
-        ('USA', 'USAG_DP', 'Level 1', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 2', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 3', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 4', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 5', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 6', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 7', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 8', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 9', 10.0, 0),
-        ('USA', 'USAG_DP', 'Level 10', 10.0, 0), # Max 10.0 (with bonus)
-        
-        # USA Xcel
-        ('USA', 'USAG_XCEL', 'Bronze', 10.0, 0),
-        ('USA', 'USAG_XCEL', 'Silver', 10.0, 0),
-        ('USA', 'USAG_XCEL', 'Gold', 10.0, 0),
-        ('USA', 'USAG_XCEL', 'Platinum', 10.0, 0),
-        ('USA', 'USAG_XCEL', 'Diamond', 10.0, 0),
-        ('USA', 'USAG_XCEL', 'Sapphire', 10.0, 0),
-
-        # Canada CCP (similar to US DP)
-        ('CAN', 'CAN_CCP', 'Level 1', 10.0, 0),
-        ('CAN', 'CAN_CCP', 'Level 2', 10.0, 0),
-        ('CAN', 'CAN_CCP', 'Level 3', 10.0, 0),
-        ('CAN', 'CAN_CCP', 'Level 4', 10.0, 0),
-        ('CAN', 'CAN_CCP', 'Level 5', 10.0, 0),
-        ('CAN', 'CAN_CCP', 'Level 6', 10.0, 0),
-        ('CAN', 'CAN_CCP', 'Level 7', 10.0, 0),
-        ('CAN', 'CAN_CCP', 'Level 8', 10.0, 0),
-        ('CAN', 'CAN_CCP', 'Level 9', 10.0, 0), # 10.0 start value
-        ('CAN', 'CAN_CCP', 'Level 10', 10.0, 0),
-
-        # Canada Xcel (Adopted)
-        ('CAN', 'CAN_XCEL', 'Bronze', 10.0, 0),
-        ('CAN', 'CAN_XCEL', 'Silver', 10.0, 0),
-        ('CAN', 'CAN_XCEL', 'Gold', 10.0, 0),
-        ('CAN', 'CAN_XCEL', 'Platinum', 10.0, 0),
-        ('CAN', 'CAN_XCEL', 'Diamond', 10.0, 0),
-
-        # Canada Aspire / HP (High Performance) - Open ended / FIG
-        ('CAN', 'CAN_HP', 'Novice', None, 1),
-        ('CAN', 'CAN_HP', 'Junior', None, 1),
-        ('CAN', 'CAN_HP', 'Senior', None, 1),
-        ('USA', 'USAG_ELITE', 'Junior', None, 1),
-        ('USA', 'USAG_ELITE', 'Senior', None, 1),
-    ]
-
     try:
-        with sqlite3.connect(db_file) as conn:
+        with sqlite3.connect(db_file, timeout=30) as conn:
             cursor = conn.cursor()
-            # for query in drop_queries: cursor.execute(query) # Skip dropping
             
+            # 1. Check if DB is already initialized
+            try:
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Disciplines';")
+                if cursor.fetchone():
+                    return True # Already setup
+            except sqlite3.OperationalError:
+                pass # Proceed to setup if we can't check
+            
+            print("--- Setting up new professional database schema ---")
             print("Creating new tables with professional schema...")
-            for query in schema_queries: cursor.execute(query)
             
-            # Populate Scoring Standards
+            # Enable WAL mode for better concurrency (especially on cloud-synced drives)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            
+            # 2. Define schema
+            schema_queries = [
+                "CREATE TABLE IF NOT EXISTS Disciplines (discipline_id INTEGER PRIMARY KEY, discipline_name TEXT NOT NULL UNIQUE);",
+                "CREATE TABLE IF NOT EXISTS Apparatus (apparatus_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, discipline_id INTEGER NOT NULL, sort_order INTEGER, FOREIGN KEY (discipline_id) REFERENCES Disciplines (discipline_id), UNIQUE(name, discipline_id));",
+                "CREATE TABLE IF NOT EXISTS Persons (person_id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL UNIQUE, gender TEXT, dob TEXT);",
+                "CREATE TABLE IF NOT EXISTS Clubs (club_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE);",
+                "CREATE TABLE IF NOT EXISTS Athletes (athlete_id INTEGER PRIMARY KEY AUTOINCREMENT, person_id INTEGER NOT NULL, club_id INTEGER, FOREIGN KEY (person_id) REFERENCES Persons (person_id), FOREIGN KEY (club_id) REFERENCES Clubs (club_id), UNIQUE(person_id, club_id));",
+                "CREATE TABLE IF NOT EXISTS PersonAliases (alias_id INTEGER PRIMARY KEY AUTOINCREMENT, alias_name TEXT NOT NULL UNIQUE, canonical_person_id INTEGER NOT NULL, FOREIGN KEY (canonical_person_id) REFERENCES Persons (person_id));",
+                "CREATE TABLE IF NOT EXISTS ClubAliases (alias_id INTEGER PRIMARY KEY AUTOINCREMENT, club_alias_name TEXT NOT NULL UNIQUE, canonical_club_id INTEGER NOT NULL, FOREIGN KEY (canonical_club_id) REFERENCES Clubs (club_id));",
+                "CREATE TABLE IF NOT EXISTS Meets (meet_db_id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, source_meet_id TEXT NOT NULL, name TEXT, start_date_iso TEXT, comp_year INTEGER, location TEXT, country TEXT, competition_type TEXT, UNIQUE(source, source_meet_id));",
+                "CREATE TABLE IF NOT EXISTS Results (result_id INTEGER PRIMARY KEY AUTOINCREMENT, meet_db_id INTEGER NOT NULL, athlete_id INTEGER NOT NULL, apparatus_id INTEGER NOT NULL, gender TEXT, level TEXT, age REAL, province TEXT, score_d REAL, score_final REAL, score_text TEXT, rank_numeric INTEGER, rank_text TEXT, details_json TEXT, age_group TEXT, meet TEXT, \"group\" TEXT, state TEXT, session TEXT, num TEXT, bonus REAL, execution_bonus REAL, score_sv REAL, score_e REAL, penalty REAL, FOREIGN KEY (meet_db_id) REFERENCES Meets (meet_db_id), FOREIGN KEY (athlete_id) REFERENCES Athletes (athlete_id), FOREIGN KEY (apparatus_id) REFERENCES Apparatus (apparatus_id));",
+                "CREATE TABLE IF NOT EXISTS ProcessedFiles (file_path TEXT PRIMARY KEY, file_hash TEXT, last_processed TIMESTAMP);",
+                "CREATE TABLE IF NOT EXISTS ScrapeErrors (error_id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, source_meet_id TEXT, error_message TEXT, error_timestamp TEXT DEFAULT CURRENT_TIMESTAMP);",
+                "CREATE TABLE IF NOT EXISTS ScoringStandards (standard_id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT NOT NULL, level_system TEXT NOT NULL, level_name TEXT NOT NULL, max_score REAL, has_d_score BOOLEAN DEFAULT 0, UNIQUE(country, level_system, level_name));"
+            ]
+            
+            for query in schema_queries:
+                cursor.execute(query)
+            
+            # 3. Populate Reference Data
+            scoring_data = [
+                ('USA', 'USAG_DP', 'Level 1', 10.0, 0), ('USA', 'USAG_DP', 'Level 2', 10.0, 0),
+                ('USA', 'USAG_DP', 'Level 3', 10.0, 0), ('USA', 'USAG_DP', 'Level 4', 10.0, 0),
+                ('USA', 'USAG_DP', 'Level 5', 10.0, 0), ('USA', 'USAG_DP', 'Level 6', 10.0, 0),
+                ('USA', 'USAG_DP', 'Level 7', 10.0, 0), ('USA', 'USAG_DP', 'Level 8', 10.0, 0),
+                ('USA', 'USAG_DP', 'Level 9', 10.0, 0), ('USA', 'USAG_DP', 'Level 10', 10.0, 0),
+                ('USA', 'USAG_XCEL', 'Bronze', 10.0, 0), ('USA', 'USAG_XCEL', 'Silver', 10.0, 0),
+                ('USA', 'USAG_XCEL', 'Gold', 10.0, 0), ('USA', 'USAG_XCEL', 'Platinum', 10.0, 0),
+                ('USA', 'USAG_XCEL', 'Diamond', 10.0, 0), ('USA', 'USAG_XCEL', 'Sapphire', 10.0, 0),
+                ('CAN', 'CAN_CCP', 'Level 1', 10.0, 0), ('CAN', 'CAN_CCP', 'Level 2', 10.0, 0),
+                ('CAN', 'CAN_CCP', 'Level 3', 10.0, 0), ('CAN', 'CAN_CCP', 'Level 4', 10.0, 0),
+                ('CAN', 'CAN_CCP', 'Level 5', 10.0, 0), ('CAN', 'CAN_CCP', 'Level 6', 10.0, 0),
+                ('CAN', 'CAN_CCP', 'Level 7', 10.0, 0), ('CAN', 'CAN_CCP', 'Level 8', 10.0, 0),
+                ('CAN', 'CAN_CCP', 'Level 9', 10.0, 0), ('CAN', 'CAN_CCP', 'Level 10', 10.0, 0),
+                ('CAN', 'CAN_XCEL', 'Bronze', 10.0, 0), ('CAN', 'CAN_XCEL', 'Silver', 10.0, 0),
+                ('CAN', 'CAN_XCEL', 'Gold', 10.0, 0), ('CAN', 'CAN_XCEL', 'Platinum', 10.0, 0),
+                ('CAN', 'CAN_XCEL', 'Diamond', 10.0, 0), ('CAN', 'CAN_HP', 'Novice', None, 1),
+                ('CAN', 'CAN_HP', 'Junior', None, 1), ('CAN', 'CAN_HP', 'Senior', None, 1),
+                ('USA', 'USAG_ELITE', 'Junior', None, 1), ('USA', 'USAG_ELITE', 'Senior', None, 1)
+            ]
+            
             print(f"Populating ScoringStandards with {len(scoring_data)} reference records...")
-            cursor.executemany("""
-                INSERT OR IGNORE INTO ScoringStandards (country, level_system, level_name, max_score, has_d_score)
-                VALUES (?, ?, ?, ?, ?)
-            """, scoring_data)
+            cursor.executemany("INSERT OR IGNORE INTO ScoringStandards (country, level_system, level_name, max_score, has_d_score) VALUES (?, ?, ?, ?, ?)", scoring_data)
             
             disciplines = [(1, 'WAG'), (2, 'MAG'), (99, 'Other')]
             cursor.executemany("INSERT OR IGNORE INTO Disciplines (discipline_id, discipline_name) VALUES (?, ?)", disciplines)
+            
             WAG_EVENTS = {'Vault': 1, 'Uneven Bars': 2, 'Beam': 3, 'Floor': 4, 'All Around': 99}
             MAG_EVENTS = {'Floor': 1, 'Pommel Horse': 2, 'Rings': 3, 'Vault': 4, 'Parallel Bars': 5, 'High Bar': 6, 'All Around': 99}
             OTHER_EVENTS = {'All Around': 99}
@@ -405,10 +283,16 @@ def setup_database(db_file):
             cursor.executemany("INSERT OR IGNORE INTO Apparatus (name, discipline_id, sort_order) VALUES (?, ?, ?)", all_apparatus)
             
             conn.commit()
-        print("Database setup complete.")
-        return True
+            print("Database setup complete.")
+            return True
+            
+    except sqlite3.OperationalError as e:
+        print(f"Error during database setup (OperationalError): {e}")
+        return False
     except Exception as e:
-        print(f"Error during database setup: {e}"); traceback.print_exc(); return False
+        print(f"Error during database setup: {e}")
+        traceback.print_exc()
+        return False
 
 # ==============================================================================
 #  GENERIC HELPER FUNCTIONS

@@ -170,23 +170,28 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             cursor.execute(sql, vals)
             inserted_count += 1
             
-    return inserted_count > 0
+    return
 
 def refresh_gold_tables(conn):
     """
-    Creates/Updates a flattened 'Gold' table with a row-per-athlete-per-meet.
-    Includes MAG (7 triples) and WAG apparatuses.
+    Creates/Updates flattened 'Gold' tables for MAG and WAG.
+    MAG: Gold_Results_MAG (7 triples)
+    WAG: Gold_Results_WAG (5 triples)
     """
-    logging.info("Refreshing Gold_Results table...")
+    logging.info("Refreshing Gold_Results tables (MAG & WAG)...")
     cursor = conn.cursor()
     
     # We drop and recreate for simplicity since it's an aggregation table
     cursor.execute("DROP TABLE IF EXISTS Gold_Results;")
+    cursor.execute("DROP TABLE IF EXISTS Gold_Results_MAG;")
+    cursor.execute("DROP TABLE IF EXISTS Gold_Results_WAG;")
     
-    query = """
-    CREATE TABLE Gold_Results AS
+    # --- MAG TABLE ---
+    mag_query = """
+    CREATE TABLE Gold_Results_MAG AS
     SELECT
         p.full_name AS athlete_name,
+        m.source AS source,
         m.comp_year AS year,
         m.name AS meet_name,
         MAX(r.level) AS level,
@@ -196,40 +201,37 @@ def refresh_gold_tables(conn):
         -- Floor (fx)
         MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS fx_score,
         MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS fx_d,
-        MAX(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS fx_rank,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
         
         -- Pommel Horse (ph)
         MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_final END) AS ph_score,
         MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_d END) AS ph_d,
-        MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_numeric END) AS ph_rank,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_text END)) AS ph_rank,
         
         -- Rings (sr)
         MAX(CASE WHEN app.name = 'Rings' THEN r.score_final END) AS sr_score,
         MAX(CASE WHEN app.name = 'Rings' THEN r.score_d END) AS sr_d,
-        MAX(CASE WHEN app.name = 'Rings' THEN r.rank_numeric END) AS sr_rank,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Rings' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.rank_text END)) AS sr_rank,
         
         -- Vault (vt)
         MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS vt_score,
         MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS vt_d,
-        MAX(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS vt_rank,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
         
         -- Parallel Bars (pb)
         MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_final END) AS pb_score,
         MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_d END) AS pb_d,
-        MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_numeric END) AS pb_rank,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_text END)) AS pb_rank,
         
         -- High Bar (hb)
         MAX(CASE WHEN app.name = 'High Bar' THEN r.score_final END) AS hb_score,
         MAX(CASE WHEN app.name = 'High Bar' THEN r.score_d END) AS hb_d,
-        MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_numeric END) AS hb_rank,
-        
-        -- Uneven Bars (ub) - Not in MAG
-        -- Beam (bb) - Not in MAG
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_text END)) AS hb_rank,
         
         -- All Around (aa)
         MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS aa_score,
         MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS aa_d,
-        MAX(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS aa_rank
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id
@@ -237,13 +239,63 @@ def refresh_gold_tables(conn):
     LEFT JOIN Clubs c ON a.club_id = c.club_id
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
-    WHERE r.gender = 'M' -- Ensure MAG only
+    WHERE r.gender = 'M'
     GROUP BY p.person_id, m.meet_db_id
     ORDER BY p.full_name, m.comp_year DESC;
     """
-    cursor.execute(query)
+    
+    # --- WAG TABLE ---
+    wag_query = """
+    CREATE TABLE Gold_Results_WAG AS
+    SELECT
+        p.full_name AS athlete_name,
+        m.source AS source,
+        m.comp_year AS year,
+        m.name AS meet_name,
+        MAX(r.level) AS level,
+        MAX(r.age) AS age,
+        c.name AS club,
+        
+        -- Vault (vt)
+        MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS vt_score,
+        MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS vt_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
+        
+        -- Uneven Bars (ub)
+        MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_final END) AS ub_score,
+        MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_d END) AS ub_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_text END)) AS ub_rank,
+        
+        -- Beam (bb)
+        MAX(CASE WHEN app.name = 'Beam' THEN r.score_final END) AS bb_score,
+        MAX(CASE WHEN app.name = 'Beam' THEN r.score_d END) AS bb_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Beam' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.rank_text END)) AS bb_rank,
+        
+        -- Floor (fx)
+        MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS fx_score,
+        MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS fx_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
+        
+        -- All Around (aa)
+        MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS aa_score,
+        MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS aa_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
+        
+    FROM Results r
+    JOIN Athletes a ON r.athlete_id = a.athlete_id
+    JOIN Persons p ON a.person_id = p.person_id
+    LEFT JOIN Clubs c ON a.club_id = c.club_id
+    JOIN Meets m ON r.meet_db_id = m.meet_db_id
+    JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
+    WHERE r.gender = 'F'
+    GROUP BY p.person_id, m.meet_db_id
+    ORDER BY p.full_name, m.comp_year DESC;
+    """
+    
+    cursor.execute(mag_query)
+    cursor.execute(wag_query)
     conn.commit()
-    logging.info("Gold_Results table (MAG) updated successfully.")
+    logging.info("Gold_Results_MAG and Gold_Results_WAG updated successfully.")
 
 
 # ==============================================================================
@@ -317,6 +369,13 @@ def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest):
             # Fallback: maybe sid in DB is just the ID but manifest has the prefix
             prefixed_sid = f"{source}_{sid}"
             details = combined.get((source, prefixed_sid))
+        
+        if not details:
+            # Extra Fallback: Check if manifest ID is a prefix of sid (e.g. for _PEREVENT_ files)
+            for (m_src, m_sid), m_details in combined.items():
+                if m_src == source and sid.startswith(m_sid):
+                    details = m_details
+                    break
             
         if not details: continue
         
@@ -356,17 +415,23 @@ def main():
     parser = argparse.ArgumentParser(description="Parallel GymTendency Data Loader")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel readers")
     parser.add_argument("--sample", type=int, default=1, help="Process every Nth file")
+    parser.add_argument("--limit", type=int, default=0, help="Maximum number of files to process")
     parser.add_argument("--gold-only", action="store_true", help="Skip file processing and only refresh Gold tables")
     args = parser.parse_args()
 
     # 1. Load context
+    if not setup_database(DB_FILE):
+        logging.error("Database setup failed. Exiting.")
+        return
+        
     club_aliases = load_club_aliases()
     kscore_manifest = load_manifest('kscore', KSCORE_MANIFEST)
     livemeet_manifest = load_manifest('livemeet', LIVEMEET_MANIFEST)
     mso_manifest = load_manifest('mso', MSO_MANIFEST)
     
     # HEAL METADATA FIRST
-    with sqlite3.connect(DB_FILE) as conn:
+    with sqlite3.connect(DB_FILE, timeout=30) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
         heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest)
 
     # 2. Find files
@@ -394,6 +459,7 @@ def main():
 
     files_to_process.sort() # Consistency
     if args.sample > 1: files_to_process = files_to_process[::args.sample]
+    if args.limit > 0: files_to_process = files_to_process[:args.limit]
 
     if not files_to_process and not args.gold_only:
         print("No files found to process.")
@@ -461,7 +527,9 @@ def main():
                         
                         try:
                             data_package = future.result()
-                            if write_to_db(conn, data_package, caches, club_aliases):
+                            if data_package:
+                                write_to_db(conn, data_package, caches, club_aliases)
+                                # Success! Mark as processed so we don't scan it again next time.
                                 mark_file_processed(conn, fpath, fhash)
                         except Exception as e:
                             logging.error(f"Error processing {fpath}: {e}")
@@ -478,6 +546,12 @@ def main():
         logging.info("Skipping CSV processing due to --gold-only flag.")
 
     # 5. Refresh Gold Tables
+    # 5. Heal Metadata (AFTER loading files to catch new meets)
+    logging.info("Running Final Metadata Healing Pass...")
+    with sqlite3.connect(DB_FILE) as conn:
+        heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest)
+
+    # 6. Refresh Gold Tables
     with sqlite3.connect(DB_FILE) as conn:
         refresh_gold_tables(conn)
 
