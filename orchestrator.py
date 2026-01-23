@@ -239,42 +239,68 @@ def main():
             
             # Resource cleanup before each attempt
             cleanup_orphaned_processes()
-            futures = {}
-            for stype, mid, mname in queue:
-                pool = pools[stype]
-                func = task_functions[stype]
-                futures[pool.submit(func, mid, mname)] = (stype, mid, mname)
             
-            completed_this_pass = []
-            for future in as_completed(futures):
+            # Chunk the queue for incremental processing (User Request: 1000 scraping -> 1 load)
+            BATCH_SIZE = 1000
+            
+            # Calculate total expected batches
+            total_batches = (len(queue) + BATCH_SIZE - 1) // BATCH_SIZE
+            
+            for i in range(0, len(queue), BATCH_SIZE):
                 if stop_requested:
                     break
-
-                stype, mid, mname = futures[future]
-                key = f"{stype}_{mid}"
+                    
+                chunk = queue[i : i + BATCH_SIZE]
+                current_batch = (i // BATCH_SIZE) + 1
                 
-                try:
-                    result = future.result()
-                    parts = result.split(':', 1)
-                    status = parts[0]
-                    message = parts[1].strip() if len(parts) > 1 else ""
-                    
-                    log_msg = f"[{stype}] {mid}: {status} - {message}"
-                    
-                    if "DONE" in status:
-                        logging.info(log_msg)
-                        status_manifest[key] = "DONE"
-                        completed_this_pass.append((stype, mid, mname))
-                        print(f"  [OK] {mid}")
-                    else:
-                        logging.error(f"  [FAIL] {mid}: {message}")
-                except Exception as e:
-                    logging.error(f"  [EXCEPTION] {mid}: {e}")
+                print(f"\nProcessing Batch {current_batch}/{total_batches} ({len(chunk)} meets)...")
+                
+                futures = {}
+                for stype, mid, mname in chunk:
+                    pool = pools[stype]
+                    func = task_functions[stype]
+                    futures[pool.submit(func, mid, mname)] = (stype, mid, mname)
+                
+                # Wait for this batch to complete
+                for future in as_completed(futures):
+                    if stop_requested:
+                        break
 
-            # Update queue for next attempt
+                    stype, mid, mname = futures[future]
+                    key = f"{stype}_{mid}"
+                    
+                    try:
+                        result = future.result()
+                        parts = result.split(':', 1)
+                        status = parts[0]
+                        message = parts[1].strip() if len(parts) > 1 else ""
+                        
+                        log_msg = f"[{stype}] {mid}: {status} - {message}"
+                        
+                        if "DONE" in status:
+                            logging.info(log_msg)
+                            status_manifest[key] = "DONE"
+                            print(f"  [OK] {mid}")
+                        else:
+                            logging.error(f"  [FAIL] {mid}: {message}")
+                    except Exception as e:
+                        logging.error(f"  [EXCEPTION] {mid}: {e}")
+                
+                # Update status after batch
+                save_status(status_manifest)
+                
+                # Run Incremental Loader
+                if not stop_requested:
+                    print(f"Batch {current_batch} complete. Running incremental load...")
+                    try:
+                        # Use sys.executable to ensure we use the same venv python
+                        subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
+                    except Exception as e:
+                        logging.error(f"Failed to run incremental load: {e}")
+
+            # Prepare queue for next attempt (retry failed items)
             queue = [t for t in queue if status_manifest.get(f"{t[0]}_{t[1]}") != "DONE"]
-            save_status(status_manifest)
-
+            
             if queue and attempt < MAX_RETRIES:
                 jitter = random.randint(5, 15)
                 print(f"Waiting {jitter}s before next retry attempt...")
