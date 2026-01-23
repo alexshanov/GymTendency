@@ -31,13 +31,23 @@ STATUS_MANIFEST = "scraped_meets_status.json"
 
 WORKERS = {
     'kscore': 2,
-    'livemeet': 3,  # Reduced from 6 to 3 for stability (heavy Selenium usage)
-    'mso': 2        # Reduced from 3 to 2 for stability
+    'livemeet': 3,
+    'mso': 2
 }
 
 MAX_RETRIES = 3
 
 # --- UTILS ---
+
+def cleanup_orphaned_processes():
+    """Force kill orphaned chrome and chromedriver processes."""
+    print("  -> Cleaning up orphaned chrome/chromedriver processes...")
+    try:
+        # Use pkill if available for efficiency
+        subprocess.run(["pkill", "-f", "chrome"], capture_output=True)
+        subprocess.run(["pkill", "-f", "chromedriver"], capture_output=True)
+    except:
+        pass
 
 def load_status():
     if os.path.exists(STATUS_MANIFEST):
@@ -64,8 +74,12 @@ def kscore_task(meet_id, meet_name):
         time.sleep(random.random() * 3)
 
         with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            kscore_scraper.scrape_kscore_meet(str(meet_id), str(meet_name), KSCORE_DIR)
-        return f"DONE: {meet_id}"
+            success = kscore_scraper.scrape_kscore_meet(str(meet_id), str(meet_name), KSCORE_DIR)
+        
+        if success:
+            return f"DONE: {meet_id}"
+        else:
+            return f"ERROR: {meet_id} (Scraper reported failure or partial data)"
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
 
@@ -75,9 +89,9 @@ def livemeet_task(meet_id, meet_name):
         meet_url = f"https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id={meet_id}"
         
         with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            files_saved, file_base_id = livemeet_scraper.scrape_raw_data_to_separate_files(meet_url, str(meet_id), LIVEMEET_MESSY_DIR)
+            success, file_base_id = livemeet_scraper.scrape_raw_data_to_separate_files(meet_url, str(meet_id), LIVEMEET_MESSY_DIR)
             
-            if files_saved > 0:
+            if success:
                 # Process messy files
                 search_pattern_messy = os.path.join(LIVEMEET_MESSY_DIR, f"{file_base_id}_MESSY_*.csv")
                 for messy_path in glob.glob(search_pattern_messy):
@@ -94,7 +108,10 @@ def livemeet_task(meet_id, meet_name):
                     if os.path.exists(finalized_path):
                         shutil.move(finalized_path, target_path)
 
-        return f"DONE: {meet_id}"
+        if success:
+            return f"DONE: {meet_id}"
+        else:
+            return f"ERROR: {meet_id} (Scraper failed or results disabled)"
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
 
@@ -220,7 +237,8 @@ def main():
             print(f"\n--- ATTEMPT {attempt}/{MAX_RETRIES} ---")
             logging.info(f"Starting attempt {attempt}/{MAX_RETRIES}")
             
-            futures = {}
+            # Resource cleanup before each attempt
+            cleanup_orphaned_processes()
             for stype, mid, mname in queue:
                 pool = pools[stype]
                 func = task_functions[stype]

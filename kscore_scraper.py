@@ -256,12 +256,11 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir):
                 df.to_csv(output_path, index=False)
                 saved_files_count += 1
                 
-        return saved_files_count
-
+        return True
     except Exception as e:
         print(f"A critical error occurred while processing {meet_id}: {e}")
         traceback.print_exc()
-        return saved_files_count
+        return False
     finally:
         if driver:
             driver.quit()

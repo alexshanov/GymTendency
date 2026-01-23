@@ -571,20 +571,20 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                     print(f"  -> Error processing '{group_name}': {e}")
                     continue
             
-            if total_files_saved > 0:
-                print(f"\n--> Success! Saved {total_files_saved} tables for '{meet_name}'.")
-                return total_files_saved, meet_id_for_filename
-            else:
-                print(f"--> No data tables saved for {main_page_url}.")
-                return 0, None
-
         except (TimeoutException, UnexpectedAlertPresentException) as e:
             print(f"--> SKIPPING MEET: The page at {main_page_url} failed to load correctly. Error: {e}")
-            return 0, None
+            return False, None
+        except Exception as e:
+            print(f"--> FATAL ERROR in scrape_raw_data_to_separate_files: {e}")
+            return False, None
             
     finally:
         if driver:
             driver.quit()
+    
+    if total_files_saved > 0:
+        return True, meet_id_for_filename
+    return False, None
 
 def fix_and_standardize_headers(input_filename, output_filename):
     """
