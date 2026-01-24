@@ -269,13 +269,17 @@ def main():
         for _, row in df.iterrows():
             all_tasks.append(('livemeet', str(row[id_col]), str(row[name_col])))
 
-    # Load MSO
-    if os.path.exists(MSO_CSV):
+    # Load MSO (PAUSED)
+    if False and os.path.exists(MSO_CSV):
         df = pd.read_csv(MSO_CSV)
         id_col = [c for c in df.columns if 'MeetID' in c][0]
         name_col = [c for c in df.columns if 'MeetName' in c][0]
         for _, row in df.iterrows():
             all_tasks.append(('mso', str(row[id_col]), str(row[name_col])))
+
+    # Manual Injection: 2025 Mens HNI & Vegas Cup 2025
+    all_tasks.append(('mso', '33704', '2025 Mens HNI'))
+    all_tasks.append(('mso', '33619', 'Vegas Cup 2025 - Men'))
 
     # INTERLEAVE SOURCES: Shuffle the list so we process a mix of KScore, LiveMeet, and MSO
     random.shuffle(all_tasks)
