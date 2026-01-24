@@ -1,0 +1,8 @@
+# Exclude all CSV data directories from OneDrive sync
+CSVs_*/
+/CSVs*/
+*.csv
+# Exclude raw data and logs
+raw_data/
+*.log
+venv/

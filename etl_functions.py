@@ -638,13 +638,33 @@ def log_scrape_error(conn, source, source_meet_id, error_message):
 
 # --- DUPLICATE DETECTION ---
 @retry_on_lock()
-def check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id):
-    """Check if a result already exists. Returns existing result_id or None."""
+def check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id, session=None, level=None):
+    """
+    Check if a result already exists. 
+    A unique result is defined by (Meet, Athlete, Apparatus, Session, Level).
+    Returns existing result_id or None.
+    """
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT result_id FROM Results WHERE meet_db_id = ? AND athlete_id = ? AND apparatus_id = ?",
-        (meet_db_id, athlete_id, apparatus_id)
-    )
+    
+    query = """
+        SELECT result_id FROM Results 
+        WHERE meet_db_id = ? AND athlete_id = ? AND apparatus_id = ?
+    """
+    params = [meet_db_id, athlete_id, apparatus_id]
+    
+    if session:
+        query += " AND session = ?"
+        params.append(session)
+    else:
+        query += " AND session IS NULL"
+        
+    if level:
+        query += " AND level = ?"
+        params.append(level)
+    else:
+        query += " AND level IS NULL"
+
+    cursor.execute(query, params)
     result = cursor.fetchone()
     return result[0] if result else None
 

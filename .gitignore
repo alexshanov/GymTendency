@@ -23,6 +23,8 @@ cover/
 coverage.xml
 #csv
 *.csv
+CSVs_*/
+/CSVs*/
 # Cursor
 .cursorignore
 .cursorindexingignore

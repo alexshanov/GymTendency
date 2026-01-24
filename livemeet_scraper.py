@@ -27,7 +27,28 @@ from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentE
 #  LIBRARY OF FUNCTIONS (The "Tools")
 # ==============================================================================
 
-def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, output_directory="raw_data", driver_path=None):
+def wait_for_results_to_load(driver, timeout=30):
+    """
+    Polls the page until the sportzsoft results table is fully rendered
+    and not in a 'Loading...' or empty state.
+    """
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        html = driver.page_source
+        if "Loading..." not in html and ("resultsTable" in html or "gridData" in html or "sessionEventResults" in html):
+            # Check if there are actual data rows in the tables
+            soup = BeautifulSoup(html, 'html.parser')
+            tables = soup.select("table.resultsTable, table.gridData, table#sessionEventResults")
+            for t in tables:
+                rows = t.find_all('tr')
+                if len(rows) > 1: # Header + at least one data row
+                    return True
+        time.sleep(1)
+    print("  -> Warning: Wait for results timed out or no data found.")
+    return False
+
+
+def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, output_directory="raw_data", driver_path=None, target_level_name=None):
     """
     Scrapes all event data, saving each table into its own CSV file.
     This version uses a more robust file naming scheme to handle multiple
@@ -186,6 +207,10 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             
             for group_name, comp_session_id in sessions_to_scrape.items():
                 try:
+                    # Filter by target level if specified
+                    if target_level_name and target_level_name.lower() not in group_name.lower():
+                         continue
+
                     print(f"  -> Selecting group/session: {group_name}")
                     
                     # Ensure we are on the main meet page and Session tab is active
@@ -258,7 +283,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                             if switch_success:
                                 # IMPORTANT: Wait for the results to actually start loading
                                 # The class often changes to 'working' or 'active'
-                                time.sleep(6) # Critical wait for server state update
+                                wait_for_results_to_load(driver) # Use our new robust wait
                                 break
                         except Exception as e:
                             # Outer loop retry
@@ -357,8 +382,22 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                             
                             try:
                                 # Trigger ChangeApparatus in Selenium
-                                driver.execute_script(f"ChangeApparatus('{app_id}');")
-                                time.sleep(6) # Increase wait for slower multi-table loads
+                                retry_count = 0
+                                max_retries = 3
+                                while retry_count < max_retries:
+                                    try:
+                                        driver.execute_script(f"ChangeApparatus('{app_id}');")
+                                        wait_for_results_to_load(driver) # Use robust wait
+                                        break
+                                    except Exception as e:
+                                        retry_count += 1
+                                        print(f"      -> Retry {retry_count}/{max_retries} switching to {app_label}: {e}")
+                                        time.sleep(2)
+                                
+                                if retry_count == max_retries:
+                                    print(f"      -> Failed to switch to {app_label} after retries. Skipping.")
+                                    continue
+
                                 
                                 # Extract HTML directly from DOM
                                 page_html = driver.page_source
@@ -559,6 +598,11 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 be_final_df = be_final_df[service_cols + result_cols]
                                 
                                 safe_name = re.sub(r'[\s/\\:*?"<>|]+', '_', f"{group_name}_{sub_label}")
+                                
+                                # Check if this By-Event file is actually just a single event (common with bad headers)
+                                # If it has mostly empty columns except for one apparatus, we might want to name it differently
+                                # But for now, let's just save it.
+                                
                                 be_filename = f"{meet_id_for_filename}_MESSY_BYEVENT_{safe_name}.csv"
                                 be_final_df.to_csv(os.path.join(output_directory, be_filename), index=False)
                                 print(f"      -> Saved By-Event (Messy): {be_filename} ({len(be_final_df)} rows)")
@@ -634,18 +678,15 @@ def fix_and_standardize_headers(input_filename, output_filename):
         print(f"Error: Could not find the main header row (containing 'Name') in '{input_filename}'.")
         return False
 
-    data_df = df.iloc[:header_row_index].copy()
-    data_df = data_df[~data_df.iloc[:, 0].str.contains('Unnamed', na=False)].copy()
-
-    if data_df.empty:
-        print(f"Warning: No valid data rows found in '{input_filename}'. Skipping.")
-        return True
-
     # --- THIS IS THE NEW, CORRECTED LOGIC ---
     main_header_row = df.iloc[header_row_index]
     # Check if we have a sub-header row
     has_sub_header = (header_row_index + 1 < len(df)) and any(x in ['Score', 'Rnk', 'D', 'SV'] for x in df.iloc[header_row_index+1].values)
     
+    # Data starts AFTER the header row(s)
+    start_idx = header_row_index + 2 if has_sub_header else header_row_index + 1
+    data_df = df.iloc[start_idx:].copy()
+
     sub_header_row = df.iloc[header_row_index + 1] if has_sub_header else pd.Series([""] * len(main_header_row))
     
     main_header = pd.Series(main_header_row).ffill() 
@@ -729,6 +770,9 @@ def fix_and_standardize_headers(input_filename, output_filename):
          data_df.drop(columns=['Province'], inplace=True)
 
     # 4. Enforce standard order for info columns, then results
+    # Drop any trailing rows that are mostly empty (common in messy Sportzsoft exports)
+    data_df = data_df[data_df.iloc[:, 0].astype(str).str.strip() != ''].copy()
+    
     other_cols = [col for col in data_df.columns if col not in standard_info_cols]
     final_df = data_df[standard_info_cols + other_cols]
 

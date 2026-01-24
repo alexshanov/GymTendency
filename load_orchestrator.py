@@ -116,6 +116,9 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             safe_col = sanitize_column_name(raw_col)
             if ensure_column_exists(cursor, 'Results', safe_col, 'TEXT'):
                 dynamic_values[safe_col] = val
+                # Unify Group into Session for database consistency
+                if safe_col == 'group' and 'session' not in dynamic_values:
+                    dynamic_values['session'] = val
             else:
                 misc_details[safe_col] = val
 
@@ -150,7 +153,11 @@ def write_to_db(conn, data_package, caches, club_alias_map):
                 
             apparatus_id = caches['apparatus'][app_key]
             
-            existing_result_id = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id)
+            # Check Session-Aware Uniqueness
+            current_session = dynamic_values.get('session') or dynamic_values.get('group')
+            current_level = dynamic_values.get('level')
+            
+            existing_result_id = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id, session=current_session, level=current_level)
             
             # Numeric conversions
             def to_float(v):
@@ -280,7 +287,11 @@ def refresh_gold_tables(conn):
         p.full_name AS athlete_name,
         m.source AS source,
         m.comp_year AS year,
-        m.name AS meet_name,
+        CASE 
+            WHEN r.session IS NOT NULL AND r.session != '' 
+            THEN m.name || ' (' || r.session || ')' 
+            ELSE m.name 
+        END AS meet_name,
         MAX(r.level) AS level,
         MAX(r.age) AS age,
         c.name AS club,
@@ -327,7 +338,7 @@ def refresh_gold_tables(conn):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'M'
-    GROUP BY p.person_id, m.meet_db_id
+    GROUP BY p.person_id, m.meet_db_id, r.session
     ORDER BY m.comp_year DESC, p.full_name;
     """
     
@@ -338,7 +349,11 @@ def refresh_gold_tables(conn):
         p.full_name AS athlete_name,
         m.source AS source,
         m.comp_year AS year,
-        m.name AS meet_name,
+        CASE 
+            WHEN r.session IS NOT NULL AND r.session != '' 
+            THEN m.name || ' (' || r.session || ')' 
+            ELSE m.name 
+        END AS meet_name,
         MAX(r.level) AS level,
         MAX(r.age) AS age,
         c.name AS club,
@@ -375,7 +390,7 @@ def refresh_gold_tables(conn):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'F'
-    GROUP BY p.person_id, m.meet_db_id
+    GROUP BY p.person_id, m.meet_db_id, r.session
     ORDER BY m.comp_year DESC, p.full_name;
     """
     

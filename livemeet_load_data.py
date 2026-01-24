@@ -222,7 +222,11 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
         dynamic_values = {}
         for raw_col, safe_col in dynamic_cols_to_add:
             val = row.get(raw_col)
-            if val: dynamic_values[safe_col] = str(val)
+            if val: 
+                dynamic_values[safe_col] = str(val)
+                # Unify Group into Session for database consistency
+                if safe_col == 'group' and 'session' not in dynamic_values:
+                    dynamic_values['session'] = str(val)
 
         # 3. Process Apparatus (Pivot)
         for raw_event, _ in event_bases.items():
@@ -268,7 +272,12 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
             exec_bonus_numeric = to_float(exec_bonus_val)
             rank_numeric = parse_rank(str(rank_val)) if rank_val else None
             
-            if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id): continue
+            # Check Session-Aware Uniqueness
+            current_session = dynamic_values.get('session') or dynamic_values.get('group')
+            current_level = row.get('Level')
+            
+            if check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id, session=current_session, level=current_level): 
+                continue
             
             # Dynamic INSERT Construction
             cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'score_sv', 'score_e', 'penalty', 'rank_numeric', 'score_text', 'rank_text']
