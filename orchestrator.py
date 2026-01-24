@@ -52,8 +52,8 @@ def ksis_task(meet_id, meet_name, driver_path=None):
         
         # ksis_scraper.scrape_ksis_meet returns boolean
         if success:
-            # We don't have exact file count easily returned, but success is enough
-            return f"DONE: {meet_id}:1+"
+            # Return '1' so it parses correctly as an int for the batch counter
+            return f"DONE: {meet_id}:1"
         else:
             return f"ERROR: {meet_id} (Scraper failed)"
     except Exception as e:
@@ -314,7 +314,7 @@ def main():
             # User Request: 1000 CSVs -> 1 load
             # We process in small chunks of meets to check the file count frequently
             MEET_CHUNK_SIZE = 50 
-            CSV_BATCH_THRESHOLD = 200
+            CSV_BATCH_THRESHOLD = 100
             
             current_csv_count = 0
             
