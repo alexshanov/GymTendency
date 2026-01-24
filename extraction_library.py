@@ -269,7 +269,21 @@ def extract_livemeet_data(filepath, meet_details):
         raw_name = row.get('Name')
         if not raw_name: continue
 
-        dynamic_values = {col: str(row.get(col)) for col in dynamic_cols if row.get(col)}
+        dynamic_values = {}
+        for col in dynamic_cols:
+            val = row.get(col)
+            if not val or str(val).strip() == '': continue
+            
+            # Filter out messy metadata keys:
+            # 1. No "Unnamed" columns
+            # 2. No extremely long keys (e.g. sentences incorrectly parsed as headers)
+            # 3. No keys that are actually meet names or session descriptions (heuristic: > 50 chars or contains lots of spaces)
+            safe_key = str(col).strip()
+            if "unnamed" in safe_key.lower(): continue
+            if len(safe_key) > 50: continue
+            if safe_key.count(' ') > 4: continue
+            
+            dynamic_values[safe_key] = str(val)
 
         apparatus_results = []
         for raw_event in event_bases:

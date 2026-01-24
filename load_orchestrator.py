@@ -107,15 +107,26 @@ def write_to_db(conn, data_package, caches, club_alias_map):
         discipline_id = athlete_res['discipline_id']
         gender = athlete_res['gender_heuristic']
         
-        # 3. Dynamic Metadata
+        # 3. Dynamic Metadata Handling
         dynamic_values = {}
+        misc_details = {}
+        from etl_functions import METADATA_WHITELIST
+        
         for raw_col, val in athlete_res['dynamic_metadata'].items():
             safe_col = sanitize_column_name(raw_col)
-            ensure_column_exists(cursor, 'Results', safe_col, 'TEXT')
-            dynamic_values[safe_col] = val
+            if ensure_column_exists(cursor, 'Results', safe_col, 'TEXT'):
+                dynamic_values[safe_col] = val
+            else:
+                misc_details[safe_col] = val
 
         # 4. Apparatus Results
         for app_res in athlete_res['apparatus_results']:
+            # Merge misc_details with any apparatus-specific metadata
+            final_details = misc_details.copy()
+            if app_res.get('calculated'):
+                final_details['calculated'] = True
+            details_json = json.dumps(final_details) if final_details else None
+
             raw_event = app_res['raw_event']
             
             # Normalization for apparatus mapping
@@ -182,8 +193,8 @@ def write_to_db(conn, data_package, caches, club_alias_map):
                 continue
             
             # SQL Construction
-            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'score_sv', 'score_e', 'penalty', 'rank_numeric', 'rank_text', 'score_text', 'bonus', 'execution_bonus']
-            vals = [meet_db_id, athlete_id, apparatus_id, gender, score_final, score_d, score_sv, score_e, penalty, rank_numeric, rank_text, score_text, bonus, exec_bonus]
+            cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'score_sv', 'score_e', 'penalty', 'rank_numeric', 'rank_text', 'score_text', 'bonus', 'execution_bonus', 'details_json']
+            vals = [meet_db_id, athlete_id, apparatus_id, gender, score_final, score_d, score_sv, score_e, penalty, rank_numeric, rank_text, score_text, bonus, exec_bonus, details_json]
             
             for col_name, col_val in dynamic_values.items():
                 cols.append(col_name)

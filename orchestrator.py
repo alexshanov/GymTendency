@@ -40,6 +40,8 @@ WORKERS = {
     'ksis': 2
 }
 
+MAX_RETRIES = 3
+
 def ksis_task(meet_id, meet_name, driver_path=None):
     """Worker task for KSIS scraping."""
     import ksis_scraper  # Local import for worker safety
@@ -90,6 +92,36 @@ def save_status(status_dict):
     try:
         with open(STATUS_MANIFEST, 'w') as f:
             json.dump(status_dict, f, indent=4)
+    except Exception as e:
+        logging.error(f"Failed to save status manifest: {e}")
+
+def export_status_csv(status_dict):
+    """
+    Exports the status dictionary to a human-readable CSV.
+    """
+    csv_file = "scraped_meets_log.csv"
+    try:
+        # Convert dict to list of dicts for DataFrame
+        data = []
+        for key, status in status_dict.items():
+            # key format: "{type}_{id}"
+            parts = key.split('_', 1)
+            if len(parts) == 2:
+                stype, mid = parts
+                data.append({'Type': stype, 'MeetID': mid, 'Status': status})
+        
+        if data:
+            df = pd.DataFrame(data)
+            df.to_csv(csv_file, index=False)
+    except Exception as e:
+        logging.error(f"Failed to export status CSV: {e}")
+
+def save_status(status_dict):
+    try:
+        with open(STATUS_MANIFEST, 'w') as f:
+            json.dump(status_dict, f, indent=4)
+        # Also export CSV
+        export_status_csv(status_dict)
     except Exception as e:
         logging.error(f"Failed to save status manifest: {e}")
 
@@ -314,7 +346,7 @@ def main():
             # User Request: 1000 CSVs -> 1 load
             # We process in small chunks of meets to check the file count frequently
             MEET_CHUNK_SIZE = 50 
-            CSV_BATCH_THRESHOLD = 100
+            CSV_BATCH_THRESHOLD = 10
             
             current_csv_count = 0
             
@@ -364,9 +396,20 @@ def main():
                                 message = "0 files" # Should not happen with new logic
                                 
                             status_manifest[key] = "DONE"
+                            save_status(status_manifest) # Save immediately
                             current_csv_count += count
                             logging.info(f"[{stype}] {mid}: {status} - {message}")
                             print(f"  [OK] {mid} ({count} files) - Progress: {len(status_manifest)} total meets scraped")
+                            
+                            # CHECK IF WE HIT THE CSV THRESHOLD (inside loop for immediate trigger)
+                            if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:
+                                print(f"\n>>> Batch Threshold Hit ({current_csv_count} >= {CSV_BATCH_THRESHOLD} CSVs). Running Loader... <<<")
+                                try:
+                                    subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
+                                    current_csv_count = 0 # Reset counter after load
+                                    print(">>> Loader Complete. Resuming Scraper... <<<")
+                                except Exception as e:
+                                    logging.error(f"Failed to run incremental load: {e}")
                             
                         else:
                             # ERROR logic
@@ -378,16 +421,6 @@ def main():
                 
                 # Update status after chunk
                 save_status(status_manifest)
-                
-                # CHECK IF WE HIT THE CSV THRESHOLD
-                if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:
-                    print(f"\n>>> Batch Threshold Hit ({current_csv_count} >= {CSV_BATCH_THRESHOLD} CSVs). Running Loader... <<<")
-                    try:
-                        subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
-                        current_csv_count = 0 # Reset counter after load
-                        print(">>> Loader Complete. Resuming Scraper... <<<")
-                    except Exception as e:
-                        logging.error(f"Failed to run incremental load: {e}")
 
             # Prepare queue for next attempt (retry failed items)
             queue = [t for t in queue if status_manifest.get(f"{t[0]}_{t[1]}") != "DONE"]

@@ -187,6 +187,15 @@ def load_club_aliases(filepath="club_aliases.json"):
 
 CLUB_ALIASES = load_club_aliases()
 
+# ==============================================================================
+#  SCHEMA EVOLUTION & METADATA
+# ==============================================================================
+
+METADATA_WHITELIST = {
+    'level', 'age_group', 'session', 'division', 'group', 'prov', 'state', 
+    'age', 'num', 'flight', 'team', 'rotation'
+}
+
 def sanitize_column_name(col_name):
     """
     Sanitizes a raw column name to be SQL-safe (snake_case).
@@ -215,9 +224,14 @@ def sanitize_column_name(col_name):
 
 def ensure_column_exists(cursor, table_name, column_name, col_type='TEXT'):
     """
-    Checks if a column exists in the table. If not, adds it dynamically.
-    Returns True if column was added or already exists.
+    Checks if a column exists in the table. If not, adds it dynamically IF it is in the whitelist.
+    Returns True if column was added or already exists, False if rejected by whitelist or error.
     """
+    # 1. Check Whitelist first
+    if table_name == 'Results' and column_name not in METADATA_WHITELIST:
+        # We don't print here to avoid log spam, the loader handles the fallback
+        return False
+
     cursor.execute(f"PRAGMA table_info({table_name})")
     columns = [info[1] for info in cursor.fetchall()]
     
