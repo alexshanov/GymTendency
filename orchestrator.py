@@ -59,41 +59,7 @@ def ksis_task(meet_id, meet_name, driver_path=None):
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
 
-# ... (Previous imports and setup)
 
-    # Load KSIS
-    if os.path.exists(KSIS_CSV):
-        df = pd.read_csv(KSIS_CSV)
-        id_col = [c for c in df.columns if 'MeetID' in c][0]
-        name_col = [c for c in df.columns if 'MeetName' in c][0]
-        for _, row in df.iterrows():
-            all_tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
-
-    # INTERLEAVE SOURCES: Shuffle the list so we process a mix of KScore, LiveMeet, MSO, and KSIS
-    random.shuffle(all_tasks)
-
-# ...
-
-    task_functions = {
-        'kscore': kscore_task,
-        'livemeet': livemeet_task,
-        'mso': mso_task,
-        'ksis': ksis_task
-    }
-
-    with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
-         ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
-         ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool, \
-         ProcessPoolExecutor(max_workers=WORKERS['ksis']) as ksis_pool:
-        
-        pools = {
-            'kscore': k_pool,
-            'livemeet': l_pool,
-            'mso': m_pool,
-            'ksis': ksis_pool
-        }
-
-MAX_RETRIES = 3
 
 # --- UTILS ---
 
@@ -281,6 +247,14 @@ def main():
     all_tasks.append(('mso', '33704', '2025 Mens HNI'))
     all_tasks.append(('mso', '33619', 'Vegas Cup 2025 - Men'))
 
+    # Load KSIS
+    if os.path.exists(KSIS_CSV):
+        df = pd.read_csv(KSIS_CSV)
+        id_col = [c for c in df.columns if 'MeetID' in c][0]
+        name_col = [c for c in df.columns if 'MeetName' in c][0]
+        for _, row in df.iterrows():
+            all_tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
+
     # INTERLEAVE SOURCES: Shuffle the list so we process a mix of KScore, LiveMeet, and MSO
     random.shuffle(all_tasks)
 
@@ -309,17 +283,20 @@ def main():
     task_functions = {
         'kscore': kscore_task,
         'livemeet': livemeet_task,
-        'mso': mso_task
+        'mso': mso_task,
+        'ksis': ksis_task
     }
 
     with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
          ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
-         ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool:
+         ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool, \
+         ProcessPoolExecutor(max_workers=WORKERS['ksis']) as ksis_pool:
         
         pools = {
             'kscore': k_pool,
             'livemeet': l_pool,
-            'mso': m_pool
+            'mso': m_pool,
+            'ksis': ksis_pool
         }
 
         # Multi-attempt logic
@@ -337,7 +314,7 @@ def main():
             # User Request: 1000 CSVs -> 1 load
             # We process in small chunks of meets to check the file count frequently
             MEET_CHUNK_SIZE = 50 
-            CSV_BATCH_THRESHOLD = 100
+            CSV_BATCH_THRESHOLD = 200
             
             current_csv_count = 0
             
