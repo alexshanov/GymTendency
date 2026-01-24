@@ -40,6 +40,7 @@ def main():
     scripts = [
         ("create_db.py", []),
         ("load_orchestrator.py", ["--sample", str(args.sample)] if args.sample else []),
+        ("ksis_load_data.py", []),
         ("create_silver_tables.py", [])
     ]
     
