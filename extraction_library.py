@@ -9,7 +9,7 @@ import json
 #  KSCORE EXTRACTION
 # ==============================================================================
 
-def extract_kscore_data(filepath, meet_manifest, level_alias_map):
+def extract_kscore_data(filepath, meet_details, level_alias_map):
     """
     Extracts data from a single Kscore CSV without DB interaction.
     """
@@ -25,7 +25,6 @@ def extract_kscore_data(filepath, meet_manifest, level_alias_map):
     full_source_id = filename.split('_FINAL_')[0]
     source_meet_id = full_source_id.replace('kscore_', '', 1)
     
-    meet_details = meet_manifest.get(full_source_id, {})
     if not meet_details.get('name'):
         meet_details['name'] = df['Raw_Meet_Name'].iloc[0] if 'Raw_Meet_Name' in df.columns else (df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Kscore {source_meet_id}")
     
@@ -153,7 +152,7 @@ def extract_kscore_data(filepath, meet_manifest, level_alias_map):
 #  LIVEMEET EXTRACTION
 # ==============================================================================
 
-def extract_livemeet_data(filepath, meet_manifest):
+def extract_livemeet_data(filepath, meet_details):
     """
     Extracts data from a single Livemeet CSV without DB interaction.
     """
@@ -170,8 +169,18 @@ def extract_livemeet_data(filepath, meet_manifest):
             for i in range(min(10, len(df))):
                 row_vals = [str(x).strip() for x in df.iloc[i].values]
                 if 'Name' in row_vals and 'Club' in row_vals:
-                    # Found it! Set columns and drop the junk rows above
-                    df.columns = row_vals
+                    # Found it! Deduplicate columns and set
+                    seen_cols = {}
+                    deduped_cols = []
+                    for c in row_vals:
+                        if c not in seen_cols:
+                            seen_cols[c] = 0
+                            deduped_cols.append(c)
+                        else:
+                            seen_cols[c] += 1
+                            deduped_cols.append(f"{c}.{seen_cols[c]}")
+                    
+                    df.columns = deduped_cols
                     df = df.iloc[i+1:].reset_index(drop=True)
                     found_header = True
                     break
@@ -185,10 +194,19 @@ def extract_livemeet_data(filepath, meet_manifest):
 
     filename = os.path.basename(filepath)
     source_meet_id = filename.split('_FINAL_')[0]
-    
-    meet_details = meet_manifest.get(source_meet_id, {})
+    # Handle PER/BYEVENT variants
+    if '_PEREVENT_' in source_meet_id: source_meet_id = source_meet_id.split('_PEREVENT_')[0]
+    if '_BYEVENT_' in source_meet_id: source_meet_id = source_meet_id.split('_BYEVENT_')[0]
+
     if not meet_details.get('name'):
-        meet_details['name'] = df['Meet'].iloc[0] if 'Meet' in df.columns and not df.empty else f"Livemeet {source_meet_id}"
+        meet_val = None
+        if 'Meet' in df.columns and not df.empty:
+            raw_meet = df['Meet']
+            if isinstance(raw_meet, pd.DataFrame):
+                raw_meet = raw_meet.iloc[:, 0]
+            meet_val = raw_meet.iloc[0]
+            
+        meet_details['name'] = meet_val if meet_val else f"Livemeet {source_meet_id}"
     
     # FETCH YEAR FROM MANIFEST IF MISSING
     if not meet_details.get('year'):
@@ -381,7 +399,7 @@ def parse_mso_cell_value(cell_str):
         
     return score_final, d_score, None, rank_text, bonus
 
-def extract_mso_data(filepath, meet_manifest):
+def extract_mso_data(filepath, meet_details):
     """
     Extracts data from a single MSO CSV without DB interaction.
     """
@@ -395,7 +413,6 @@ def extract_mso_data(filepath, meet_manifest):
         print(f"Error reading {filepath}: {e}")
         return None
 
-    meet_details = meet_manifest.get(source_meet_id, {})
     if not meet_details.get('name') and 'Meet' in df.columns:
         meet_details['name'] = df['Meet'].iloc[0]
 
@@ -477,6 +494,121 @@ def extract_mso_data(filepath, meet_manifest):
 
     return {
         'source': 'mso',
+        'source_meet_id': source_meet_id,
+        'meet_details': meet_details,
+        'results': extracted_results
+    }
+
+# ==============================================================================
+#  KSIS EXTRACTION
+# ==============================================================================
+
+def extract_ksis_data(filepath, meet_details):
+    """
+    Extracts data from a KSIS CSV.
+    """
+    try:
+        df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
+        if df.empty or 'Name' not in df.columns:
+            return None
+    except Exception as e:
+        print(f"Error reading {filepath}: {e}")
+        return None
+
+    # Derive IDs
+    source_meet_id = str(df['MeetID'].iloc[0])
+    meet_year = df['MeetYear'].iloc[0] if 'MeetYear' in df.columns else ""
+    session_name = df['Session'].iloc[0] if 'Session' in df.columns else ""
+    
+    # Update meet details
+    if not meet_details.get('name') and 'MeetName' in df.columns:
+        meet_details['name'] = df['MeetName'].iloc[0]
+    
+    if not meet_details.get('year') and meet_year:
+        meet_details['year'] = meet_year
+
+    # Detect Discipline
+    # 1=WAG, 2=MAG
+    discipline_id = 2  # Default MAG
+    if "WAG" in session_name.upper() or "WOMEN" in session_name.upper() or "ARTW" in (meet_details.get('name') or "").upper(): 
+        discipline_id = 1
+    
+    gender_heuristic = 'M' if discipline_id == 2 else 'F'
+
+    # Identify apparatus columns
+    app_bases = set()
+    for col in df.columns:
+        if col.endswith('_Total') and col != 'AA_Total':
+            app_bases.add(col.replace('_Total', ''))
+
+    # Apparatus mapping
+    APP_MAP = {
+        'mfloor': 'Floor', 'horse': 'Pommel Horse', 'rings': 'Rings', 'mvault': 'Vault', 
+        'pbars': 'Parallel Bars', 'hbar': 'High Bar', 'wvault': 'Vault', 'ubars': 'Uneven Bars', 
+        'beam': 'Beam', 'wfloor': 'Floor'
+    }
+
+    extracted_results = []
+    
+    for _, row in df.iterrows():
+        raw_name = row['Name']
+        if not raw_name: continue
+        
+        level = row.get('Session', '')
+        dynamic_vals = {'level': level}
+        
+        apparatus_results = []
+        
+        # AA Special Case
+        aa_score_str = row.get('AA_Score')
+        if aa_score_str:
+            aa_rank = row.get('Place', '')
+            apparatus_results.append({
+                'raw_event': 'All Around',
+                'score_final': aa_score_str,
+                'rank_text': aa_rank
+            })
+
+        # Individual Apps
+        for app_base in app_bases:
+            std_app_name = APP_MAP.get(app_base, app_base)
+            
+            total_str = row.get(f"{app_base}_Total")
+            d_str = row.get(f"{app_base}_D")
+            e_str = row.get(f"{app_base}_E")
+            bonus_str = row.get(f"{app_base}_Bonus")
+            nd_str = row.get(f"{app_base}_ND")
+            
+            # Helper to parse "12.150(5)" -> 12.150, rank 5
+            score_final = total_str
+            rank = ""
+            if total_str:
+                match = re.search(r'([\d\.]+)\((\d+)\)', total_str)
+                if match:
+                    score_final = match.group(1)
+                    rank = match.group(2)
+            
+            apparatus_results.append({
+                'raw_event': std_app_name,
+                'score_final': score_final,
+                'score_d': d_str,
+                'score_e': e_str,
+                'rank_text': rank,
+                'bonus': bonus_val if 'bonus_val' in locals() else bonus_str, # Fix: bonus_str
+                'penalty': nd_str
+            })
+
+        extracted_results.append({
+            'raw_name': raw_name,
+            'raw_club': row.get('Club'),
+            'discipline_id': discipline_id,
+            'gender_heuristic': gender_heuristic,
+            'apparatus_results': apparatus_results,
+            'dynamic_metadata': dynamic_vals
+        })
+
+    return {
+        'source': 'ksis',
         'source_meet_id': source_meet_id,
         'meet_details': meet_details,
         'results': extracted_results

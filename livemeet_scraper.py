@@ -39,7 +39,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
     
     if not meet_id_for_filename:
         print("--> FATAL ERROR: A valid Meet ID was not provided to the scraper function.")
-        return 0, None
+        return False, 0, None
 
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')
@@ -49,6 +49,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
 
     driver = None
     total_files_saved = 0
+    full_success = True
     
     try:
         if driver_path:
@@ -72,7 +73,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
             ]
             if any(marker in page_text for marker in disabled_markers):
                 print(f"--> SKIPPING MEET: Results are disabled by the host for ID {meet_id_for_filename}.")
-                return 0, None
+                return False, 0, None
 
             # Step 1.1: Switch to "Results by Session" tab if possible
             print("  -> Attempting to switch to 'Results by Session' tab...")
@@ -499,6 +500,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 print(f"      -> Processed {athletes_found_this_app} athlete records for {app_label}")
                             except Exception as driver_err:
                                 print(f"      -> Driver Extraction Error: {driver_err}")
+                                full_success = False
 
                         # 4. Save Per-Event CSV (apparatus data)
                         if athlete_data_wide:
@@ -570,26 +572,28 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                             
                         except Exception as be_err:
                             print(f"      -> Error scraping By-Event view: {be_err}")
+                            full_success = False
 
                 except Exception as e:
                     print(f"  -> Error processing '{group_name}': {e}")
+                    full_success = False
                     continue
             
         except (TimeoutException, UnexpectedAlertPresentException) as e:
             print(f"--> SKIPPING MEET: The page at {main_page_url} failed to load correctly. Error: {e}")
-            return False, None
+            return False, 0, None
         except Exception as e:
             print(f"--> FATAL ERROR in scrape_raw_data_to_separate_files: {e}")
             traceback.print_exc()
-            return False, None
+            return False, 0, None
             
     finally:
         if driver:
             driver.quit()
     
     if total_files_saved > 0:
-        return True, meet_id_for_filename
-    return False, None
+        return full_success, total_files_saved, meet_id_for_filename
+    return False, 0, None
 
 def fix_and_standardize_headers(input_filename, output_filename):
     """

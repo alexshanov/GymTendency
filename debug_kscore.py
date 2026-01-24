@@ -12,8 +12,8 @@ def main():
     driver_path = ChromeDriverManager().install()
     print(f"DEBUG: Using driver path: {driver_path}")
     
-    meet_id = "kscore_yukon_champs25" 
-    meet_name = "Yukon Championships 2025"
+    meet_id = "kscore_clubaviva_avivacup21" 
+    meet_name = "Aviva Cup 2021"
     output_dir = "CSVs_kscore_final"
     
     print(f"DEBUG: Starting scrape for {meet_id}...")

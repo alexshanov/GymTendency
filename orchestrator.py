@@ -17,24 +17,81 @@ from webdriver_manager.chrome import ChromeDriverManager
 import kscore_scraper
 import livemeet_scraper
 import mso_scraper
+import ksis_scraper
 
 # --- CONFIGURATION ---
 KSCORE_CSV = "discovered_meet_ids_kscore.csv"
 LIVEMEET_CSV = "discovered_meet_ids_livemeet.csv"
 MSO_CSV = "discovered_meet_ids_mso.csv"
+KSIS_CSV = "discovered_meet_ids_ksis.csv"
 
 KSCORE_DIR = "CSVs_kscore_final"
 LIVEMEET_MESSY_DIR = "CSVs_Livemeet_messy"
 LIVEMEET_FINAL_DIR = "CSVs_Livemeet_final"
 MSO_DIR = "CSVs_mso_final"
+KSIS_DIR = "CSVs_ksis_messy"
 
 STATUS_MANIFEST = "scraped_meets_status.json"
 
 WORKERS = {
     'kscore': 2,
     'livemeet': 3,
-    'mso': 2
+    'mso': 2,
+    'ksis': 2
 }
+
+def ksis_task(meet_id, meet_name, driver_path=None):
+    """Worker task for KSIS scraping."""
+    import ksis_scraper  # Local import for worker safety
+    try:
+        # Subtle staggered start
+        time.sleep(random.random() * 3)
+        
+        # KSIS is requests-based, doesn't use Selenium driver
+        success = ksis_scraper.scrape_ksis_meet(str(meet_id), str(meet_name), KSIS_DIR)
+        
+        # ksis_scraper.scrape_ksis_meet returns boolean
+        if success:
+            # We don't have exact file count easily returned, but success is enough
+            return f"DONE: {meet_id}:1+"
+        else:
+            return f"ERROR: {meet_id} (Scraper failed)"
+    except Exception as e:
+        return f"ERROR: {meet_id} ({e})"
+
+# ... (Previous imports and setup)
+
+    # Load KSIS
+    if os.path.exists(KSIS_CSV):
+        df = pd.read_csv(KSIS_CSV)
+        id_col = [c for c in df.columns if 'MeetID' in c][0]
+        name_col = [c for c in df.columns if 'MeetName' in c][0]
+        for _, row in df.iterrows():
+            all_tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
+
+    # INTERLEAVE SOURCES: Shuffle the list so we process a mix of KScore, LiveMeet, MSO, and KSIS
+    random.shuffle(all_tasks)
+
+# ...
+
+    task_functions = {
+        'kscore': kscore_task,
+        'livemeet': livemeet_task,
+        'mso': mso_task,
+        'ksis': ksis_task
+    }
+
+    with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
+         ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
+         ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool, \
+         ProcessPoolExecutor(max_workers=WORKERS['ksis']) as ksis_pool:
+        
+        pools = {
+            'kscore': k_pool,
+            'livemeet': l_pool,
+            'mso': m_pool,
+            'ksis': ksis_pool
+        }
 
 MAX_RETRIES = 3
 
@@ -74,6 +131,7 @@ def save_status(status_dict):
 
 def kscore_task(meet_id, meet_name, driver_path=None):
     """Worker task for KScore scraping."""
+    import kscore_scraper # Local import for worker safety
     try:
         # Subtle staggered start to avoid resource spikes
         time.sleep(random.random() * 3)
@@ -90,6 +148,7 @@ def kscore_task(meet_id, meet_name, driver_path=None):
 
 def livemeet_task(meet_id, meet_name, driver_path=None):
     """Worker task for LiveMeet scraping and cleaning."""
+    import livemeet_scraper # Local import for worker safety
     try:
         meet_url = f"https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id={meet_id}"
         
@@ -122,6 +181,7 @@ def livemeet_task(meet_id, meet_name, driver_path=None):
 
 def mso_task(meet_id, meet_name, driver_path=None):
     """Worker task for MSO scraping."""
+    import mso_scraper # Local import for worker safety
     driver = None
     try:
         # Subtle staggered start
@@ -182,6 +242,14 @@ def main():
         print(f"WebDriver installed at: {valid_driver_path}")
     except Exception as e:
         print(f"Warning: WebDriver pre-install failed: {e}")
+
+    # Ensure Database exists (Load once if missing)
+    if not os.path.exists("gym_data.db"):
+        print("\n>>> Database missing! Triggering initial load of existing CSVs... <<<")
+        try:
+            subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
+        except Exception as e:
+            print(f"Warning: Initial load failed: {e}")
 
     all_tasks = []
     
@@ -265,7 +333,7 @@ def main():
             # User Request: 1000 CSVs -> 1 load
             # We process in small chunks of meets to check the file count frequently
             MEET_CHUNK_SIZE = 50 
-            CSV_BATCH_THRESHOLD = 1000
+            CSV_BATCH_THRESHOLD = 100
             
             current_csv_count = 0
             

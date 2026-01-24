@@ -40,10 +40,12 @@ DB_FILE = "gym_data.db"
 KSCORE_DIR = "CSVs_kscore_final"
 LIVEMEET_DIR = "CSVs_Livemeet_final"
 MSO_DIR = "CSVs_mso_final"
+KSIS_DIR = "CSVs_ksis_messy"
 
 KSCORE_MANIFEST = "discovered_meet_ids_kscore.csv"
 LIVEMEET_MANIFEST = "discovered_meet_ids_livemeet.csv"
 MSO_MANIFEST = "discovered_meet_ids_mso.csv"
+KSIS_MANIFEST = "discovered_meet_ids_ksis.csv"
 
 # ==============================================================================
 #  WORKER: READER (Parallel)
@@ -60,6 +62,8 @@ def reader_worker(scraper_type, filepath, manifest, aliases=None):
             return extraction_library.extract_livemeet_data(filepath, manifest)
         elif scraper_type == 'mso':
             return extraction_library.extract_mso_data(filepath, manifest)
+        elif scraper_type == 'ksis':
+            return extraction_library.extract_ksis_data(filepath, manifest)
     except Exception as e:
         return {'error': str(e), 'filepath': filepath}
     return None
@@ -136,30 +140,6 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             apparatus_id = caches['apparatus'][app_key]
             
             existing_result_id = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id)
-            if existing_result_id:
-                # OVERWRITE LOGIC:
-                # If current source file is 'DETAILED' or 'PEREVENT' and we are seeing different data, update.
-                is_detailed = "DETAILED" in data_package.get('filepath', '') or "PEREVENT" in data_package.get('filepath', '')
-                
-                if is_detailed:
-                     score_final = to_float(app_res.get('score_final'))
-                     # Simple check: update if numeric score is provided
-                     if score_final is not None:
-                         cursor.execute("UPDATE Results SET score_final = ?, score_d = ?, rank_numeric = ?, rank_text = ? WHERE result_id = ?", 
-                                        (score_final, to_float(app_res.get('score_d')), parse_rank(app_res.get('rank_text')), app_res.get('rank_text'), existing_result_id))
-                
-                # Rank Backfill Logic (Original)
-                rank_text = app_res.get('rank_text')
-                rank_numeric = parse_rank(rank_text) if rank_text else None
-                if rank_text and str(rank_text).strip() != '':
-                    cursor.execute("SELECT rank_text FROM Results WHERE result_id = ?", (existing_result_id,))
-                    db_rank_row = cursor.fetchone()
-                    db_rank = db_rank_row[0] if db_rank_row else None
-                    if not db_rank or str(db_rank).strip() == '':
-                        print(f"  [Backfill] Adding missing rank '{rank_text}' to existing result ID {existing_result_id} ({app_res.get('raw_event')})")
-                        cursor.execute("UPDATE Results SET rank_numeric = ?, rank_text = ? WHERE result_id = ?", 
-                                       (rank_numeric, rank_text, existing_result_id))
-                continue
             
             # Numeric conversions
             def to_float(v):
@@ -178,6 +158,28 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             rank_text = app_res.get('rank_text')
             rank_numeric = parse_rank(rank_text) if rank_text else None
             score_text = app_res.get('score_text')
+
+            if existing_result_id:
+                # OVERWRITE LOGIC:
+                # If current source file is 'DETAILED' or 'PEREVENT' and we are seeing different data, update.
+                is_detailed = "DETAILED" in data_package.get('filepath', '') or "PEREVENT" in data_package.get('filepath', '')
+                
+                if is_detailed:
+                     # Simple check: update if numeric score is provided
+                     if score_final is not None:
+                         cursor.execute("UPDATE Results SET score_final = ?, score_d = ?, rank_numeric = ?, rank_text = ? WHERE result_id = ?", 
+                                        (score_final, score_d, rank_numeric, rank_text, existing_result_id))
+                
+                # Rank Backfill Logic (Original)
+                if rank_text and str(rank_text).strip() != '':
+                    cursor.execute("SELECT rank_text FROM Results WHERE result_id = ?", (existing_result_id,))
+                    db_rank_row = cursor.fetchone()
+                    db_rank = db_rank_row[0] if db_rank_row else None
+                    if not db_rank or str(db_rank).strip() == '':
+                        print(f"  [Backfill] Adding missing rank '{rank_text}' to existing result ID {existing_result_id} ({app_res.get('raw_event')})")
+                        cursor.execute("UPDATE Results SET rank_numeric = ?, rank_text = ? WHERE result_id = ?", 
+                                       (rank_numeric, rank_text, existing_result_id))
+                continue
             
             # SQL Construction
             cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'score_sv', 'score_e', 'penalty', 'rank_numeric', 'rank_text', 'score_text', 'bonus', 'execution_bonus']
@@ -315,7 +317,7 @@ def refresh_gold_tables(conn):
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'M'
     GROUP BY p.person_id, m.meet_db_id
-    ORDER BY p.full_name, m.comp_year DESC;
+    ORDER BY m.comp_year DESC, p.full_name;
     """
     
     # --- WAG TABLE ---
@@ -363,7 +365,7 @@ def refresh_gold_tables(conn):
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'F'
     GROUP BY p.person_id, m.meet_db_id
-    ORDER BY p.full_name, m.comp_year DESC;
+    ORDER BY m.comp_year DESC, p.full_name;
     """
     
     cursor.execute(mag_query)
@@ -378,7 +380,7 @@ def refresh_gold_tables(conn):
 
 def load_manifest(scraper_type, filepath):
     if not os.path.exists(filepath):
-        logging.warning(f"Manifest not found: {filepath}")
+        # Create empty manifest if missing, to prevent crash
         return {}
     
     try:
@@ -411,26 +413,24 @@ def load_manifest(scraper_type, filepath):
         
     return manifest_data
 
-def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest):
+def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest, ksis_manifest):
     """
-    Backfills missing metadata (year, name, date, etc.) for all existing meets
-    using the provided manifests. This is useful for meets that were processed
-    before self-healing logic was added.
+    Backfills missing metadata (year, name, date, etc.) for all existing meets.
     """
     logging.info("Starting metadata healing pass...")
     cursor = conn.cursor()
     
     # Combined manifests for easier lookup
-    # Key should be (source, source_meet_id)
     combined = {}
     for mid, details in kscore_manifest.items():
-        # KScore source_meet_id in DB is without prefix
         sid = mid.replace('kscore_', '', 1)
         combined[('kscore', sid)] = details
     for mid, details in livemeet_manifest.items():
         combined[('livemeet', mid)] = details
     for mid, details in mso_manifest.items():
         combined[('mso', mid)] = details
+    for mid, details in ksis_manifest.items():
+        combined[('ksis', mid)] = details
 
     cursor.execute("SELECT meet_db_id, source, source_meet_id, comp_year, name, start_date_iso, location FROM Meets")
     meets = cursor.fetchall()
@@ -440,12 +440,11 @@ def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest):
         # Try lookup with original sid and with scraper prefix if needed
         details = combined.get((source, sid))
         if not details:
-            # Fallback: maybe sid in DB is just the ID but manifest has the prefix
             prefixed_sid = f"{source}_{sid}"
             details = combined.get((source, prefixed_sid))
         
         if not details:
-            # Extra Fallback: Check if manifest ID is a prefix of sid (e.g. for _PEREVENT_ files)
+            # Extra Fallback: Check if manifest ID is a prefix of sid
             for (m_src, m_sid), m_details in combined.items():
                 if m_src == source and sid.startswith(m_sid):
                     details = m_details
@@ -502,11 +501,12 @@ def main():
     kscore_manifest = load_manifest('kscore', KSCORE_MANIFEST)
     livemeet_manifest = load_manifest('livemeet', LIVEMEET_MANIFEST)
     mso_manifest = load_manifest('mso', MSO_MANIFEST)
+    ksis_manifest = load_manifest('ksis', KSIS_MANIFEST)
     
     # HEAL METADATA FIRST
     with sqlite3.connect(DB_FILE, timeout=30) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
-        heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest)
+        heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest, ksis_manifest)
 
     # 2. Find files
     files_to_process = []
@@ -522,7 +522,6 @@ def main():
     
     # LiveMeet
     l_files = glob.glob(os.path.join(LIVEMEET_DIR, "*_FINAL_*.csv"))
-    # Also support *_PEREVENT_* and *_BYEVENT_*
     l_files += glob.glob(os.path.join(LIVEMEET_DIR, "*_PEREVENT_*.csv"))
     l_files += glob.glob(os.path.join(LIVEMEET_DIR, "*_BYEVENT_*.csv"))
     for f in l_files: files_to_process.append(('livemeet', f, livemeet_manifest.get(os.path.basename(f).split('_')[0], {}), None))
@@ -530,6 +529,14 @@ def main():
     # MSO
     m_files = glob.glob(os.path.join(MSO_DIR, "*_mso.csv"))
     for f in m_files: files_to_process.append(('mso', f, mso_manifest.get(os.path.basename(f).split('_mso.csv')[0], {}), None))
+
+    # KSIS
+    ksis_files = glob.glob(os.path.join(KSIS_DIR, "*.csv"))
+    for f in ksis_files: 
+        # Filename example: 9143_ksis_299177_...
+        # Source meet ID is the first part (9143)
+        mid = os.path.basename(f).split('_')[0]
+        files_to_process.append(('ksis', f, ksis_manifest.get(mid, {}), None))
 
     import random
     random.shuffle(files_to_process) # Shuffle to ensure parallel processing of different sources
@@ -547,26 +554,12 @@ def main():
     
     if not args.gold_only:
         with sqlite3.connect(DB_FILE) as conn:
-            # Pre-fetch processed hashes to avoid thousands of queries
-            # This is much faster
             processed_map = {row[0]: True for row in conn.execute("SELECT file_hash FROM ProcessedFiles").fetchall()}
             
             for stype, fpath, manifest, aliases in files_to_process:
-                # Calculate hash - this is fast for small files, but we can also optimize
-                # by checking if path + mtime is unchanged, but let's stick to content hash or path check
-                # For speed, strictly we should use path + mtime if we trust it, but hash is safer.
-                # However, calculate_file_hash reads the file. That might be slow for 5000 files.
-                # Let's trust the CalculateHash function or maybe check if we can skip reading?
-                
-                # Check 1: Is this path already in ProcessedFiles? (If hash unchanged)
-                # Actually calculate_file_hash is robust.
                 fhash = calculate_file_hash(fpath)
-                
                 if fhash not in processed_map:
                      unprocessed.append((stype, fpath, fhash, manifest, aliases))
-                     # Check limit on the fly to avoid scanning everything if not needed?
-                     # No, user wants the "next 100". Sorting ensures "next" is deterministic.
-                     # But if we want proper "next 100", we should find the first 100 unprocessed.
                      if args.limit > 0 and len(unprocessed) >= args.limit:
                          break
     
@@ -576,11 +569,8 @@ def main():
     if not unprocessed and not args.gold_only:
         logging.info("No unprocessed files found.")
     elif not args.gold_only:
-        # Proceed with 'unprocessed' list
-        # ... logic continues ...
         if not unprocessed:
             logging.info("No unprocessed files found.")
-            # Even if no files, we might still want to refresh Gold tables later
         else:
             # 4. Process in Parallel
             caches = {}
@@ -592,8 +582,6 @@ def main():
                 caches['meet'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
 
             total = len(unprocessed)
-            
-            # Reduced batch size to minimize lock duration
             batch_size = 10 
             
             stop_requested = False
@@ -609,7 +597,6 @@ def main():
                 conn.execute("PRAGMA synchronous=NORMAL;")
                 
                 with ProcessPoolExecutor(max_workers=args.workers) as executor:
-                    # Submit all tasks
                     future_to_file = {
                         executor.submit(reader_worker, stype, fpath, manifest, aliases): (stype, fpath, fhash) 
                         for stype, fpath, fhash, manifest, aliases in unprocessed
@@ -623,14 +610,12 @@ def main():
                         stype, fpath, fhash = future_to_file[future]
                         completed += 1
                         
-                        # Terminal Progress (Concise)
                         print(f"[{stype} {completed}/{total}] {os.path.basename(fpath)}")
                         
                         try:
                             data_package = future.result()
                             if data_package:
                                 write_to_db(conn, data_package, caches, club_aliases)
-                                # Success! Mark as processed so we don't scan it again next time.
                                 mark_file_processed(conn, fpath, fhash)
                         except Exception as e:
                             logging.error(f"Error processing {fpath}: {e}")
@@ -650,16 +635,12 @@ def main():
     with sqlite3.connect(DB_FILE, timeout=30) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         
-        # Heal Metadata Part 1 (Manifest-based)
         logging.info("Running Metadata Healing Pass...")
-        heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest)
+        heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest, ksis_manifest)
         
-        # Unify Meets (Logical name-based grouping)
         unify_meets(conn)
         
-        # Refresh Gold Tables (Final flattened results)
         refresh_gold_tables(conn)
-
 
     if not args.gold_only:
         logging.info(f"Finished! Processed {completed} files in {time.time() - start_time:.2f}s.")
@@ -667,7 +648,6 @@ def main():
         logging.info(f"Gold table refresh complete in {time.time() - start_time:.2f}s.")
 
 if __name__ == "__main__":
-    # Setup Logging
     logging.basicConfig(
         filename='loader_orchestrator.log',
         level=logging.INFO,
@@ -675,7 +655,7 @@ if __name__ == "__main__":
         filemode='a'
     )
     console = logging.StreamHandler()
-    console.setLevel(logging.WARNING) # Only warnings/errors to console
+    console.setLevel(logging.WARNING) 
     logging.getLogger('').addHandler(console)
     
     logging.info("Loader Orchestrator Started")

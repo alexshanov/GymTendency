@@ -519,13 +519,17 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
     meet_key = (source, source_meet_id)
     if meet_key in cache: return cache[meet_key]
     
-    # Extract year: prefer explicit year, then parse from date string
+    # Extract year: prefer explicit year, then parse from date string, then from name
     comp_year = meet_details.get('year') or meet_details.get('comp_year')
-    if not comp_year and meet_details.get('start_date_iso'):
-        date_str = str(meet_details.get('start_date_iso'))
-        year_match = re.search(r'(20\d{2})', date_str)
-        if year_match:
-            comp_year = int(year_match.group(1))
+    if not comp_year:
+        # Try parse from date
+        if meet_details.get('start_date_iso'):
+            year_match = re.search(r'(20\d{2})', str(meet_details.get('start_date_iso')))
+            if year_match: comp_year = int(year_match.group(1))
+        # Try parse from name
+        if not comp_year and meet_details.get('name'):
+            year_match = re.search(r'(20\d{2})', str(meet_details.get('name')))
+            if year_match: comp_year = int(year_match.group(1))
     
     # Auto-detect country if not provided
     country = meet_details.get('country')
@@ -543,11 +547,12 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
     result = cursor.fetchone()
     
     # 2. IF NOT FOUND: Try to unify based on Name + Year (Prevent logical duplication)
-    if not result and meet_details.get('name') and comp_year:
-        cursor.execute("SELECT meet_db_id, comp_year, start_date_iso, location, country, name FROM Meets WHERE name = ? AND comp_year = ?", (meet_details['name'], comp_year))
+    # This is CRITICAL for an autonomous pipeline.
+    if not result and meet_details.get('name') and comp_year and "Unnamed:" not in str(meet_details.get('name')):
+        cursor.execute("SELECT meet_db_id, comp_year, start_date_iso, location, country, name FROM Meets WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND comp_year = ?", (meet_details['name'], comp_year))
         result = cursor.fetchone()
         if result:
-            print(f"  -> Unified new file '{source_meet_id}' into existing meet: '{meet_details['name']}' (ID: {result[0]})")
+            print(f"  -> Federated Intake: Unified '{source_meet_id}' into existing meet: '{result[5]}' (ID: {result[0]})")
     
     if result:
         meet_db_id = result[0]
@@ -557,41 +562,37 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
         updates = []
         params = []
         
-        # Check Year
         if not db_year and comp_year:
              updates.append("comp_year = ?")
              params.append(comp_year)
              
-        # Check Date
         new_date = meet_details.get('start_date_iso')
         if not db_date and new_date:
              updates.append("start_date_iso = ?")
              params.append(new_date)
              
-        # Check Location
         new_loc = meet_details.get('location')
-        if not db_loc and new_loc and new_loc != 'N/A':
+        if not db_loc and new_loc and new_loc != 'N/A' and (not db_loc or str(db_loc).strip() == ''):
              updates.append("location = ?")
              params.append(new_loc)
              
-        # Check Country
         if not db_country and country:
              updates.append("country = ?")
              params.append(country)
 
-        # Check Name (Fill if missing or specific placeholder)
+        # Check Name: prioritize manifest names over "Unnamed:" or scraper placeholders
         new_name = meet_details.get('name')
-        if (not db_name or "Kscore" in db_name) and new_name:
-             updates.append("name = ?")
-             params.append(new_name)
+        if new_name and "Unnamed:" not in str(new_name):
+            if not db_name or any(x in str(db_name) for x in ["Kscore", "Livemeet", "MSO", "Unnamed:", "Title not set"]):
+                updates.append("name = ?")
+                params.append(new_name)
 
         if updates:
              sql = f"UPDATE Meets SET {', '.join(updates)} WHERE meet_db_id = ?"
              params.append(meet_db_id)
              try:
                 cursor.execute(sql, params)
-                # We do not commit here to piggyback on the caller's transaction
-                print(f"  -> Updated metadata for meet: {source_meet_id} (Updated: {', '.join(updates)})")
+                print(f"  -> Healed metadata for meet ID {meet_db_id} ({', '.join(updates)})")
              except Exception as e:
                 print(f"  -> Warning: Failed to update meet metadata: {e}")
 
@@ -602,8 +603,10 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
             (source, source_meet_id, meet_details.get('name'), meet_details.get('start_date_iso'), 
              comp_year, meet_details.get('location'), country, meet_details.get('competition_type')))
         meet_db_id = cursor.lastrowid
-        country_str = country or 'Unknown'
-        print(f"  -> New meet added: '{meet_details.get('name')}' (ID: {meet_db_id}, Year: {comp_year}, Country: {country_str})")
+        print(f"  -> New meet intake: '{meet_details.get('name')}' (ID: {meet_db_id}, Year: {comp_year})")
+    
+    cache[meet_key] = meet_db_id
+    return meet_db_id
     cache[meet_key] = meet_db_id
     return meet_db_id
 
