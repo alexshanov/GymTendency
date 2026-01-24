@@ -317,7 +317,7 @@ def main():
                             status_manifest[key] = "DONE"
                             current_csv_count += count
                             logging.info(f"[{stype}] {mid}: {status} - {message}")
-                            print(f"  [OK] {mid} ({count} files)")
+                            print(f"  [OK] {mid} ({count} files) - Progress: {len(status_manifest)} total meets scraped")
                             
                         else:
                             # ERROR logic

@@ -152,9 +152,10 @@ def extract_table_raw(driver, meet_name):
         
     return pd.DataFrame(data)
 
-def process_meet(driver, meet_id, meet_name, index, total):
+def process_meet(driver, meet_id, meet_name, index=0, total=0):
     url = f"https://www.meetscoresonline.com/Results/{meet_id}"
-    print(f"[{index}/{total}] Processing Meet: {meet_name} ({meet_id}) -> {url}")
+    counter_str = f"[{index}/{total}] " if total > 0 else ""
+    print(f"{counter_str}Processing Meet: {meet_name} ({meet_id}) -> {url}")
     
     max_retries = 3
     for attempt in range(max_retries + 1):
