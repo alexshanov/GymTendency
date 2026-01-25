@@ -193,7 +193,7 @@ CLUB_ALIASES = load_club_aliases()
 
 METADATA_WHITELIST = {
     'level', 'age_group', 'session', 'division', 'group', 'prov', 'state', 
-    'age', 'num', 'flight', 'team', 'rotation'
+    'age', 'num', 'flight', 'team', 'rotation', 'reporting_category'
 }
 
 def sanitize_column_name(col_name):

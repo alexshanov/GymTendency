@@ -197,8 +197,11 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
     for col in df.columns:
         if col not in ignore_cols and not col.startswith('Result_'):
             sanitized = sanitize_column_name(col)
-            ensure_column_exists(cursor, 'Results', sanitized, 'TEXT')
-            dynamic_cols_to_add.append((col, sanitized))
+            if ensure_column_exists(cursor, 'Results', sanitized, 'TEXT'):
+                dynamic_cols_to_add.append((col, sanitized))
+            else:
+                # If column was rejected (whitelist), we skip loading it to avoid SQL errors
+                pass
             
     # Ensure apparatus-specific bonus columns exist
     ensure_column_exists(cursor, 'Results', 'bonus', 'REAL')

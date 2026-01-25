@@ -573,7 +573,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                             all_be_rows = []
                             for be_table in be_tables:
                                 try:
-                                    be_df = pd.read_html(str(be_table), header=0)[0]
+                                    be_df = pd.read_html(io.StringIO(str(be_table)), header=0)[0]
                                     if be_df.empty:
                                         continue
                                     # Add age group from table attribute if present
@@ -669,13 +669,29 @@ def fix_and_standardize_headers(input_filename, output_filename):
              pass
 
     header_row_index = -1
+    header_row_index = -1
+    
+    # Robust Header Detection
+    HEADER_CANDIDATES = ['name', 'athlete', 'gymnast', 'competitor']
+    
     for i, row in df.iterrows():
-        if 'Name' in row.values:
+        # Check if any cell in the row matches one of our candidates (case-insensitive)
+        row_values = [str(val).strip().lower() for val in row.values]
+        if any(candidate in row_values for candidate in HEADER_CANDIDATES):
             header_row_index = i
             break
             
     if header_row_index == -1:
-        print(f"Error: Could not find the main header row (containing 'Name') in '{input_filename}'.")
+        # Check for known "junk" patterns (e.g. Privacy/Security footer only)
+        first_rows_tex = df.head(10).to_string()
+        if "Privacy" in first_rows_tex and "Security" in first_rows_tex:
+            print(f"  -> Skipping file '{os.path.basename(input_filename)}': Contains only Privacy/Security placeholders (No data).")
+            return False
+            
+        print(f"Error: Could not find the main header row (checked for: {HEADER_CANDIDATES}) in '{input_filename}'.")
+        # Debug: Print first few rows to help identify the issue
+        print("--- Debug: First 5 rows of file ---")
+        print(df.head(5))
         return False
 
     # --- THIS IS THE NEW, CORRECTED LOGIC ---
@@ -736,14 +752,26 @@ def fix_and_standardize_headers(input_filename, output_filename):
 
     data_df.columns = mapped_header
 
-    # Rename the trailing standard columns added during scraping
-    # We now have 4 extra columns: Group, Meet, Age_Group, Reporting_Category
-    data_df.rename(columns={
-        data_df.columns[-4]: 'Group',
-        data_df.columns[-3]: 'Meet',
-        data_df.columns[-2]: 'Age_Group',
-        data_df.columns[-1]: 'Reporting_Category'
-    }, inplace=True)
+    # Robust trailing column identifies: only rename if we don't already have them
+    # AND if the trailing columns are 'Unnamed' or blank.
+    # This prevents overwriting result columns in By-Event files.
+    trailing_count = 0
+    if not any(c in data_df.columns for c in ['Group', 'Meet', 'Age_Group', 'Reporting_Category']):
+        # If we don't have them at all, we might be using an old scraper version
+        # Check if the last columns look like metadata (generic names)
+        potential_meta = []
+        for i in range(1, 5):
+            col_name = str(data_df.columns[-i])
+            if 'Unnamed' in col_name or col_name == '' or col_name.isdigit():
+                 potential_meta.append(i)
+        
+        if len(potential_meta) >= 3: # If at least 3 are unnamed/generic
+            data_df.rename(columns={
+                data_df.columns[-4]: 'Group',
+                data_df.columns[-3]: 'Meet',
+                data_df.columns[-2]: 'Age_Group',
+                data_df.columns[-1]: 'Reporting_Category'
+            }, inplace=True)
 
     # --- APPLY SERVICE COLUMN STANDARDIZATION ---
     standard_info_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Reporting_Category', 'Meet', 'Group']

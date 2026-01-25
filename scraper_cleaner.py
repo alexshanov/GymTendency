@@ -151,13 +151,29 @@ def fix_and_standardize_headers(input_filename, output_filename):
 
     # --- Step 2: Find the main header row (using 'Name' as the anchor) ---
     header_row_index = -1
+    header_row_index = -1
+    
+    # Robust Header Detection
+    HEADER_CANDIDATES = ['name', 'athlete', 'gymnast', 'competitor']
+    
     for i, row in df.iterrows():
-        if 'Name' in row.values:
+        # Check if any cell in the row matches one of our candidates (case-insensitive)
+        row_values = [str(val).strip().lower() for val in row.values]
+        if any(candidate in row_values for candidate in HEADER_CANDIDATES):
             header_row_index = i
             break
             
     if header_row_index == -1:
-        print(f"Error: Could not find the main header row (containing 'Name') in '{input_filename}'.")
+        # Check for known "junk" patterns (e.g. Privacy/Security footer only)
+        first_rows_tex = df.head(10).to_string()
+        if "Privacy" in first_rows_tex and "Security" in first_rows_tex:
+            print(f"  -> Skipping file '{os.path.basename(input_filename)}': Contains only Privacy/Security placeholders (No data).")
+            return False
+
+        print(f"Error: Could not find the main header row (checked for: {HEADER_CANDIDATES}) in '{input_filename}'.")
+        # Debug: Print first few rows to help identify the issue
+        print("--- Debug: First 5 rows of file ---")
+        print(df.head(5))
         return False
 
     # --- Step 3: Isolate and clean the TRUE data rows ---
@@ -198,11 +214,27 @@ def fix_and_standardize_headers(input_filename, output_filename):
         return False
 
     data_df.columns = clean_header
-    
-    # <<< THIS IS THE NEW LINE YOU REQUESTED >>>
-    # Forcibly rename the last three columns to ensure they are always correct.
-    data_df.columns.values[-3:] = ['Group', 'Meet', 'Age_Group']
 
+    # Robust trailing column identifies: only rename if we don't already have them
+    # AND if the trailing columns are 'Unnamed' or blank.
+    # This prevents overwriting result columns in By-Event files.
+    if not any(c in data_df.columns for c in ['Group', 'Meet', 'Age_Group', 'Reporting_Category']):
+        # If we don't have them at all, we might be using an old scraper version
+        # Check if the last columns look like metadata (generic names)
+        potential_meta = []
+        for i in range(1, 5):
+            col_name = str(data_df.columns[-i])
+            if 'Unnamed' in col_name or col_name == '' or col_name.isdigit():
+                 potential_meta.append(i)
+        
+        if len(potential_meta) >= 3: # If at least 3 are unnamed/generic
+            data_df.rename(columns={
+                data_df.columns[-4]: 'Group',
+                data_df.columns[-3]: 'Meet',
+                data_df.columns[-2]: 'Age_Group',
+                data_df.columns[-1]: 'Reporting_Category'
+            }, inplace=True)
+    
     # Reorder for final readability (this now works reliably)
     cols_to_move = ['Name', 'Club', 'Level', 'Prov', 'Age', 'Meet', 'Group', 'Age_Group']
     existing_cols = [col for col in cols_to_move if col in data_df.columns]

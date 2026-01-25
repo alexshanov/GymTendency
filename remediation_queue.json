@@ -1,0 +1,903 @@
+{
+  "full_scrapes": [
+    {
+      "meet_id": "DF5EEACBB4B0623E63358A426E108DB8",
+      "reason": "Ghost Entries"
+    }
+  ],
+  "targeted_scrapes": [
+    {
+      "meet_id": "ED3B1EA59B611BAABBF048F69F017BBC",
+      "levels": [
+        "XG",
+        "XB",
+        "CCP2",
+        "CCP1",
+        "XD"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "9A0E548CF59A93B837195FD08D73F82A",
+      "levels": [
+        "FMI",
+        "FMA",
+        "FMB"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "312A9C6EDAC7055EA8683C8F1D47CBA9",
+      "levels": [
+        "AXCBZ",
+        "AXCGL",
+        "AXCPL",
+        "AL2",
+        "AL7",
+        "AL6",
+        "ALXG",
+        "AL8"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "9158F7CEC9F5F1F794368FF8ADA3BCD3",
+      "levels": [
+        "L6",
+        "L4",
+        "XS",
+        "XP",
+        "L2",
+        "XG",
+        "L10",
+        "L8"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "F3090E63DA9CF42E49B04C73A7CF1A99",
+      "levels": [
+        "INT P+",
+        "INT P",
+        "JO2",
+        "INT PC",
+        "JO1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "DC672C940504E850A16E9D4F8DBB231E",
+      "levels": [
+        "CCP2",
+        "CCP1",
+        "CCP3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "F73E06219A5AE812D9B3266DD391A665",
+      "levels": [
+        "3",
+        "4",
+        "5",
+        "6"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "332FEC3F3A58E942AB997C88278BA507",
+      "levels": [
+        "JO2",
+        "JO6",
+        "JO1",
+        "JO9"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "6E5E6A38E251305C9AF4804EB776C7FD",
+      "levels": [
+        "L2",
+        "XSv",
+        "L1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "DE2B30029CC9184F75E980A6685850C9",
+      "levels": [
+        "JO7",
+        "JO3",
+        "JO6",
+        "JO9U13"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "B0DBF8659B3244D10402D05AD721A96C",
+      "levels": [
+        "CCP7"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "BD90F753263EBCCAFE630257C8D6D384",
+      "levels": [
+        "SGLV3S",
+        "SGLV2S"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "A6AB8F4D7FCCDE4449E029D1EF057080",
+      "levels": [
+        "XS",
+        "JO2",
+        "XB",
+        "JO8",
+        "Asp1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "6AEB10A6E388EA2AA5A23658B5E2AA66",
+      "levels": [
+        "Inter2",
+        "Xcel-G",
+        "Inter1",
+        "CCP6"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "1A4FDF8B9648D3094183FEA027820DA2",
+      "levels": [
+        "JO2B",
+        "JO6B",
+        "JO9"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "31998C3E78F13C23260AEDBD222DD064",
+      "levels": [
+        "CP1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "5BD2A350490EC9F35C82F07C91C1F62A",
+      "levels": [
+        "LC",
+        "P+",
+        "PC",
+        "P"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "E5E7521A6A233E9283B91819C1E5626A",
+      "levels": [
+        "XG",
+        "CCP2S",
+        "XBS",
+        "CCP4",
+        "CCP6"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "509904F8B2FF0B6261EC78F0DA78FBB3",
+      "levels": [
+        "SGLV3",
+        "SGLV4"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "B479CF73DCBB23275731B4047A4CC5F5",
+      "levels": [
+        "nan"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "1037A246473E2F70EFFACC64F77266F7",
+      "levels": [
+        "AXCBZ",
+        "AXCGL",
+        "AXCSV",
+        "AXCPL"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "B2F0853D013B5980B3E872ABA14E87B5",
+      "levels": [
+        "ICCP2",
+        "ICCP1",
+        "XCLBY"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "207A105CF066622D0DF9334CBE25E116",
+      "levels": [
+        "RB",
+        "RP",
+        "AXCSV",
+        "RC"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "C6CCF5E40F03FF1BC69C52112727F283",
+      "levels": [
+        "IC-2",
+        "CCP 4",
+        "IC-3",
+        "IC-BZ"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "5D9E9C23C0D89ED7683B2110D2AD49BD",
+      "levels": [
+        "XG",
+        "Inter2"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "7AF68025EC7776E059C9B9A4158E5A0D",
+      "levels": [
+        "Ruby",
+        "Diam"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "25D0C5B263E5D8F9F7E10B12E2914F62",
+      "levels": [
+        "JO6",
+        "JO1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "538DA030E965149D79DFBB4D6FB74F02",
+      "levels": [
+        "Xsv",
+        "XPL"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "DBD496704AB8A7E68FF19A1B17E1ED32",
+      "levels": [
+        "JO3",
+        "JO6",
+        "JO7",
+        "JO4",
+        "WGO",
+        "JO8",
+        "TL1F",
+        "JO10N",
+        "TL2F",
+        "JO5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "F83F9829A62EEC870CB3B8057FA03F14",
+      "levels": [
+        "4"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "65F47BFC472FF7743576111167271BE6",
+      "levels": [
+        "W5",
+        "W3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "8E2D83DE886FD9B16545B3B612AFAA6B",
+      "levels": [
+        "CCP2"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "760C1357F2BFB3A3B72F4FB2403A8A10",
+      "levels": [
+        "JO2",
+        "JO4",
+        "JO1",
+        "JO3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "FA3211C5392DA49DE3849CC12BAA5DB5",
+      "levels": [
+        "XCSV",
+        "XCBZ",
+        "L5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "BE29CBFBB5EAADEDFB0C7141D1FEFA66",
+      "levels": [
+        "JO06"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "29ECC0FC1220FF129AF206630984972E",
+      "levels": [
+        "3U8",
+        "5U11",
+        "5U12"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "A00BCA1EAE1793304AE1CC805DCEAC93",
+      "levels": [
+        "JO3",
+        "JO1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "6067734A853D64826B82460791537B40",
+      "levels": [
+        "4"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "721C97BD6DB9E99EEDD921D83DB5648E",
+      "levels": [
+        "WAG3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "1D5CE1CBE8819E224E543700FF5A2CC6",
+      "levels": [
+        "CCP1",
+        "REC",
+        "InXcBr",
+        "ICCP3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "176234B3BDF92C8ADF8265E60AF4C0C7",
+      "levels": [
+        "WLV4J",
+        "WLV5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "B6D1EF529D32C16D16CE5DCADB928C2E",
+      "levels": [
+        "AL6",
+        "AXB",
+        "AXS"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "EA10882290A7CE4016C761A84BF0AAEB",
+      "levels": [
+        "L3",
+        "L6",
+        "L8"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "3F25F99F21CA09ED1E70CDA8FBCD15B9",
+      "levels": [
+        "JO 2",
+        "JO 1",
+        "Bronze",
+        "Silver"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "222D600EC99F6DC3C374131D2F6B1BC4",
+      "levels": [
+        "JO1",
+        "JO2",
+        "JO3-T"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "9FCE70BBBE97A3B5BAFEC7439B869B03",
+      "levels": [
+        "nan"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "415A51085021A75BBA0DD6AD54F08078",
+      "levels": [
+        "3",
+        "XG",
+        "4",
+        "6",
+        "XP",
+        "XS",
+        "2A",
+        "2",
+        "7",
+        "5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "37FA27B93BEF567A14F608750955EBF2",
+      "levels": [
+        "Saph"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "12B0219AED37CCB481F2BCD56CC3714B",
+      "levels": [
+        "L7"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "7090A133F2C4939745C7AEE04E8ECBC3",
+      "levels": [
+        "5",
+        "4",
+        "L6 O",
+        "8",
+        "L4 U11",
+        "6",
+        "L6 U12",
+        "9/10",
+        "7"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "2E322ACCF6C512FD27CAD8BCE6F8A748",
+      "levels": [
+        "JO2",
+        "JO1",
+        "JO3-NO",
+        "JO4-A",
+        "JO5-N"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "2EEA8359FE712CA592F82941439BACED",
+      "levels": [
+        "WAG 7",
+        "WAG 6"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "A0CE7F0A83810567421157B12992FCC9",
+      "levels": [
+        "JrW"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "9770A8EBFF9CEF25860904833025C19C",
+      "levels": [
+        "JO7"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "DEF6EC737B8B0060769FA2C168CAE212",
+      "levels": [
+        "GD"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "3134BDED9A759F03ACA480E2CB2F0048",
+      "levels": [
+        "I Br",
+        "GR 5-9",
+        "GR 10+",
+        "I 2",
+        "I 3",
+        "Br B",
+        "Si B",
+        "Br A"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "9FB9B6D20B726DE0B4462483C3AC9992",
+      "levels": [
+        "2"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "663B4E949A0BC7818EBB9427749032F5",
+      "levels": [
+        "4",
+        "XS",
+        "7",
+        "5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "C00D49D01AF21426FD18D5C25D2BD298",
+      "levels": [
+        "JO7N",
+        "J1016+"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "9ED6F1A01C68490A7A12BE1A44699A60",
+      "levels": [
+        "IC3",
+        "IC2",
+        "IC1",
+        "XBI"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "FC62A44F197504C3AC7B65E1BA6E331E",
+      "levels": [
+        "HP-JR"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "E8224E7D40E58915BCD16DDD1A966C02",
+      "levels": [
+        "IC2",
+        "IC3",
+        "IC1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "53492DC92CC75E1E79334BB309555E0F",
+      "levels": [
+        "L4"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "C134634F5870232007708E3DDE052043",
+      "levels": [
+        "P2E",
+        "P2C"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "972C77A9D126472E2E075B4F6B01D9AD",
+      "levels": [
+        "XS",
+        "2",
+        "6",
+        "8"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "9910E1D53D7DF5EA50E414DD3F5C541D",
+      "levels": [
+        "Diam"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "E2CD78681A23BEF7E4CC37727947F850",
+      "levels": [
+        "L9O"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "83AC0591AEF47374317D3ACF657DD2E1",
+      "levels": [
+        "3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "BED5DD0273719373E916D1AE6546798F",
+      "levels": [
+        "W3U10",
+        "W4U11"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "11E8276ADC5B94D13C04907C7822301C",
+      "levels": [
+        "AXCSV",
+        "AXCGL",
+        "AXCBZ",
+        "AXCPL"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "635FAAF402E51CF035F3A3C89144B01D",
+      "levels": [
+        "JO1",
+        "JO6"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "57175570ADB15C4059141BD27832E406",
+      "levels": [
+        "CCP1R",
+        "CCP2R"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "FE3B8A33A74F5BA7328A484F676C430B",
+      "levels": [
+        "B",
+        "C1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "B25D2DDA86B1AD12DFA704CF2EA8CCBB",
+      "levels": [
+        "3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "D1E93AFD0D6B56A7DE806566B85BA11B",
+      "levels": [
+        "WGL1",
+        "WGL2",
+        "WGLP3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "F5C1E932DEC46D24465C96AD3DF04574",
+      "levels": [
+        "JO1",
+        "CAT-A",
+        "CAT-B",
+        "JO2"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "5FF69B73F753951E8396A891B4E25589",
+      "levels": [
+        "JO6O",
+        "JO5T",
+        "JO6A",
+        "JO3A",
+        "JO4N"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "999AD7BA60B6ACD1DC0D7FB2459306C0",
+      "levels": [
+        "XCGL",
+        "L9"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "F849927E370350B38E670E5D3339F48F",
+      "levels": [
+        "5O"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "3D6EC05C8C815182A1965CFADA534A81",
+      "levels": [
+        "JO2",
+        "JO1"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "BE5241ACB4DA0AEAC2D8A6CA60ABBC0C",
+      "levels": [
+        "L5O",
+        "L4U"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "AA90C660BD9CCA3FDFA29E2D5492CAC3",
+      "levels": [
+        "P3T",
+        "JO6A"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "4DFFC0B21105FEFE784626636551C9B5",
+      "levels": [
+        "O6",
+        "PrA3",
+        "9U"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "6D98DFA302197097BDC62F88527DE8F6",
+      "levels": [
+        "2O"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "4D632926417E6A18F7C40B2DC952393D",
+      "levels": [
+        "3",
+        "XG",
+        "6",
+        "XP",
+        "XS",
+        "5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "580335796A9828689DF0022EB27C53EB",
+      "levels": [
+        "nan"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "587420830488739CDF81C7F449ABC6F2",
+      "levels": [
+        "4O",
+        "L8",
+        "5U13",
+        "4U8"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "07CE9D743E8E12307AB631F842C7F395",
+      "levels": [
+        "TPL1",
+        "TL3F13",
+        "TL113+"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "7AE0FE51CEC8F65171D6B6A584F7BFF0",
+      "levels": [
+        "WL7",
+        "XB"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "22C664E6D1312A7F5FE997B338DEC92B",
+      "levels": [
+        "IGCBRZ"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "8C605EE703D34362328C506EA917E8AC",
+      "levels": [
+        "P4",
+        "P1",
+        "P2",
+        "As"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "A0BB6D170AD069E7989CEDC7A5DAE7E7",
+      "levels": [
+        "N-GD"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "AF4F69BEEB99FEE8B77DA0AD630631F3",
+      "levels": [
+        "XCSV"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "08CCF8E67B08E9B154BC8A790315B404",
+      "levels": [
+        "L3"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "61BFF9A55156A0F50A2C94E1F07A1314",
+      "levels": [
+        "L5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "3240C7E26A4C4697FC2EFF2124B464A3",
+      "levels": [
+        "IGCBRZ"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "D0CC647945F8EB2520B9E22150E51231",
+      "levels": [
+        "8"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "0FFC87D8AE3516CB9A2AFD6BA69F77B1",
+      "levels": [
+        "XS"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "89DA2B866AE754A4F42F13A9B17D9DED",
+      "levels": [
+        "J6"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "64B251CDA4B732D2CA89B7E3EA6AE489",
+      "levels": [
+        "P5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "827F5DD234D2A236C7366F37792A4406",
+      "levels": [
+        "W5"
+      ],
+      "reason": "Missing Apparatus"
+    },
+    {
+      "meet_id": "BA80182305D22FC7897094B32A7E55A2",
+      "levels": [
+        "JO9"
+      ],
+      "reason": "Missing Apparatus"
+    }
+  ]
+}
