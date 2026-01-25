@@ -162,10 +162,13 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             # Numeric conversions
             def to_float(v):
                 if v is None: return None
-                try: return float(v)
+                try: 
+                    # Remove potential comma from things like "1,000"
+                    return float(str(v).replace(',', ''))
                 except: return None
 
-            score_final = to_float(app_res.get('score_final'))
+            score_raw = app_res.get('score_final')
+            score_final = to_float(score_raw)
             score_d = to_float(app_res.get('score_d'))
             score_sv = to_float(app_res.get('score_sv'))
             score_e = to_float(app_res.get('score_e'))
@@ -177,26 +180,57 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             rank_numeric = parse_rank(rank_text) if rank_text else None
             score_text = app_res.get('score_text')
 
+            # Preservation Logic: If numeric score failed but raw text exists, keep it in score_text
+            if score_final is None and score_raw and str(score_raw).strip() != '':
+                if not score_text or str(score_text).strip() == '':
+                    score_text = str(score_raw).strip()
+
+            # Preserve Non-numeric D-score in details_json if possible
+            score_d_raw = app_res.get('score_d')
+            if score_d is None and score_d_raw and str(score_d_raw).strip() != '':
+                if not final_details: final_details = {}
+                final_details['score_d_text'] = str(score_d_raw).strip()
+                details_json = json.dumps(final_details)
+
             if existing_result_id:
-                # OVERWRITE LOGIC:
-                # If current source file is 'DETAILED' or 'PEREVENT' and we are seeing different data, update.
+                # 1. Fetch existing state to see if we should update
+                cursor.execute("SELECT score_final, score_d, score_text, rank_text, details_json FROM Results WHERE result_id = ?", (existing_result_id,))
+                db_res = cursor.fetchone()
+                db_final, db_d, db_text, db_rank, db_json_str = db_res if db_res else (None, None, None, None, None)
+                db_json = json.loads(db_json_str) if db_json_str else {}
+                
+                # 2. OVERWRITE LOGIC:
+                # Always update if current source is 'DETAILED' or 'PEREVENT'.
+                # Otherwise, update ONLY if we are filling a gap (NULL -> Value).
                 is_detailed = "DETAILED" in data_package.get('filepath', '') or "PEREVENT" in data_package.get('filepath', '')
                 
-                if is_detailed:
-                     # Simple check: update if numeric score is provided
-                     if score_final is not None:
-                         cursor.execute("UPDATE Results SET score_final = ?, score_d = ?, rank_numeric = ?, rank_text = ? WHERE result_id = ?", 
-                                        (score_final, score_d, rank_numeric, rank_text, existing_result_id))
+                new_json = json.loads(details_json) if details_json else {}
+                has_new_d_text = 'score_d_text' in new_json and 'score_d_text' not in db_json
                 
-                # Rank Backfill Logic (Original)
-                if rank_text and str(rank_text).strip() != '':
-                    cursor.execute("SELECT rank_text FROM Results WHERE result_id = ?", (existing_result_id,))
-                    db_rank_row = cursor.fetchone()
-                    db_rank = db_rank_row[0] if db_rank_row else None
-                    if not db_rank or str(db_rank).strip() == '':
-                        print(f"  [Backfill] Adding missing rank '{rank_text}' to existing result ID {existing_result_id} ({app_res.get('raw_event')})")
-                        cursor.execute("UPDATE Results SET rank_numeric = ?, rank_text = ? WHERE result_id = ?", 
-                                       (rank_numeric, rank_text, existing_result_id))
+                should_update = is_detailed or \
+                               (score_final is not None and db_final is None) or \
+                               (score_d is not None and db_d is None) or \
+                               (score_text and not db_text) or \
+                               (rank_text and not db_rank) or \
+                               has_new_d_text
+                
+                if should_update:
+                     # If not detailed, merge JSON to preserve existing metadata
+                     if not is_detailed and db_json:
+                         merged_json = db_json.copy()
+                         merged_json.update(new_json)
+                         details_json = json.dumps(merged_json)
+                     
+                     cursor.execute("""
+                        UPDATE Results 
+                        SET score_final = COALESCE(?, score_final), 
+                            score_d = COALESCE(?, score_d), 
+                            score_text = COALESCE(?, score_text), 
+                            rank_numeric = COALESCE(?, rank_numeric), 
+                            rank_text = COALESCE(?, rank_text), 
+                            details_json = ? 
+                        WHERE result_id = ?
+                     """, (score_final, score_d, score_text, rank_numeric, rank_text, details_json, existing_result_id))
                 continue
             
             # SQL Construction
@@ -288,8 +322,8 @@ def refresh_gold_tables(conn):
         m.source AS source,
         m.comp_year AS year,
         CASE 
-            WHEN r.session IS NOT NULL AND r.session != '' 
-            THEN m.name || ' (' || r.session || ')' 
+            WHEN MAX(r.session) IS NOT NULL AND MAX(r.session) != '' 
+            THEN m.name || ' (' || MAX(r.session) || ')' 
             ELSE m.name 
         END AS meet_name,
         MAX(r.level) AS level,
@@ -297,38 +331,38 @@ def refresh_gold_tables(conn):
         c.name AS club,
         
         -- Floor (fx)
-        MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS fx_score,
-        MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS fx_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.score_text END)) AS fx_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN json_extract(r.details_json, '$.score_d_text') END)) AS fx_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
         
         -- Pommel Horse (ph)
-        MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_final END) AS ph_score,
-        MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_d END) AS ph_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_text END)) AS ph_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN json_extract(r.details_json, '$.score_d_text') END)) AS ph_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_text END)) AS ph_rank,
         
         -- Rings (sr)
-        MAX(CASE WHEN app.name = 'Rings' THEN r.score_final END) AS sr_score,
-        MAX(CASE WHEN app.name = 'Rings' THEN r.score_d END) AS sr_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Rings' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.score_text END)) AS sr_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Rings' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN json_extract(r.details_json, '$.score_d_text') END)) AS sr_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Rings' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.rank_text END)) AS sr_rank,
         
         -- Vault (vt)
-        MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS vt_score,
-        MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS vt_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.score_text END)) AS vt_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN json_extract(r.details_json, '$.score_d_text') END)) AS vt_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
         
         -- Parallel Bars (pb)
-        MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_final END) AS pb_score,
-        MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_d END) AS pb_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_text END)) AS pb_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN json_extract(r.details_json, '$.score_d_text') END)) AS pb_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_text END)) AS pb_rank,
         
         -- High Bar (hb)
-        MAX(CASE WHEN app.name = 'High Bar' THEN r.score_final END) AS hb_score,
-        MAX(CASE WHEN app.name = 'High Bar' THEN r.score_d END) AS hb_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'High Bar' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.score_text END)) AS hb_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'High Bar' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN json_extract(r.details_json, '$.score_d_text') END)) AS hb_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'High Bar' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_text END)) AS hb_rank,
         
         -- All Around (aa)
-        MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS aa_score,
-        MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS aa_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)) AS aa_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)) AS aa_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
         
     FROM Results r
@@ -338,7 +372,7 @@ def refresh_gold_tables(conn):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'M'
-    GROUP BY p.person_id, m.meet_db_id, r.session
+    GROUP BY p.person_id, m.meet_db_id
     ORDER BY m.comp_year DESC, p.full_name;
     """
     
@@ -350,8 +384,8 @@ def refresh_gold_tables(conn):
         m.source AS source,
         m.comp_year AS year,
         CASE 
-            WHEN r.session IS NOT NULL AND r.session != '' 
-            THEN m.name || ' (' || r.session || ')' 
+            WHEN MAX(r.session) IS NOT NULL AND MAX(r.session) != '' 
+            THEN m.name || ' (' || MAX(r.session) || ')' 
             ELSE m.name 
         END AS meet_name,
         MAX(r.level) AS level,
@@ -359,28 +393,28 @@ def refresh_gold_tables(conn):
         c.name AS club,
         
         -- Vault (vt)
-        MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS vt_score,
-        MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS vt_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.score_text END)) AS vt_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN json_extract(r.details_json, '$.score_d_text') END)) AS vt_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
         
         -- Uneven Bars (ub)
-        MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_final END) AS ub_score,
-        MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_d END) AS ub_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_text END)) AS ub_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN json_extract(r.details_json, '$.score_d_text') END)) AS ub_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_text END)) AS ub_rank,
         
         -- Beam (bb)
-        MAX(CASE WHEN app.name = 'Beam' THEN r.score_final END) AS bb_score,
-        MAX(CASE WHEN app.name = 'Beam' THEN r.score_d END) AS bb_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Beam' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.score_text END)) AS bb_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Beam' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN json_extract(r.details_json, '$.score_d_text') END)) AS bb_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Beam' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.rank_text END)) AS bb_rank,
         
         -- Floor (fx)
-        MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS fx_score,
-        MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS fx_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.score_text END)) AS fx_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN json_extract(r.details_json, '$.score_d_text') END)) AS fx_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
         
         -- All Around (aa)
-        MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS aa_score,
-        MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS aa_d,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)) AS aa_score,
+        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)) AS aa_d,
         COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
         
     FROM Results r
@@ -390,7 +424,7 @@ def refresh_gold_tables(conn):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'F'
-    GROUP BY p.person_id, m.meet_db_id, r.session
+    GROUP BY p.person_id, m.meet_db_id
     ORDER BY m.comp_year DESC, p.full_name;
     """
     
