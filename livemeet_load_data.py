@@ -74,7 +74,7 @@ def process_livemeet_files(meet_manifest, club_alias_map, sample_rate=1):
         return
         
     try:
-        with sqlite3.connect(DB_FILE) as conn:
+        with sqlite3.connect(DB_FILE, timeout=60) as conn:
             # --- Caches now map to the new schema ---
             person_cache = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
             club_cache = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
