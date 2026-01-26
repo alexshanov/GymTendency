@@ -603,6 +603,12 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                 # If it has mostly empty columns except for one apparatus, we might want to name it differently
                                 # But for now, let's just save it.
                                 
+                                # DE-DUPLICATE COLUMNS before saving to avoid issues in step 2
+                                cols = pd.Series(be_final_df.columns)
+                                for dup in cols[cols.duplicated()].unique():
+                                    cols[cols[cols == dup].index.values.tolist()] = [f"{dup}_{i}" if i != 0 else dup for i in range(sum(cols == dup))]
+                                be_final_df.columns = cols
+
                                 be_filename = f"{meet_id_for_filename}_MESSY_BYEVENT_{safe_name}.csv"
                                 be_final_df.to_csv(os.path.join(output_directory, be_filename), index=False)
                                 print(f"      -> Saved By-Event (Messy): {be_filename} ({len(be_final_df)} rows)")
@@ -737,7 +743,14 @@ def fix_and_standardize_headers(input_filename, output_filename):
             name_from_main = event_name_raw
             name_from_sub = str(sub_header.iloc[j]).strip()
             final_name = name_from_main if name_from_main and 'Unnamed' not in name_from_main else name_from_sub
-            clean_header.append(final_name.replace(' ', '_'))
+            clean_name = final_name.replace(' ', '_')
+            
+            # Avoid duplicate column names by appending index
+            if clean_name in clean_header:
+                count = sum(1 for c in clean_header if c.startswith(clean_name))
+                clean_name = f"{clean_name}_{count}"
+                
+            clean_header.append(clean_name)
             j += 1
 
     # --- APPARATUS NAME MAPPING ---
@@ -745,12 +758,20 @@ def fix_and_standardize_headers(input_filename, output_filename):
     # Do not normalize 'Balance_Beam' to 'Beam'.
     mapped_header = clean_header # Pass through logic removed
 
-    if len(mapped_header) != data_df.shape[1]:
-        print(f"Error: Final header length ({len(mapped_header)}) doesn't match data columns ({data_df.shape[1]}).")
-        print("Constructed Header:", mapped_header)
-        return False
-
-    data_df.columns = mapped_header
+    # --- UNIFY HEADERS BEFORE ASSIGNMENT ---
+    unique_headers = []
+    _counts = {}
+    for h in mapped_header:
+        candidate = str(h)
+        if candidate in _counts:
+            _counts[candidate] += 1
+            unique_headers.append(f"{candidate}_{_counts[candidate]}")
+        else:
+            _counts[candidate] = 0
+            unique_headers.append(candidate)
+    
+    data_df.columns = unique_headers
+    data_df = data_df.copy() # Ensure unique index/columns are baked in
 
     # Robust trailing column identifies: only rename if we don't already have them
     # AND if the trailing columns are 'Unnamed' or blank.
@@ -776,25 +797,30 @@ def fix_and_standardize_headers(input_filename, output_filename):
     # --- APPLY SERVICE COLUMN STANDARDIZATION ---
     standard_info_cols = ['Name', 'Club', 'Level', 'Age', 'Prov', 'Age_Group', 'Reporting_Category', 'Meet', 'Group']
     
-    # 1. Ensure all columns exist
+    # 1. Ensure all standard columns exist as unique targets
+    # (data_df.columns was already unified above)
     for col in standard_info_cols:
         if col not in data_df.columns:
-            data_df[col] = ""
+            data_df[col] = "" # Permissive assignment
     
     # 2. Extract Level from Group if Level is empty
     def extract_level(row):
-        if row['Level'] and str(row['Level']).strip():
-            return row['Level']
+        try:
+            val = row['Level']
+            if val and str(val).strip():
+                return val
+        except Exception:
+            pass
         group = str(row['Group'])
         # Common patterns: "Level 4", "P1", "CCP 6", "CPP 1"
         match = re.search(r'(Level\s*\d+|CCP\s*\d+|P\d+|CPP\s*\d+|Provincial\s*\d+|Junior\s*[A-Z]|Senior\s*[A-Z]|Xcel\s*[a-zA-Z]+)', group, re.I)
         return match.group(0) if match else ""
 
-    data_df['Level'] = data_df.apply(extract_level, axis=1)
+    data_df.loc[:, 'Level'] = data_df.apply(extract_level, axis=1)
 
     # 3. Consolidate Province/Prov
     if 'Province' in data_df.columns:
-         data_df['Prov'] = data_df.apply(lambda r: r['Province'] if not str(r['Prov']).strip() else r['Prov'], axis=1)
+         data_df.loc[:, 'Prov'] = data_df.apply(lambda r: r['Province'] if not str(r['Prov']).strip() else r['Prov'], axis=1)
          data_df.drop(columns=['Province'], inplace=True)
 
     # 4. Enforce standard order for info columns, then results
@@ -816,7 +842,7 @@ def fix_and_standardize_headers(input_filename, output_filename):
 if __name__ == "__main__":
     
     # --- CONFIGURATION ---
-    MEET_IDS_CSV = "discovered_meet_ids_livemeet.csv"
+    MEET_IDS_CSV = "verification_manifest.csv"
     MESSY_FOLDER = "CSVs_Livemeet_messy"
     FINAL_FOLDER = "CSVs_Livemeet_final" 
     BASE_URL = "https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id="
@@ -857,7 +883,7 @@ if __name__ == "__main__":
         meet_url = f"{BASE_URL}{meet_id}"
         
         # --- STEP 1: Scrape messy files ---
-        files_saved, file_base_id = scrape_raw_data_to_separate_files(meet_url, meet_id, MESSY_FOLDER)
+        success, files_saved, file_base_id = scrape_raw_data_to_separate_files(meet_url, meet_id, MESSY_FOLDER)
         
         if files_saved > 0:
             print(f"Scraping complete. Found {files_saved} tables for Meet ID {file_base_id}.")
