@@ -433,7 +433,7 @@ def extract_mso_data(filepath, meet_details):
     headers = df.columns
     def find_col_by_fuzzy(candidates):
         for c in headers:
-            if c.upper().strip() in [cand.upper() for cand in candidates]: return c
+            if str(c).upper().strip() in [cand.upper() for cand in candidates]: return c
         return None
 
     name_col = find_col_by_fuzzy(['Gymnast', 'Name'])
@@ -544,7 +544,9 @@ def extract_ksis_data(filepath, meet_details):
     # Detect Discipline
     # 1=WAG, 2=MAG
     discipline_id = 2  # Default MAG
-    if "WAG" in session_name.upper() or "WOMEN" in session_name.upper() or "ARTW" in (meet_details.get('name') or "").upper(): 
+    session_upper = str(session_name).upper()
+    meet_name_upper = (meet_details.get('name') or "").upper()
+    if "WAG" in session_upper or "WOMEN" in session_upper or "ARTW" in meet_name_upper: 
         discipline_id = 1
     
     gender_heuristic = 'M' if discipline_id == 2 else 'F'
@@ -608,7 +610,7 @@ def extract_ksis_data(filepath, meet_details):
                 'score_d': d_str,
                 'score_e': e_str,
                 'rank_text': rank,
-                'bonus': bonus_val if 'bonus_val' in locals() else bonus_str, # Fix: bonus_str
+                'bonus': bonus_str,
                 'penalty': nd_str
             })
 

@@ -125,7 +125,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                "DOUBLE MINI" in page_text_upper or \
                ("TRAMPOLINE" in page_text_upper and "TUMBLING" in page_text_upper):
                 print(f"--> SKIPPING TNT MEET: '{meet_name}' (ID: {meet_id_for_filename})")
-                return 0, None
+                return False, 0, None
             # ----------------------
             
             # === LEVEL-BASED EXTRACTION (PRIORITY) ===
@@ -188,7 +188,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                 
                 if not sessions_to_scrape:
                     print("--> ERROR: No Sessions OR Levels found. This meet structure is unrecognized.")
-                    return 0, None
+                    return False, 0, None
                 
                 base_data_url_param = "SelectSession"
                 print(f"  -> Found {len(sessions_to_scrape)} competitive sessions via Fallback.")

@@ -546,7 +546,7 @@ def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest, 
 
 def main():
     parser = argparse.ArgumentParser(description="Parallel GymTendency Data Loader")
-    parser.add_argument("--workers", type=int, default=200, help="Number of parallel readers")
+    parser.add_argument("--workers", type=int, default=50, help="Number of parallel readers")
     parser.add_argument("--sample", type=int, default=1, help="Process every Nth file")
     parser.add_argument("--limit", type=int, default=0, help="Maximum number of files to process")
     parser.add_argument("--gold-only", action="store_true", help="Skip file processing and only refresh Gold tables")
