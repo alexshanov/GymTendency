@@ -598,8 +598,8 @@ def main():
         remaining_count = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"])
         
         if remaining_count == 0:
-            print("\n=== All tasks completed! ===")
-            break
+            print("\n=== All tasks completed! Waiting for new tasks... ===")
+            # break  <-- REMOVED to enable persistence
         elif stop_requested:
             print(f"\n=== Shutdown requested. {remaining_count} tasks remaining. ===")
             break
@@ -613,10 +613,10 @@ def main():
             queue, get_status_simple = build_queue(all_tasks, status_manifest)
             
             if not queue:
-                print("\n=== All tasks completed after reload! ===")
-                break
-                
-            print(f"Reloaded: {len(all_tasks)} total tasks, {len(queue)} remaining")
+                print("\n=== No pending tasks after reload. Waiting... ===")
+                # break <-- REMOVED to enable persistence
+            else:
+                print(f"Reloaded: {len(all_tasks)} total tasks, {len(queue)} remaining")
 
     # Final summary
     final_remaining = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"])

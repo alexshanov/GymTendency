@@ -6,19 +6,35 @@ import sys
 sys.path.insert(0, '.')
 from etl_functions import is_tt_meet
 
-def extract_kscore_meets_from_html(filename="meets_kscore.html"):
+import requests
+
+KSCORE_URL = "https://live.kscore.ca/"
+
+def extract_kscore_meets_from_html(filename=None):
     """
-    Читает HTML-файл от Kscore, извлекает информацию о каждом соревновании
-    и сохраняет ее в CSV-файл, добавляя источник данных.
+    Fetches HTML from live.kscore.ca (or reads file if provided), extracts meet info,
+    and saves it to CSV.
     """
-    print(f"--- Чтение и парсинг файла: {filename} ---")
-    
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-    except FileNotFoundError:
-        print(f"Ошибка: Файл '{filename}' не найден. Сохраните HTML-страницу с live.kscore.ca в этот файл.")
-        return None
+    if filename:
+        print(f"--- Client requested file parse: {filename} ---")
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+        except FileNotFoundError:
+            print(f"Error: File '{filename}' not found.")
+            return None
+    else:
+        print(f"--- Fetching KScore meets from {KSCORE_URL} ---")
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(KSCORE_URL, headers=headers, timeout=30)
+            response.raise_for_status()
+            html_content = response.text
+        except Exception as e:
+            print(f"Error fetching KScore: {e}")
+            return None
 
     soup = BeautifulSoup(html_content, 'html.parser')
     
@@ -94,7 +110,8 @@ def extract_kscore_meets_from_html(filename="meets_kscore.html"):
 # --- Основной блок для запуска скрипта ---
 if __name__ == "__main__":
     
-    discovered_meets = extract_kscore_meets_from_html(filename="meets_kscore.html")
+    # Fetch directly from web by default
+    discovered_meets = extract_kscore_meets_from_html()
 
     if discovered_meets:
         meets_df = pd.DataFrame(discovered_meets)
