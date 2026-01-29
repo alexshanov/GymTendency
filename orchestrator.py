@@ -111,7 +111,13 @@ def export_status_csv(status_dict):
             parts = key.split('_', 1)
             if len(parts) == 2:
                 stype, mid = parts
-                data.append({'Type': stype, 'MeetID': mid, 'Status': status})
+                status_val = status
+                mname = "Unknown"
+                if isinstance(status, dict):
+                    status_val = status.get('status', 'DONE')
+                    mname = status.get('name', 'Unknown')
+                
+                data.append({'Type': stype, 'MeetID': mid, 'MeetName': mname, 'Status': status_val})
         
         if data:
             df = pd.DataFrame(data)
@@ -230,6 +236,10 @@ def is_high_priority(meet_type, meet_name, location=''):
     if meet_type == 'livemeet':
         # Audio: Grizzly Classic
         if 'GRIZZLY CLASSIC' in n: return True
+        # Match AG or Artistic meets specifically
+        if any(x in n for x in ['AG ', 'ARTISTIC']):
+             if any(x in n for x in ['TG ', 'T&T', 'T & T']): return False
+             return True
         # Audio: AG Canadian Championships (Exclude TNT)
         if 'CANADIAN CHAMPIONSHIP' in n:
              if any(x in n for x in ['TG ', 'T&T', 'T & T']): return False
@@ -387,7 +397,13 @@ def main():
     final_queue_list = high_priority_tasks + low_priority_tasks
     
     # Filter out already finished tasks
-    queue = [t for t in final_queue_list if status_manifest.get(f"{t[0]}_{t[1]}") != "DONE"]
+    def get_status_simple(key):
+        val = status_manifest.get(key)
+        if isinstance(val, dict):
+            return val.get('status')
+        return val
+
+    queue = [t for t in final_queue_list if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"]
     
     logging.info(f"Total tasks loaded: {len(all_tasks)}. Remaining: {len(queue)}")
     print(f"Total tasks loaded: {len(all_tasks)}. Remaining to process: {len(queue)}")
@@ -565,7 +581,7 @@ def main():
                                 else:
                                     message = "0 files" # Should not happen with new logic
                                     
-                                status_manifest[key] = "DONE"
+                                status_manifest[key] = {"status": "DONE", "name": mname}
                                 save_status(status_manifest) # Save immediately
                                 current_csv_count += count
                                 logging.info(f"[{stype}] {mid}: {status} - {message}")
@@ -593,7 +609,7 @@ def main():
                     save_status(status_manifest)
     
                 # Prepare queue for next attempt (retry failed items)
-                queue = [t for t in queue if status_manifest.get(f"{t[0]}_{t[1]}") != "DONE"]
+                queue = [t for t in queue if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"]
                 
                 if queue and attempt < MAX_RETRIES:
                     jitter = random.randint(5, 15)
@@ -602,7 +618,7 @@ def main():
         finally:
             heartbeat_stop.set()
 
-    remaining_count = len([t for t in all_tasks if status_manifest.get(f"{t[0]}_{t[1]}") != "DONE"])
+    remaining_count = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"])
     msg = f"Scraper Orchestration finished. Remaining tasks: {remaining_count}"
     logging.info(msg)
     print(f"\n--- {msg} ---")

@@ -128,6 +128,8 @@ def write_to_db(conn, data_package, caches, club_alias_map):
             final_details = misc_details.copy()
             if app_res.get('calculated'):
                 final_details['calculated'] = True
+            if app_res.get('calculated_d'):
+                final_details['calculated_d'] = True
             details_json = json.dumps(final_details) if final_details else None
 
             raw_event = app_res['raw_event']
@@ -373,6 +375,7 @@ def refresh_gold_tables(conn):
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'M'
     GROUP BY p.person_id, m.meet_db_id
+    HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
     
@@ -425,6 +428,7 @@ def refresh_gold_tables(conn):
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'F'
     GROUP BY p.person_id, m.meet_db_id
+    HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
     

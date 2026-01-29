@@ -1,5 +1,11 @@
 | Source | Meet Name | Status |
 | --- | ---| --- |
+| livemeet | Elite Canada Screening (and Selection event for CWG Travel
+                        Opportunity) | PENDING |
+| kscore | Zone 3,4,5 BC Games Trials & Elite Canada
+							Screening | PENDING |
+| kscore | Elite Canada | PENDING |
+| kscore | Western Canadian Championships | PENDING |
 | kscore | Altadore Ed Vincent | PENDING |
 | kscore | Altadore Ed Vincent | DONE |
 | kscore | Ed Vincent Invitational | PENDING |
@@ -10,7 +16,7 @@
 | livemeet | 2017 Canadian Championships – Men’s & Women’s Artistic | PENDING |
 | livemeet | 2017 Elite Canada | PENDING |
 | livemeet | 2018 Canadian Championships - Men’s and Women’ Artistic | PENDING |
-| livemeet | 2018 Elite Canada | DONE |
+| livemeet | 2018 Elite Canada | PENDING |
 | livemeet | 2019 Artistic Canadian Championships | PENDING |
 | livemeet | 2019 Artistic Western Canadian Championships | PENDING |
 | livemeet | 2019 Eastern Canadian Championships | PENDING |
@@ -23,7 +29,7 @@
 | livemeet | 2021 WAG Elite Canada | PENDING |
 | livemeet | 2022 Canadian Championships | PENDING |
 | livemeet | 2022 PEI Provincials | PENDING |
-| livemeet | 2022 WAG Elite Canada | DONE |
+| livemeet | 2022 WAG Elite Canada | PENDING |
 | livemeet | 2023 Canadian Championships | PENDING |
 | livemeet | 2023 MAG Elite Canada | PENDING |
 | livemeet | 2023 TG Canadian Championships | PENDING |

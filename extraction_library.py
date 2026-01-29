@@ -299,6 +299,15 @@ def extract_livemeet_data(filepath, meet_details):
             # Fallback: SV is often used for Difficulty in lower levels
             if (not d_val or str(d_val).strip() == '') and (sv_val and str(sv_val).strip() != ''):
                 d_val = sv_val
+            
+            # Fallback 2: 'Bonus' is often used for Difficulty in international meets (e.g., Tokyo 2020)
+            if (not d_val or str(d_val).strip() == '') and (bonus_val and str(bonus_val).strip() != ''):
+                try:
+                    # Simple heuristic: if it's > 1.0, it's probably a D-score, not a small stick reward.
+                    if float(str(bonus_val).strip()) > 1.0:
+                        d_val = bonus_val
+                except:
+                    pass
 
             apparatus_results.append({
                 'raw_event': raw_event,
@@ -334,34 +343,47 @@ def extract_livemeet_data(filepath, meet_details):
             'dynamic_metadata': dynamic_values
         })
 
-        # --- AA Fallback Calculation ---
-        # If no AA result was found (which often happens with _BYEVENT_ files having partial headers),
-        # calculate it from the sum of valid apparatus scores.
-        has_aa = any(r['raw_event'] in ['AllAround', 'All Around', 'AA'] for r in apparatus_results)
+        # --- AA Fallback / Enrichment Calculation ---
+        # 1. Check if we have an AA record and if it's missing a D-score
+        aa_record = next((r for r in apparatus_results if r['raw_event'] in ['AllAround', 'All Around', 'AA']), None)
         
-        if not has_aa:
-            valid_sum = 0.0
-            valid_count = 0
-            # Sum all numeric scores for valid apparatuses
-            for res in apparatus_results:
-                evt = res['raw_event']
-                if evt in ['AllAround', 'All Around', 'AA', 'Team']: continue
-                
-                try:
-                    s = float(res['score_final'])
-                    valid_sum += s
-                    valid_count += 1
-                except (ValueError, TypeError):
-                    continue
+        valid_sum = 0.0
+        valid_d_sum = 0.0
+        valid_app_count = 0
+        
+        for res in apparatus_results:
+            evt = res['raw_event']
+            if evt in ['AllAround', 'All Around', 'AA', 'Team']: continue
             
-            if valid_count > 0:
+            try:
+                s = float(str(res['score_final']).replace(',', ''))
+                valid_sum += s
+                valid_app_count += 1
+            except (ValueError, TypeError):
+                pass
+            
+            try:
+                d = float(str(res['score_d']).replace(',', ''))
+                valid_d_sum += d
+            except (ValueError, TypeError):
+                pass
+        
+        if not aa_record:
+            # Create a new AA record
+            if valid_app_count > 0:
                 extracted_results[-1]['apparatus_results'].append({
                     'raw_event': 'All Around',
                     'score_final': f"{valid_sum:.3f}", 
-                    'score_d': '',
+                    'score_d': f"{valid_d_sum:.3f}" if valid_d_sum > 0 else '',
                     'rank_text': '',
                     'calculated': True
                 })
+        else:
+            # Enrich existing AA record if D-score is missing
+            if (not aa_record.get('score_d') or str(aa_record['score_d']).strip() == '') and valid_d_sum > 0:
+                aa_record['score_d'] = f"{valid_d_sum:.3f}"
+                if not aa_record.get('calculated'):
+                    aa_record['calculated_d'] = True
 
     return {
         'source': 'livemeet',
