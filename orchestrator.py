@@ -44,6 +44,8 @@ WORKERS = {
 }
 
 MAX_RETRIES = 3
+POLL_INTERVAL = 60  # Seconds to wait before re-checking for new tasks
+CSV_BATCH_THRESHOLD = 300  # Trigger loader after this many CSVs scraped
 
 def ksis_task(meet_id, meet_name, driver_path=None):
     """Worker task for KSIS scraping."""
@@ -334,76 +336,86 @@ def main():
         except Exception as e:
             print(f"Warning: Initial load failed: {e}")
 
-    all_tasks = []
+    def load_all_tasks():
+        """Load all tasks from manifest files and manual injections."""
+        tasks = []
+        
+        # Load KScore
+        if os.path.exists(KSCORE_CSV):
+            df = pd.read_csv(KSCORE_CSV)
+            id_col = [c for c in df.columns if 'MeetID' in c][0]
+            name_col = [c for c in df.columns if 'MeetName' in c][0]
+            for _, row in df.iterrows():
+                tasks.append(('kscore', str(row[id_col]), str(row[name_col])))
+
+        # Load LiveMeet
+        if os.path.exists(LIVEMEET_CSV):
+            df = pd.read_csv(LIVEMEET_CSV)
+            id_col = [c for c in df.columns if 'MeetID' in c][0]
+            name_col = [c for c in df.columns if 'MeetName' in c][0]
+            loc_col = [c for c in df.columns if 'Location' in c][0]
+            for _, row in df.iterrows():
+                tasks.append(('livemeet', str(row[id_col]), str(row[name_col]), str(row[loc_col])))
+
+        # Load MSO (PAUSED)
+        if False and os.path.exists(MSO_CSV):
+            df = pd.read_csv(MSO_CSV)
+            id_col = [c for c in df.columns if 'MeetID' in c][0]
+            name_col = [c for c in df.columns if 'MeetName' in c][0]
+            for _, row in df.iterrows():
+                tasks.append(('mso', str(row[id_col]), str(row[name_col])))
+
+        # Manual Injection: 2025 Mens HNI & Vegas Cup 2025
+        tasks.append(('mso', '33704', '2025 Mens HNI'))
+        tasks.append(('mso', '33619', 'Vegas Cup 2025 - Men'))
+
+        # Load KSIS
+        if os.path.exists(KSIS_CSV):
+            df = pd.read_csv(KSIS_CSV)
+            id_col = [c for c in df.columns if 'MeetID' in c][0]
+            name_col = [c for c in df.columns if 'MeetName' in c][0]
+            for _, row in df.iterrows():
+                tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
+        
+        return tasks
+
+    def build_queue(all_tasks, status_manifest):
+        """Build prioritized queue from tasks, filtering out completed ones."""
+        high_priority_tasks = []
+        low_priority_tasks = []
+
+        for t in all_tasks:
+            if len(t) == 4:
+                m_type, m_id, m_name, m_loc = t
+            else:
+                m_type, m_id, m_name = t
+                m_loc = ''
+                
+            if is_high_priority(m_type, m_name, m_loc):
+                high_priority_tasks.append((m_type, m_id, m_name))
+            else:
+                low_priority_tasks.append((m_type, m_id, m_name))
+
+        # Randomize within groups
+        random.shuffle(high_priority_tasks)
+        random.shuffle(low_priority_tasks)
+        
+        # Combined Queue: High Priority FIRST
+        final_queue_list = high_priority_tasks + low_priority_tasks
+        
+        # Filter out already finished tasks
+        def get_status_simple(key):
+            val = status_manifest.get(key)
+            if isinstance(val, dict):
+                return val.get('status')
+            return val
+
+        queue = [t for t in final_queue_list if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"]
+        return queue, get_status_simple
     
-    # Load KScore
-    if os.path.exists(KSCORE_CSV):
-        df = pd.read_csv(KSCORE_CSV)
-        id_col = [c for c in df.columns if 'MeetID' in c][0]
-        name_col = [c for c in df.columns if 'MeetName' in c][0]
-        for _, row in df.iterrows():
-            all_tasks.append(('kscore', str(row[id_col]), str(row[name_col])))
-
-    # Load LiveMeet
-    if os.path.exists(LIVEMEET_CSV):
-        df = pd.read_csv(LIVEMEET_CSV)
-        id_col = [c for c in df.columns if 'MeetID' in c][0]
-        name_col = [c for c in df.columns if 'MeetName' in c][0]
-        loc_col = [c for c in df.columns if 'Location' in c][0]
-        for _, row in df.iterrows():
-            all_tasks.append(('livemeet', str(row[id_col]), str(row[name_col]), str(row[loc_col])))
-
-    # Load MSO (PAUSED)
-    if False and os.path.exists(MSO_CSV):
-        df = pd.read_csv(MSO_CSV)
-        id_col = [c for c in df.columns if 'MeetID' in c][0]
-        name_col = [c for c in df.columns if 'MeetName' in c][0]
-        for _, row in df.iterrows():
-            all_tasks.append(('mso', str(row[id_col]), str(row[name_col])))
-
-    # Manual Injection: 2025 Mens HNI & Vegas Cup 2025
-    all_tasks.append(('mso', '33704', '2025 Mens HNI'))
-    all_tasks.append(('mso', '33619', 'Vegas Cup 2025 - Men'))
-
-    # Load KSIS
-    if os.path.exists(KSIS_CSV):
-        df = pd.read_csv(KSIS_CSV)
-        id_col = [c for c in df.columns if 'MeetID' in c][0]
-        name_col = [c for c in df.columns if 'MeetName' in c][0]
-        for _, row in df.iterrows():
-            all_tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
-
-    # SPLIT INTO HIGH AND LOW PRIORITY
-    high_priority_tasks = []
-    low_priority_tasks = []
-
-    for t in all_tasks:
-        if len(t) == 4:
-            m_type, m_id, m_name, m_loc = t
-        else:
-            m_type, m_id, m_name = t
-            m_loc = ''
-            
-        if is_high_priority(m_type, m_name, m_loc):
-            high_priority_tasks.append((m_type, m_id, m_name))
-        else:
-            low_priority_tasks.append((m_type, m_id, m_name))
-
-    # Randomize within groups
-    random.shuffle(high_priority_tasks)
-    random.shuffle(low_priority_tasks)
-    
-    # Combined Queue: High Priority FIRST
-    final_queue_list = high_priority_tasks + low_priority_tasks
-    
-    # Filter out already finished tasks
-    def get_status_simple(key):
-        val = status_manifest.get(key)
-        if isinstance(val, dict):
-            return val.get('status')
-        return val
-
-    queue = [t for t in final_queue_list if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"]
+    # Initial load
+    all_tasks = load_all_tasks()
+    queue, get_status_simple = build_queue(all_tasks, status_manifest)
     
     logging.info(f"Total tasks loaded: {len(all_tasks)}. Remaining: {len(queue)}")
     print(f"Total tasks loaded: {len(all_tasks)}. Remaining to process: {len(queue)}")
@@ -432,198 +444,187 @@ def main():
         'ksis': ksis_task
     }
 
-    with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
-         ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
-         ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool, \
-         ProcessPoolExecutor(max_workers=WORKERS['ksis']) as ksis_pool:
-        
-        pools = {
-            'kscore': k_pool,
-            'livemeet': l_pool,
-            'mso': m_pool,
-            'ksis': ksis_pool
-        }
+    # Main continuous loop
+    while True:
+        with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
+             ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
+             ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool, \
+             ProcessPoolExecutor(max_workers=WORKERS['ksis']) as ksis_pool:
+            
+            pools = {
+                'kscore': k_pool,
+                'livemeet': l_pool,
+                'mso': m_pool,
+                'ksis': ksis_pool
+            }
 
-        # Start Heartbeat Thread
-        heartbeat_stop = threading.Event()
-        
-        # Start Heartbeat Thread
-        heartbeat_stop = threading.Event()
-        
-        def count_pending_csvs():
-            """
-            Counts CSVs that are on disk BUT not yet in the ProcessedFiles table.
-            """
+            # Start Heartbeat Thread
+            heartbeat_stop = threading.Event()
+            
+            def count_pending_csvs():
+                """Counts CSVs on disk not yet in ProcessedFiles table."""
+                try:
+                    files_on_disk = set()
+                    for d in [KSCORE_DIR, LIVEMEET_FINAL_DIR, MSO_DIR, KSIS_DIR]:
+                        if os.path.exists(d):
+                            for f in glob.glob(os.path.join(d, "*.csv")):
+                                files_on_disk.add(os.path.basename(f))
+                    
+                    if not files_on_disk:
+                        return 0
+
+                    if not os.path.exists("gym_data.db"):
+                        return len(files_on_disk)
+
+                    with sqlite3.connect("gym_data.db") as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT file_path FROM ProcessedFiles")
+                        processed_files = set(os.path.basename(row[0]) for row in cursor.fetchall())
+                        
+                        pending = len(files_on_disk - processed_files)
+                        return pending
+                except Exception as e:
+                    return "Err"
+
+            heartbeat = StatusHeartbeat(
+                heartbeat_stop, 
+                get_remaining_meets=lambda: len(queue),
+                get_pending_csvs=count_pending_csvs
+            )
+            heartbeat.start()
+
             try:
-                # 1. Get set of all files on disk
-                files_on_disk = []
-                for d in [KSCORE_DIR, LIVEMEET_FINAL_DIR, MSO_DIR, KSIS_DIR]:
-                    if os.path.exists(d):
-                        files_on_disk.extend(glob.glob(os.path.join(d, "*.csv")))
-                
-                if not files_on_disk:
-                    return 0
-
-                # 2. Get set of processed file hashes from DB
-                # We can't easily query by filename because paths might differ, so we use hash or just filename if unique enough.
-                # etl_functions uses hash. Calculating hash for 1000s of files every 30s is too heavy.
-                # optimization: Check by filename match first?
-                # ProcessedFiles table has file_path (might be absolute or relative) and file_hash.
-                
-                # Check DB access
-                if not os.path.exists("gym_data.db"):
-                    return len(files_on_disk)
-
-                with sqlite3.connect("gym_data.db") as conn:
-                    # We'll just count how many matches. 
-                    # Actually, calculating hashes is slow. 
-                    # Let's approximate: 
-                    # Total Files on Disk - Total Files in ProcessedFiles that match the directory pattern?
-                    # No, that's inaccurate if we delete files.
-                    
-                    # PROPOSAL:
-                    # For the heartbeat, strict accuracy is less important than trend.
-                    # BUT the user specifically asked for "current CSV load counter to be loaded".
-                    # Let's rely on the Loader's logic: it checks ProcessedFiles.
-                    # We can fetch ALL processed hashes once, then update? No, existing loader runs.
-                    
-                    # Fast proxy: CHECK FILE MODIFICATION TIME vs DB Last Processed?
-                    # Too complex.
-                    
-                    # Let's just return Total Files found in the folders. 
-                    # The Loader *moves* or *deletes* files? No, it keeps them.
-                    # Ah, if the loader keeps them, then "files waiting for load" = Total Files - Processed Files.
-                    
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM ProcessedFiles")
-                    processed_count = cursor.fetchone()[0]
-                    
-                    total_on_disk = len(files_on_disk)
-                    
-                    # This is an approximation but standard "Pending" calculation
-                    # Pending = Total found - Processed
-                    # It might be negative if we processed files that are now deleted, but that's rare here.
-                    pending = max(0, total_on_disk - processed_count)
-                    return f"{pending} (Approx)"
-            except Exception as e:
-                return "Err"
-
-        heartbeat = StatusHeartbeat(
-            heartbeat_stop, 
-            get_remaining_meets=lambda: len(queue),
-            get_pending_csvs=count_pending_csvs
-        )
-        heartbeat.start()
-
-        try:
-            # Multi-attempt logic
-            for attempt in range(1, MAX_RETRIES + 1):
-                if stop_requested or not queue:
-                    break
-                
-                print(f"\n--- ATTEMPT {attempt}/{MAX_RETRIES} ---")
-                logging.info(f"Starting attempt {attempt}/{MAX_RETRIES}")
-                
-                # Resource cleanup before each attempt
-                cleanup_orphaned_processes()
-                
-                # Chunk the queue for incremental processing based on file count
-                # User Request: 1000 CSVs -> 1 load
-                # We process in small chunks of meets to check the file count frequently
-                MEET_CHUNK_SIZE = 50 
-                CSV_BATCH_THRESHOLD = 1000
-                
-                current_csv_count = 0
-                
-                for i in range(0, len(queue), MEET_CHUNK_SIZE):
-                    if stop_requested:
+                # Multi-attempt logic
+                for attempt in range(1, MAX_RETRIES + 1):
+                    if stop_requested or not queue:
                         break
-                        
-                    chunk = queue[i : i + MEET_CHUNK_SIZE]
                     
-                    meets_rem = len(queue) - i
-                    print(f"\n[PROGRESS] Meets remaining in this attempt: {meets_rem} | CSVs waiting for next load: {current_csv_count}/{CSV_BATCH_THRESHOLD}")
+                    print(f"\n--- ATTEMPT {attempt}/{MAX_RETRIES} ---")
+                    logging.info(f"Starting attempt {attempt}/{MAX_RETRIES}")
                     
-                    futures = {}
-                    for stype, mid, mname in chunk:
-                        pool = pools[stype]
-                        func = task_functions[stype]
-                        
-                        # Pass driver_path to all Selenium-based tasks
-                        futures[pool.submit(func, mid, mname, valid_driver_path)] = (stype, mid, mname)
+                    # Resource cleanup before each attempt
+                    cleanup_orphaned_processes()
                     
-                    # Wait for this chunk to complete
-                    for future in as_completed(futures):
+                    # Chunk the queue for incremental processing based on file count
+                    # Trigger loader every CSV_BATCH_THRESHOLD files
+                    MEET_CHUNK_SIZE = 50 
+                    
+                    current_csv_count = 0
+                    
+                    for i in range(0, len(queue), MEET_CHUNK_SIZE):
                         if stop_requested:
-                            # Cancel remaining futures in this chunk
-                            for f in futures: f.cancel()
                             break
-    
-                        stype, mid, mname = futures[future]
-                        key = f"{stype}_{mid}"
+                            
+                        chunk = queue[i : i + MEET_CHUNK_SIZE]
                         
-                        try:
-                            result = future.result()
-                            parts = result.split(':', 2) # Expect DONE:mid:count or ERROR:mid:msg
-                            status = parts[0]
+                        meets_rem = len(queue) - i
+                        print(f"\n[PROGRESS] Meets remaining in this attempt: {meets_rem} | CSVs waiting for next load: {current_csv_count}/{CSV_BATCH_THRESHOLD}")
+                        
+                        futures = {}
+                        for stype, mid, mname in chunk:
+                            pool = pools[stype]
+                            func = task_functions[stype]
                             
-                            message = ""
-                            count = 0
+                            # Pass driver_path to all Selenium-based tasks
+                            futures[pool.submit(func, mid, mname, valid_driver_path)] = (stype, mid, mname)
+                        
+                        # Wait for this chunk to complete
+                        for future in as_completed(futures):
+                            if stop_requested:
+                                # Cancel remaining futures in this chunk
+                                for f in futures: f.cancel()
+                                break
+        
+                            stype, mid, mname = futures[future]
+                            key = f"{stype}_{mid}"
                             
-                            if "DONE" in status:
-                                if len(parts) >= 3:
-                                    mid_res = parts[1]
-                                    try:
-                                        count = int(parts[2])
-                                    except:
-                                        count = 0
-                                    message = f"{count} files"
-                                else:
-                                    message = "0 files" # Should not happen with new logic
+                            try:
+                                result = future.result()
+                                parts = result.split(':', 2) # Expect DONE:mid:count or ERROR:mid:msg
+                                status = parts[0]
+                                
+                                message = ""
+                                count = 0
+                                
+                                if "DONE" in status:
+                                    if len(parts) >= 3:
+                                        mid_res = parts[1]
+                                        try:
+                                            count = int(parts[2])
+                                        except:
+                                            count = 0
+                                        message = f"{count} files"
+                                    else:
+                                        message = "0 files" # Should not happen with new logic
+                                        
+                                    status_manifest[key] = {"status": "DONE", "name": mname}
+                                    save_status(status_manifest) # Save immediately
+                                    current_csv_count += count
+                                    logging.info(f"[{stype}] {mid}: {status} - {message}")
+                                    print(f"  [OK] {mid} ({count} files) | Pending CSVs: {current_csv_count} | Meets Scraped: {len(status_manifest)}/{len(all_tasks)}")
                                     
-                                status_manifest[key] = {"status": "DONE", "name": mname}
-                                save_status(status_manifest) # Save immediately
-                                current_csv_count += count
-                                logging.info(f"[{stype}] {mid}: {status} - {message}")
-                                print(f"  [OK] {mid} ({count} files) | Pending CSVs: {current_csv_count} | Meets Scraped: {len(status_manifest)}/{len(all_tasks)}")
-                                
-                                # CHECK IF WE HIT THE CSV THRESHOLD (inside loop for immediate trigger)
-                                if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:
-                                    print(f"\n>>> Batch Threshold Hit ({current_csv_count} >= {CSV_BATCH_THRESHOLD} CSVs). Running Loader... <<<")
-                                    try:
-                                        subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
-                                        current_csv_count = 0 # Reset counter after load
-                                        print(">>> Loader Complete. Resuming Scraper... <<<")
-                                    except Exception as e:
-                                        logging.error(f"Failed to run incremental load: {e}")
-                                
-                            else:
-                                # ERROR logic
-                                message = parts[1] if len(parts) > 1 else "Unknown Error"
-                                logging.error(f"  [FAIL] {mid}: {message}")
-                                
-                        except Exception as e:
-                            logging.error(f"  [EXCEPTION] {mid}: {e}")
+                                    # CHECK IF WE HIT THE CSV THRESHOLD (inside loop for immediate trigger)
+                                    if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:
+                                        print(f"\n>>> Batch Threshold Hit ({current_csv_count} >= {CSV_BATCH_THRESHOLD} CSVs). Running Loader... <<<")
+                                        try:
+                                            subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
+                                            current_csv_count = 0 # Reset counter after load
+                                            print(">>> Loader Complete. Resuming Scraper... <<<")
+                                        except Exception as e:
+                                            logging.error(f"Failed to run incremental load: {e}")
+                                    
+                                else:
+                                    # ERROR logic
+                                    message = parts[1] if len(parts) > 1 else "Unknown Error"
+                                    logging.error(f"  [FAIL] {mid}: {message}")
+                                    
+                            except Exception as e:
+                                logging.error(f"  [EXCEPTION] {mid}: {e}")
+                        
+                        # Update status after chunk
+                        save_status(status_manifest)
+        
+                    # Prepare queue for next attempt (retry failed items)
+                    queue = [t for t in queue if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"]
                     
-                    # Update status after chunk
-                    save_status(status_manifest)
-    
-                # Prepare queue for next attempt (retry failed items)
-                queue = [t for t in queue if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"]
-                
-                if queue and attempt < MAX_RETRIES:
-                    jitter = random.randint(5, 15)
-                    print(f"Waiting {jitter}s before next retry attempt...")
-                    time.sleep(jitter)
-        finally:
-            heartbeat_stop.set()
+                    if queue and attempt < MAX_RETRIES:
+                        jitter = random.randint(5, 15)
+                        print(f"Waiting {jitter}s before next retry attempt...")
+                        time.sleep(jitter)
+            finally:
+                heartbeat_stop.set()
 
-    remaining_count = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"])
-    msg = f"Scraper Orchestration finished. Remaining tasks: {remaining_count}"
+        # Check if we should continue with a new round
+        remaining_count = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"])
+        
+        if remaining_count == 0:
+            print("\n=== All tasks completed! ===")
+            break
+        elif stop_requested:
+            print(f"\n=== Shutdown requested. {remaining_count} tasks remaining. ===")
+            break
+        else:
+            print(f"\n--- Round complete. {remaining_count} tasks remaining. Reloading in {POLL_INTERVAL}s... ---")
+            time.sleep(POLL_INTERVAL)
+            
+            # Reload status manifest and rebuild queue
+            status_manifest = load_status()
+            all_tasks = load_all_tasks()
+            queue, get_status_simple = build_queue(all_tasks, status_manifest)
+            
+            if not queue:
+                print("\n=== All tasks completed after reload! ===")
+                break
+                
+            print(f"Reloaded: {len(all_tasks)} total tasks, {len(queue)} remaining")
+
+    # Final summary
+    final_remaining = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"])
+    msg = f"Scraper Orchestration finished. Remaining tasks: {final_remaining}"
     logging.info(msg)
     print(f"\n--- {msg} ---")
-    if remaining_count > 0:
-        print(f"Warning: {remaining_count} tasks could not be completed after {MAX_RETRIES} attempts.")
+    if final_remaining > 0:
+        print(f"Warning: {final_remaining} tasks could not be completed.")
     
     print("\nTriggering final load...")
     try:
