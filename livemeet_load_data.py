@@ -138,7 +138,8 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
     # --- 1. Detect and Normalize Raw Headers (Sportzsoft/LiveMeet messy format) ---
     # Some files have repeated apparatus headers: Vault, Vault, Vault ...
     # These are triplets of (D, Score, Rank), often repeated 3 times.
-    raw_apps = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar', 'AllAround']
+    raw_apps = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar', 'AllAround',
+                'Uneven Bars', 'Pommel Horse', 'Parallel Bars', 'High Bar', 'All Around']
     new_headers = []
     seen_counts = {}
     for col in df.columns:

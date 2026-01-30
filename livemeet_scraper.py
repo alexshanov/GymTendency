@@ -562,7 +562,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                                         if pd.isna(val): continue
     
                                                         target_suffix = str(col)
-                                                        if col == 'D-Score': target_suffix = 'D'
+                                                        if col == 'D-Score' or col == 'Vault' or col == 'SV': target_suffix = 'D'
                                                         elif col == 'E Score': target_suffix = 'E'
                                                         elif col == 'Rank': target_suffix = 'Rnk'
                                                         elif col == 'Final' or col == app_label: target_suffix = 'Score'
