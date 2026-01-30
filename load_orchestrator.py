@@ -21,6 +21,7 @@ from etl_functions import (
     setup_database,
     load_club_aliases,
     standardize_club_name,
+    standardize_level_name,
     standardize_athlete_name,
     get_or_create_person,
     get_or_create_club,
@@ -40,7 +41,7 @@ DB_FILE = "gym_data.db"
 KSCORE_DIR = "CSVs_kscore_final"
 LIVEMEET_DIR = "CSVs_Livemeet_final"
 MSO_DIR = "CSVs_mso_final"
-KSIS_DIR = "CSVs_ksis_messy"
+KSIS_DIR = "CSVs_ksis_final"
 
 KSCORE_MANIFEST = "discovered_meet_ids_kscore.csv"
 LIVEMEET_MANIFEST = "discovered_meet_ids_livemeet.csv"
@@ -115,6 +116,8 @@ def write_to_db(conn, data_package, caches, club_alias_map):
         for raw_col, val in athlete_res['dynamic_metadata'].items():
             safe_col = sanitize_column_name(raw_col)
             if ensure_column_exists(cursor, 'Results', safe_col, 'TEXT'):
+                if safe_col == 'level':
+                    val = standardize_level_name(val)
                 dynamic_values[safe_col] = val
                 # Unify Group into Session for database consistency
                 if safe_col == 'group' and 'session' not in dynamic_values:
@@ -323,6 +326,7 @@ def refresh_gold_tables(conn):
         p.full_name AS athlete_name,
         m.source AS source,
         m.comp_year AS year,
+        m.start_date_iso AS date,
         CASE 
             WHEN MAX(r.session) IS NOT NULL AND MAX(r.session) != '' 
             THEN m.name || ' (' || MAX(r.session) || ')' 
@@ -386,6 +390,7 @@ def refresh_gold_tables(conn):
         p.full_name AS athlete_name,
         m.source AS source,
         m.comp_year AS year,
+        m.start_date_iso AS date,
         CASE 
             WHEN MAX(r.session) IS NOT NULL AND MAX(r.session) != '' 
             THEN m.name || ' (' || MAX(r.session) || ')' 

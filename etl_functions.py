@@ -187,6 +187,22 @@ def load_club_aliases(filepath="club_aliases.json"):
 
 CLUB_ALIASES = load_club_aliases()
 
+def load_level_aliases(filepath="level_aliases.json"):
+    """
+    Loads manual level aliases from a JSON file.
+    Example: {"ASP": "Aspire"}
+    """
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        print(f"Error: Could not parse '{filepath}'.")
+        return {}
+
+LEVEL_ALIASES = load_level_aliases()
+
 # ==============================================================================
 #  SCHEMA EVOLUTION & METADATA
 # ==============================================================================
@@ -349,6 +365,24 @@ def standardize_club_name(club_str, alias_map):
     if not club_str or not isinstance(club_str, str): return None
     cleaned_club = club_str.strip().title()
     return alias_map.get(cleaned_club, cleaned_club)
+
+def standardize_level_name(level_str, alias_map=LEVEL_ALIASES):
+    """
+    Standardize level names.
+    """
+    if not level_str or not isinstance(level_str, str): return level_str
+    
+    # 1. Exact match
+    if level_str in alias_map:
+        return alias_map[level_str]
+        
+    # 2. Case-insensitive match
+    l_lower = level_str.lower().strip()
+    for alias, canonical in alias_map.items():
+        if alias.lower().strip() == l_lower:
+            return canonical
+            
+    return level_str.strip()
 
 def standardize_athlete_name(name_str, remove_middle_initial=True):
     """

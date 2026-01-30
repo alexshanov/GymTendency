@@ -288,7 +288,7 @@ class StatusHeartbeat(threading.Thread):
             
             rem_meets = self.get_remaining_meets()
             pending_csvs = self.get_pending_csvs()
-            print(f"\n[HEARTBEAT] Meets remaining: {rem_meets} | CSVs waiting for load: {pending_csvs}")
+            print(f"\n[ORCHESTRATOR STATUS] Remaining: {rem_meets} meets | Unloaded CSVs: {pending_csvs}")
 
 # --- MAIN ORCHESTRATOR ---
 
@@ -486,9 +486,11 @@ def main():
                 except Exception as e:
                     return "Err"
 
+            current_progress = 0
+            
             heartbeat = StatusHeartbeat(
                 heartbeat_stop, 
-                get_remaining_meets=lambda: len(queue),
+                get_remaining_meets=lambda: len(queue) - current_progress,
                 get_pending_csvs=count_pending_csvs
             )
             heartbeat.start()
@@ -560,8 +562,16 @@ def main():
                                     status_manifest[key] = {"status": "DONE", "name": mname}
                                     save_status(status_manifest) # Save immediately
                                     current_csv_count += count
+                                    current_progress += 1 # Important for heartbeat
+                                    
+                                    # Calculate real-time stats
+                                    all_done_count = len([k for k,v in status_manifest.items() if (isinstance(v, dict) and v.get('status') == 'DONE') or v == 'DONE'])
+                                    total_loaded = len(all_tasks)
+                                    # Fallback simple count
+                                    rem_total = total_loaded - all_done_count
+                                    
                                     logging.info(f"[{stype}] {mid}: {status} - {message}")
-                                    print(f"  [OK] {mid} ({count} files) | Pending CSVs: {current_csv_count} | Meets Scraped: {len(status_manifest)}/{len(all_tasks)}")
+                                    print(f"  [OK] {mid} ({count:2} files) | Total Rem: {rem_total:<4} | Pending: {current_csv_count}/{CSV_BATCH_THRESHOLD} | Scraped: {all_done_count}/{total_loaded}")
                                     
                                     # CHECK IF WE HIT THE CSV THRESHOLD (inside loop for immediate trigger)
                                     if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:
@@ -577,9 +587,13 @@ def main():
                                     # ERROR logic
                                     message = parts[1] if len(parts) > 1 else "Unknown Error"
                                     logging.error(f"  [FAIL] {mid}: {message}")
+                                    print(f"  [FAIL] {mid}: {message}")
+                                    current_progress += 1 # Still progress even if fail
                                     
                             except Exception as e:
                                 logging.error(f"  [EXCEPTION] {mid}: {e}")
+                                print(f"  [EXCEPTION] {mid}: {e}")
+                                current_progress += 1
                         
                         # Update status after chunk
                         save_status(status_manifest)

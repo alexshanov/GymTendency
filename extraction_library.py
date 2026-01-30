@@ -241,14 +241,22 @@ def extract_livemeet_data(filepath, meet_details):
     # Detect Discipline
     MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar'}
     WAG_INDICATORS = {'Uneven_Bars', 'UnevenBars', 'Beam'}
-    discipline_id = 99
-    discipline_name = 'Other'
-    gender_heuristic = 'Unknown'
+    
+    mag_score = 0
+    wag_score = 0
     for col in df.columns:
-        if any(indicator in col for indicator in MAG_INDICATORS):
-            discipline_id = 2; gender_heuristic = 'M'; break
-        if any(indicator in col for indicator in WAG_INDICATORS):
-            discipline_id = 1; gender_heuristic = 'F'; break
+        if any(indicator in col for indicator in MAG_INDICATORS): mag_score += 1
+        if any(indicator in col for indicator in WAG_INDICATORS): wag_score += 1
+            
+    discipline_id = 99
+    gender_heuristic = 'Unknown'
+    
+    if wag_score > mag_score:
+        discipline_id = 1; gender_heuristic = 'F'
+    elif mag_score > wag_score:
+        discipline_id = 2; gender_heuristic = 'M'
+    elif mag_score > 0: # Tie but at least some indicators
+        discipline_id = 2; gender_heuristic = 'M'
             
     # Add AA to event bases if not implicitly caught
     # Logic below catches Result_X_Score. We need to ensure Result_AllAround_Score is caught.
@@ -583,7 +591,8 @@ def extract_ksis_data(filepath, meet_details):
     APP_MAP = {
         'mfloor': 'Floor', 'horse': 'Pommel Horse', 'rings': 'Rings', 'mvault': 'Vault', 
         'pbars': 'Parallel Bars', 'hbar': 'High Bar', 'wvault': 'Vault', 'ubars': 'Uneven Bars', 
-        'beam': 'Beam', 'wfloor': 'Floor'
+        'beam': 'Beam', 'wfloor': 'Floor',
+        'vault': 'Vault', 'bars': 'Uneven Bars', 'floor': 'Floor' # Common KSIS variants
     }
 
     extracted_results = []

@@ -576,10 +576,10 @@
         "choice": null
     },
     {
-        "name_1": "Oliver Pearson",
-        "name_2": "Oliver Pearson?",
+        "name_1": "Nicholas Gareffa",
+        "name_2": "Nicholas Garreffa",
         "reason": "Fuzzy Match (0.97)",
-        "choice": 1
+        "choice": null
     },
     {
         "name_1": "Thomas Gautreau",
@@ -675,7 +675,7 @@
         "name_1": "Anderson Connor",
         "name_2": "Connor Anderson",
         "reason": "Reversal",
-        "choice": null
+        "choice": 2
     },
     {
         "name_1": "Anderson Paget",
@@ -687,7 +687,7 @@
         "name_1": "Andrei Soos",
         "name_2": "Soos Andrei",
         "reason": "Reversal",
-        "choice": null
+        "choice": 1
     },
     {
         "name_1": "Annett Desmond",
@@ -699,13 +699,13 @@
         "name_1": "Antoine Gagnon",
         "name_2": "Gagnon Antoine",
         "reason": "Reversal",
-        "choice": null
+        "choice": 1
     },
     {
         "name_1": "Appleton Luc",
         "name_2": "Luc Appleton",
         "reason": "Reversal",
-        "choice": null
+        "choice": 2
     },
     {
         "name_1": "Ari Upshall",
@@ -735,7 +735,7 @@
         "name_1": "Ashton Johnson",
         "name_2": "Johnson Ashton",
         "reason": "Reversal",
-        "choice": null
+        "choice": 1
     },
     {
         "name_1": "Ashwin Markides",
