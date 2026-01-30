@@ -1,0 +1,2372 @@
+[
+    {
+        "name_1": "Lucas Riva",
+        "name_2": "Lucas Rivera",
+        "reason": "Fuzzy Match (0.91)",
+        "choice": null
+    },
+    {
+        "name_1": "Anthony Alain",
+        "name_2": "Anthony Balan",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Chan Benjamin",
+        "name_2": "Chen Benjamin",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Josh Holmes",
+        "name_2": "Joshua Holmes",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Jet Chen",
+        "name_2": "Jet Cheng",
+        "reason": "Fuzzy Match (0.94)",
+        "choice": null
+    },
+    {
+        "name_1": "Lachlan Richards",
+        "name_2": "Lachlan Richardson",
+        "reason": "Fuzzy Match (0.94)",
+        "choice": null
+    },
+    {
+        "name_1": "Eli Sirois",
+        "name_2": "Elie Sirois",
+        "reason": "Fuzzy Match (0.95)",
+        "choice": null
+    },
+    {
+        "name_1": "Jackson Batista",
+        "name_2": "Jackson Battista",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Jackson Richard",
+        "name_2": "Jackson Richards",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Brochu George",
+        "name_2": "George Brochu",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Chadder James",
+        "name_2": "James Chadder",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "James Logan",
+        "name_2": "Logan James",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Lachlan Pressey",
+        "name_2": "Pressey Lachlan",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Alexander Ayres",
+        "name_2": "Alexander Tanouye",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Anthony Balan",
+        "name_2": "Anthony Ibarra",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Eli Anderson",
+        "name_2": "Samuel Anderson",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Joshua Earle",
+        "name_2": "Joshua McCarley",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Alexander Riley",
+        "name_2": "Alexander Timperley",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Evan Huber",
+        "name_2": "Evan Schuler",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Ian Mwaura",
+        "name_2": "Isaac Mwaura",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Joshua Hands",
+        "name_2": "Joshua Man",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Joshua Li",
+        "name_2": "Joshua Wallis",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Kuzmenko Alexander",
+        "name_2": "Kuzmenko Alexander (Sasha)",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Liam Boston",
+        "name_2": "Liam Sutton",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Lucas Brandt",
+        "name_2": "Lucas Rent",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Abbott Dorian",
+        "name_2": "Abbott Ryan",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Alex Cameron",
+        "name_2": "Alexander Cameron",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Alexander Cameron",
+        "name_2": "Alexander Nickerson",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Anson Cooper",
+        "name_2": "Talon Cooper",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Caden Williams",
+        "name_2": "Denzel Williams",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Chung Cooper",
+        "name_2": "Young Cooper",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Gavin Bowles",
+        "name_2": "Gavin Rowley",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Joshua Aloia",
+        "name_2": "Joshua Kloza",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Joshua Man",
+        "name_2": "Joshua Martini",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Thomas Amare",
+        "name_2": "Thomas James",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Alexander Miller",
+        "name_2": "Alexander Riley",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Henry Bos",
+        "name_2": "Henry Enos",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Liam Smith",
+        "name_2": "Sam Smith",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Jackson Martin",
+        "name_2": "Jacob Martin",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Joshua Aloia",
+        "name_2": "Joshua Li",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Sam Dubuc",
+        "name_2": "Samuel Dubuc",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Sam Lemay",
+        "name_2": "Samuel Lemay",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Alexander Ayres",
+        "name_2": "Alexander Sykes",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Benjamin Beattie",
+        "name_2": "Benjie Beattie",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Boschin Lucas",
+        "name_2": "Chin Lucas",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Evan Barton",
+        "name_2": "Evan LeBaron",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Thomas Jace",
+        "name_2": "Thomas James",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Alexander Ayres",
+        "name_2": "Alexander Martens",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Cooper Davison",
+        "name_2": "Cooper Dishon",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "Eli Buchanan",
+        "name_2": "Elijah Buchanan",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "Sam Zakutney",
+        "name_2": "Samuel Zakutney",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "Aidan Ryan",
+        "name_2": "Aidan Tran",
+        "reason": "Word Overlap (0.90)",
+        "choice": null
+    },
+    {
+        "name_1": "Joshua Mah",
+        "name_2": "Joshua Man",
+        "reason": "Word Overlap (0.90)",
+        "choice": null
+    },
+    {
+        "name_1": "Shepard Brandon",
+        "name_2": "Shepherd Brandon",
+        "reason": "Fuzzy Match (0.90)",
+        "choice": null
+    },
+    {
+        "name_1": "Azrael Hing",
+        "name_2": "Azreal Hing",
+        "reason": "Fuzzy Match (0.91)",
+        "choice": null
+    },
+    {
+        "name_1": "Charles-Etienne Legar\u00e9",
+        "name_2": "Charles-\u00c9tienne L\u00e9gar\u00e9",
+        "reason": "Fuzzy Match (0.91)",
+        "choice": null
+    },
+    {
+        "name_1": "Trey Aronson",
+        "name_2": "Ty Aronson",
+        "reason": "Fuzzy Match (0.91)",
+        "choice": null
+    },
+    {
+        "name_1": "Aidan Harder",
+        "name_2": "Aiden Harder",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "F\u00e9lix Berub\u00e9",
+        "name_2": "F\u00e9lix B\u00e9rub\u00e9",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "J\u00e9r?me Pilon",
+        "name_2": "J\u00e9r\u00f4me Pilon",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Kieran Wiebe",
+        "name_2": "Kieren Wiebe",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Kobe Guckert",
+        "name_2": "Koen Guckert",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Leandre Sauve",
+        "name_2": "Leandre Sauv\u00e9",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Leandre Sauv\u00e9",
+        "name_2": "L\u00e9andre Sauv\u00e9",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Mayer Syrdya",
+        "name_2": "Mayer Syryda",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Milinkovic-Gene Alex",
+        "name_2": "Milinkovic-Gene Max",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Napol\u00e9on C?t\u00e9",
+        "name_2": "Napol\u00e9on Cot\u00e9",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Napol\u00e9on C?t\u00e9",
+        "name_2": "Napol\u00e9on C\u00f4t\u00e9",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Napol\u00e9on Cot\u00e9",
+        "name_2": "Napol\u00e9on C\u00f4t\u00e9",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Quinlan Perron",
+        "name_2": "Quinn Perron",
+        "reason": "Fuzzy Match (0.92)",
+        "choice": null
+    },
+    {
+        "name_1": "Aidan Campbell",
+        "name_2": "Aiden Campbell",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Bodhan Romanov",
+        "name_2": "Bohdan Romanov",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Gregory Poulin",
+        "name_2": "Gr\u00e9gory Poulin",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Jasmin Gelinas",
+        "name_2": "Jasmin G\u00e9linas",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Kolten Schweitz",
+        "name_2": "Kolten Schwietz",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Mathieu Lapres",
+        "name_2": "Mathieu Lapr\u00e9s",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Maxime Dallaire",
+        "name_2": "Maxime Dallarie",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Rapha?l Fortin",
+        "name_2": "Raphael Fortin",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Rene Cournoyer",
+        "name_2": "Ren\u00e9 Cournoyer",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Trent Milligan",
+        "name_2": "Trentin Milligan",
+        "reason": "Fuzzy Match (0.93)",
+        "choice": null
+    },
+    {
+        "name_1": "Oliver Blackmore",
+        "name_2": "Oliver Blakemore",
+        "reason": "Fuzzy Match (0.94)",
+        "choice": null
+    },
+    {
+        "name_1": "Ruben Van Neikerk",
+        "name_2": "Ruben Van Niekerk",
+        "reason": "Fuzzy Match (0.94)",
+        "choice": null
+    },
+    {
+        "name_1": "Ianov Illya",
+        "name_2": "Ianov Ilya",
+        "reason": "Fuzzy Match (0.95)",
+        "choice": null
+    },
+    {
+        "name_1": "Pier-Olivier Julien",
+        "name_2": "Pierre-Olivier Julien",
+        "reason": "Fuzzy Match (0.95)",
+        "choice": null
+    },
+    {
+        "name_1": "Vincent d'Entremont",
+        "name_2": "Vincent d-Entremont",
+        "reason": "Fuzzy Match (0.95)",
+        "choice": null
+    },
+    {
+        "name_1": "Grice Matthew",
+        "name_2": "Grice* Matthew",
+        "reason": "Fuzzy Match (0.96)",
+        "choice": null
+    },
+    {
+        "name_1": "Illya Ivanov",
+        "name_2": "Ilya Ivanov",
+        "reason": "Fuzzy Match (0.96)",
+        "choice": null
+    },
+    {
+        "name_1": "Mathew Lawton",
+        "name_2": "Matthew Lawton",
+        "reason": "Fuzzy Match (0.96)",
+        "choice": null
+    },
+    {
+        "name_1": "Turner Gartley",
+        "name_2": "Turner Gartly",
+        "reason": "Fuzzy Match (0.96)",
+        "choice": null
+    },
+    {
+        "name_1": "Anickoli Hennig",
+        "name_2": "Anikoli Hennig",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Braedan Spiteri",
+        "name_2": "Braedan Spitieri",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Comfort Mathew",
+        "name_2": "Comfort Matthew",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "F\u00e9lix Blaqui\u00e8re",
+        "name_2": "F\u00e9lix Blaqui\u00e8res",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Gabriel Romano",
+        "name_2": "Gabriele Romano",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Mathew Dac Bang",
+        "name_2": "Matthew Dac Bang",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Michael Caufield",
+        "name_2": "Michael Caulfield",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Oliver Pearson",
+        "name_2": "Oliver Pearson?",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": 1
+    },
+    {
+        "name_1": "Thomas Gautreau",
+        "name_2": "Thomas Gautrreau",
+        "reason": "Fuzzy Match (0.97)",
+        "choice": null
+    },
+    {
+        "name_1": "Mazunin Mathew Matvey",
+        "name_2": "Mazunin Matthew Matvey",
+        "reason": "Fuzzy Match (0.98)",
+        "choice": null
+    },
+    {
+        "name_1": "Quinn Van Muyen-Harris",
+        "name_2": "Quinn Van Myen-Harris",
+        "reason": "Fuzzy Match (0.98)",
+        "choice": null
+    },
+    {
+        "name_1": "Jameson Foote-MacLeod",
+        "name_2": "Jameson Foote-Macleod",
+        "reason": "Fuzzy Match (1.00)",
+        "choice": null
+    },
+    {
+        "name_1": "MacKay Scott",
+        "name_2": "Mackay Scott",
+        "reason": "Fuzzy Match (1.00)",
+        "choice": null
+    },
+    {
+        "name_1": "Macy-Brett Collins",
+        "name_2": "Macy-brett Collins",
+        "reason": "Fuzzy Match (1.00)",
+        "choice": null
+    },
+    {
+        "name_1": "Abobaker Idris",
+        "name_2": "Idris Abobaker",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Adam Zak",
+        "name_2": "Zak Adam",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Adriao Anderson",
+        "name_2": "Anderson Adriao",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Alex Cameron",
+        "name_2": "Cameron Alex",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Alex Ivakh",
+        "name_2": "Ivakh Alex",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ali Awad",
+        "name_2": "Awad Ali",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ali Jameel",
+        "name_2": "Jameel Ali",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Alim Potheri",
+        "name_2": "Potheri Alim",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Allen Emerson",
+        "name_2": "Emerson Allen",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Anderson Connor",
+        "name_2": "Connor Anderson",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Anderson Paget",
+        "name_2": "Paget Anderson",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Andrei Soos",
+        "name_2": "Soos Andrei",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Annett Desmond",
+        "name_2": "Desmond Annett",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Antoine Gagnon",
+        "name_2": "Gagnon Antoine",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Appleton Luc",
+        "name_2": "Luc Appleton",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ari Upshall",
+        "name_2": "Upshall Ari",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ariel Weinreich",
+        "name_2": "Weinreich Ariel",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Arthurs Kellen",
+        "name_2": "Kellen Arthurs",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ashley Edwin",
+        "name_2": "Edwin Ashley",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ashton Johnson",
+        "name_2": "Johnson Ashton",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ashwin Markides",
+        "name_2": "Markides Ashwin",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Astles Noah",
+        "name_2": "Noah Astles",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Austin Rubini",
+        "name_2": "Rubini Austin",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Austin Soos",
+        "name_2": "Soos Austin",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Avey Nolan",
+        "name_2": "Nolan Avey",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Awad Saleem",
+        "name_2": "Saleem Awad",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Axani Edwin",
+        "name_2": "Edwin Axani",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ayerst Patrick",
+        "name_2": "Patrick Ayerst",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Azrael Hing",
+        "name_2": "Hing Azrael",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bahnam Basil",
+        "name_2": "Basil Bahnam",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bailey Kinsley",
+        "name_2": "Kinsley Bailey",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Baker Elel",
+        "name_2": "Elel Baker",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Balakumar Thamilenian",
+        "name_2": "Thamilenian Balakumar",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Banner Nathen",
+        "name_2": "Nathen Banner",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Banner Zack",
+        "name_2": "Zack Banner",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bar Tzafriri",
+        "name_2": "Tzafriri Bar",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bardana Luca",
+        "name_2": "Luca Bardana",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bardana Matteo",
+        "name_2": "Matteo Bardana",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Beck River",
+        "name_2": "River Beck",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ben Gil",
+        "name_2": "Gil Ben",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bentley Ricard",
+        "name_2": "Ricard Bentley",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bereti Dominic",
+        "name_2": "Dominic Bereti",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bertola Pietro",
+        "name_2": "Pietro Bertola",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bhatia Dhruv",
+        "name_2": "Dhruv Bhatia",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Binaday Tyler",
+        "name_2": "Tyler Binaday",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bitto Heath",
+        "name_2": "Heath Bitto",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Boe Westergaard",
+        "name_2": "Westergaard Boe",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Bonneville Cade",
+        "name_2": "Cade Bonneville",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Brandon Shepherd",
+        "name_2": "Shepherd Brandon",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Calder Scott",
+        "name_2": "Scott Calder",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Caleb Dobay",
+        "name_2": "Dobay Caleb",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Caleb Kam",
+        "name_2": "Kam Caleb",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Calvert Kean",
+        "name_2": "Kean Calvert",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Cameron Hunter",
+        "name_2": "Hunter Cameron",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Caron Leo",
+        "name_2": "Leo Caron",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Carrol Rhett",
+        "name_2": "Rhett Carrol",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Carson Phillip",
+        "name_2": "Phillip Carson",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Carter Moxham",
+        "name_2": "Moxham Carter",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Chase Dorland",
+        "name_2": "Dorland Chase",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Cheung Justin",
+        "name_2": "Justin Cheung",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Chris Kaji",
+        "name_2": "Kaji Chris",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Church Kellan",
+        "name_2": "Kellan Church",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Cian Scott",
+        "name_2": "Scott Cian",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Cisneros Oliver",
+        "name_2": "Oliver Cisneros",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Clark Mombourquette",
+        "name_2": "Mombourquette Clark",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Clark Phillips",
+        "name_2": "Phillips Clark",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Clark Solomon",
+        "name_2": "Solomon Clark",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Coen Grainger",
+        "name_2": "Grainger Coen",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Cohen Psalios",
+        "name_2": "Psalios Cohen",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Comfort Matthew",
+        "name_2": "Matthew Comfort",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Conor Forsyth",
+        "name_2": "Forsyth Conor",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Cote Gage",
+        "name_2": "Gage Cote",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Coveny Valdemar",
+        "name_2": "Valdemar Coveny",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Crossland Liam",
+        "name_2": "Liam Crossland",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Danek Webb",
+        "name_2": "Webb Danek",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Daniel Hodare",
+        "name_2": "Hodare Daniel",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Dario Soren",
+        "name_2": "Soren Dario",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Davies Mitch",
+        "name_2": "Mitch Davies",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Deleon Noah",
+        "name_2": "Noah Deleon",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Denver Mori",
+        "name_2": "Mori Denver",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Dina Mihai",
+        "name_2": "Mihai Dina",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ditzend Jack",
+        "name_2": "Jack Ditzend",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Doan Dorian",
+        "name_2": "Dorian Doan",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Doig Zachary",
+        "name_2": "Zachary Doig",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Doun Lee",
+        "name_2": "Lee Doun",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ewan Ridgley",
+        "name_2": "Ridgley Ewan",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Federico Leo",
+        "name_2": "Leo Federico",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Fernandes Savio",
+        "name_2": "Savio Fernandes",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Finley Minken",
+        "name_2": "Minken Finley",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Finn Slechta",
+        "name_2": "Slechta Finn",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Fong Oliver",
+        "name_2": "Oliver Fong",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gabriel Gerzon",
+        "name_2": "Gerzon Gabriel",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gaynor Talon",
+        "name_2": "Talon Gaynor",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gibbins Owen",
+        "name_2": "Owen Gibbins",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gil Tzafriri",
+        "name_2": "Tzafriri Gil",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gilchrist Sullivan",
+        "name_2": "Sullivan Gilchrist",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gilliam Kersen",
+        "name_2": "Kersen Gilliam",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gilroy Nathanael",
+        "name_2": "Nathanael Gilroy",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Goodbrand Jack",
+        "name_2": "Jack Goodbrand",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gordon Miles",
+        "name_2": "Miles Gordon",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Graham Kelly",
+        "name_2": "Kelly Graham",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Graydon Marcou",
+        "name_2": "Marcou Graydon",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Graydon Roberts",
+        "name_2": "Roberts Graydon",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Griener Kenneth",
+        "name_2": "Kenneth Griener",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Gurdaas Pabla",
+        "name_2": "Pabla Gurdaas",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Hansen Martin",
+        "name_2": "Martin Hansen",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Hardie Jack",
+        "name_2": "Jack Hardie",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Harrison Mulvale",
+        "name_2": "Mulvale Harrison",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Harsevak Pabla",
+        "name_2": "Pabla Harsevak",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Hemsley Schulz",
+        "name_2": "Schulz Hemsley",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Heppler Justin",
+        "name_2": "Justin Heppler",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Hernandez Miguel",
+        "name_2": "Miguel Hernandez",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Homsi Nicholas",
+        "name_2": "Nicholas Homsi",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Humphries Rourke",
+        "name_2": "Rourke Humphries",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ian Mwaura",
+        "name_2": "Mwaura Ian",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Jack Staddon",
+        "name_2": "Staddon Jack",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Jayden Meilen",
+        "name_2": "Meilen Jayden",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Jayson Rampersad",
+        "name_2": "Rampersad Jayson",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Jiwani Shayaan",
+        "name_2": "Shayaan Jiwani",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Jones Parker",
+        "name_2": "Parker Jones",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Jose Mendez",
+        "name_2": "Mendez Jose",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Justin Thompson",
+        "name_2": "Thompson Justin",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Kareem Rizk",
+        "name_2": "Rizk Kareem",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ketelers Tristan",
+        "name_2": "Tristan Ketelers",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Khawam William",
+        "name_2": "William Khawam",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "King Simeon",
+        "name_2": "Simeon King",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Kulperger Shea",
+        "name_2": "Shea Kulperger",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Latos Oscar",
+        "name_2": "Oscar Latos",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Leif Osmond",
+        "name_2": "Osmond Leif",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Lennox Preston",
+        "name_2": "Preston Lennox",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Liam McLean",
+        "name_2": "McLean Liam",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Liam Vanounou",
+        "name_2": "Vanounou Liam",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Lukas Young",
+        "name_2": "Young Lukas",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Lus Maverick",
+        "name_2": "Maverick Lus",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Ma Trevor",
+        "name_2": "Trevor Ma",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Mackay Scott",
+        "name_2": "Scott Mackay",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Maddox Riehl",
+        "name_2": "Riehl Maddox",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Marcell Rozgonyi",
+        "name_2": "Rozgonyi Marcell",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Marek Seredinski",
+        "name_2": "Seredinski Marek",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Mark Rogozian",
+        "name_2": "Rogozian Mark",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Mason Minken",
+        "name_2": "Minken Mason",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Massop Niklas",
+        "name_2": "Niklas Massop",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Maverick Shoquist",
+        "name_2": "Shoquist Maverick",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "McDermid Tristan",
+        "name_2": "Tristan McDermid",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Meier Rhys",
+        "name_2": "Rhys Meier",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Michael Walsh",
+        "name_2": "Walsh Michael",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Mikey Stewart",
+        "name_2": "Stewart Mikey",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Milligan Trentin",
+        "name_2": "Trentin Milligan",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Moffat Struan",
+        "name_2": "Struan Moffat",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Morris Oliver",
+        "name_2": "Oliver Morris",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Morrison Nate",
+        "name_2": "Nate Morrison",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Morrison Spencer",
+        "name_2": "Spencer Morrison",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Oscar Reystone",
+        "name_2": "Reystone Oscar",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Panetta Salvatore",
+        "name_2": "Salvatore Panetta",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Parker Stuart",
+        "name_2": "Stuart Parker",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Paul Poduzdov",
+        "name_2": "Poduzdov Paul",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Perron Quinlan",
+        "name_2": "Quinlan Perron",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Pokou William",
+        "name_2": "William Pokou",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Rajotte Zachary",
+        "name_2": "Zachary Rajotte",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Rex Sisulak",
+        "name_2": "Sisulak Rex",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Robinson Wyatt",
+        "name_2": "Wyatt Robinson",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Rodrigo Woods",
+        "name_2": "Woods Rodrigo",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Roger Scheirman",
+        "name_2": "Scheirman Roger",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Sabapathy Tyler",
+        "name_2": "Tyler Sabapathy",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Selman Tristan",
+        "name_2": "Tristan Selman",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Seright Tiergan",
+        "name_2": "Tiergan Seright",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Sobha Uppal",
+        "name_2": "Uppal Sobha",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Tameem Zaamout",
+        "name_2": "Zaamout Tameem",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Tennakoon Vidhu",
+        "name_2": "Vidhu Tennakoon",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Theodore Watson",
+        "name_2": "Watson Theodore",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Tristan Varga",
+        "name_2": "Varga Tristan",
+        "reason": "Reversal",
+        "choice": null
+    },
+    {
+        "name_1": "Aidan Campbell",
+        "name_2": "Laim Campbell",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Aidan Campbell",
+        "name_2": "Reid Campbell",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Aiden Campbell",
+        "name_2": "Laim Campbell",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Aiden Campbell",
+        "name_2": "Reid Campbell",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Antonio Fernandes",
+        "name_2": "Savio Fernandes",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Beckett Simon",
+        "name_2": "Beckett Strong",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Brandon MacDonald",
+        "name_2": "Mason MacDonald",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Carter Gibbons",
+        "name_2": "Tyler Gibbons",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Carter Hansen",
+        "name_2": "Carter Johnson",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Caylen McLean",
+        "name_2": "Charlie McLean",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Christopher Bearne",
+        "name_2": "Christopher Gendron",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Coen Grainger",
+        "name_2": "Coen Rettinger",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Daniel Deines",
+        "name_2": "Daniel Denisov",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Harrison Bastedo",
+        "name_2": "Harrison Braedyn",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Jonathan Gong",
+        "name_2": "Jonathan Junga",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Kian Crockett",
+        "name_2": "Taiki Crockett",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Leroy Thomson",
+        "name_2": "Oliver Thomson",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Levi Gonzalez",
+        "name_2": "Riley Gonzalez",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Maksym Baluchynskyy",
+        "name_2": "Roman Baluchynskyy",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Maverick Daoust",
+        "name_2": "Maverick Lus",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Maverick Daoust",
+        "name_2": "Maverick Shoquist",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Maxwell Hoover",
+        "name_2": "Maxwell Moore",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Mazunin Matthew",
+        "name_2": "Mazunin Matthew Matvey",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Michael Drover",
+        "name_2": "Michael Sader",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Mikey Hildebrand",
+        "name_2": "Newie Hildebrand",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Nathaniel Lin",
+        "name_2": "Nathaniel Tran",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Nicholas Boutin",
+        "name_2": "Nicholas Tio",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Nicky Kovalev",
+        "name_2": "Nikita Kovalev",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Oliver Kenney",
+        "name_2": "Oliver Skinner",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Oliver Nielsen",
+        "name_2": "Oliver Wilson",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "William Emard",
+        "name_2": "William Marlow",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "William Fletcher",
+        "name_2": "William Reuscher",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "William Fletcher",
+        "name_2": "William Lee",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "William McCrea",
+        "name_2": "William McWha",
+        "reason": "Word Overlap (0.81)",
+        "choice": null
+    },
+    {
+        "name_1": "Caius Holst",
+        "name_2": "Caius Shott",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Caleb Chalk",
+        "name_2": "Caleb Clark",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Daniel Hung",
+        "name_2": "Daniel Lang",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Ethan Chen",
+        "name_2": "Ethan Heiner",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Gabriel Arsenault",
+        "name_2": "Gabriel Parenteau",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Jack Hardy",
+        "name_2": "Jack Sharkey",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Jordan Cyr",
+        "name_2": "Jordan Meyer",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Liam McLean",
+        "name_2": "Liam Mcleod",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Maxwell Hill",
+        "name_2": "Maxwell Lu",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Nicholas Kosarikov",
+        "name_2": "Nicholas Koustov",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Oliver Dey",
+        "name_2": "Oliver Seaby",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Riley Benson",
+        "name_2": "Riley Fenn",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Roman Singh",
+        "name_2": "Rylan Singh",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Thomas Gage",
+        "name_2": "Thomas Jace",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Tyler Moore",
+        "name_2": "Tyler Moser",
+        "reason": "Word Overlap (0.82)",
+        "choice": null
+    },
+    {
+        "name_1": "Bouallegue Yassine",
+        "name_2": "Bouallegue Youssef",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Cameron Hayward",
+        "name_2": "Carter Hayward",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Christopher Dixon",
+        "name_2": "Christopher Gendron",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Colden Ackerman",
+        "name_2": "Taden Ackerman",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Dominic Bereti",
+        "name_2": "Dominic Breslin",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Elliott Warner",
+        "name_2": "Elliott Yarnell",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Jacob Martel",
+        "name_2": "Jacob Martin",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Jake Bohannan",
+        "name_2": "Jake Bonnay",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Jonathan Cayen",
+        "name_2": "Jonathan Jansen",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Jonathan Gong",
+        "name_2": "Jonathan Ko",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Mason Baiungo",
+        "name_2": "Mason Braun",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Michael Anderson",
+        "name_2": "Michael Sader",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Nicholas Qiu",
+        "name_2": "Nicholas Tio",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Nicolas Cruz",
+        "name_2": "Nicolas Cruz Teoc",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Oliver Hope",
+        "name_2": "Oliver Howell",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Paget Anderson",
+        "name_2": "Parker Anderson",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Thomas Bell",
+        "name_2": "Thomas Nowell",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Thomas Nowell",
+        "name_2": "Thomas Owen",
+        "reason": "Word Overlap (0.83)",
+        "choice": null
+    },
+    {
+        "name_1": "Ben Field",
+        "name_2": "Leon Field",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Ethan Lee",
+        "name_2": "Ethan Love",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Gabriel Saulnier-Gallant",
+        "name_2": "Remi Saulnier-Gallant",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Harrison Weltman",
+        "name_2": "Harrison Yeoman",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Jesse Breedlove",
+        "name_2": "Joseph Breedlove",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Orishchenko Artemiy",
+        "name_2": "Orishchenko Artemiy (Arty)",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Osayende Finance",
+        "name_2": "Oseyade Finance",
+        "reason": "Word Overlap (0.84)",
+        "choice": null
+    },
+    {
+        "name_1": "Ari Crockett",
+        "name_2": "Taiki Crockett",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Asher Gardner",
+        "name_2": "Avery Gardner",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Cole Fallbacher",
+        "name_2": "Cole Faller",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Daniel Castro-Schwab",
+        "name_2": "Rafael Castro-Schwab",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Dean Venable",
+        "name_2": "Dorian Venable",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Hansen Martin",
+        "name_2": "Hayden Martin",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Huff-Boyle Axiom",
+        "name_2": "Huff-Boyle Praxis",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Jay Marshall",
+        "name_2": "Jonty Marshall",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Jonathan Cayen",
+        "name_2": "Jonathan Ray",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Maddik Hildebrand",
+        "name_2": "Mikey Hildebrand",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Tristan Leyto",
+        "name_2": "Tristan Riley",
+        "reason": "Word Overlap (0.85)",
+        "choice": null
+    },
+    {
+        "name_1": "Aaron Florence",
+        "name_2": "Jadon Florence",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Boily Aiden",
+        "name_2": "Boyd Aiden",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Caleb Johnston",
+        "name_2": "Calum Johnston",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Doig Zach",
+        "name_2": "Doig Zachary",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Hunter Langley",
+        "name_2": "Hunter Lindley",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Jack Hardie",
+        "name_2": "Jack Hardy",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Michael Thorpe",
+        "name_2": "Michael Torres",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Raphael Fortin",
+        "name_2": "Raphael Friend",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Zach Clay",
+        "name_2": "Zachary Clay",
+        "reason": "Word Overlap (0.86)",
+        "choice": null
+    },
+    {
+        "name_1": "Bicoi Elliot",
+        "name_2": "Choi Elliot",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Brayden Lord",
+        "name_2": "Brayden Low",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Cade Fallbacher",
+        "name_2": "Cole Fallbacher",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Cole Fallbacher",
+        "name_2": "Luke Fallbacher",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Jasper Lowe",
+        "name_2": "Jasper Power",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Jonah Hunter",
+        "name_2": "Jonah Nater",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Max Reisinger",
+        "name_2": "Maxwell Reisinger",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "William Lane",
+        "name_2": "William Lee",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Zach Stein",
+        "name_2": "Zachary Stein",
+        "reason": "Word Overlap (0.87)",
+        "choice": null
+    },
+    {
+        "name_1": "Ashton Herman",
+        "name_2": "Mason Herman",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Caleb Roberts",
+        "name_2": "Caleb Rogers",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Jacob Markelz",
+        "name_2": "Jacob Martel",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Kalani P;ahn",
+        "name_2": "Kalani Plahan",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Liam Morgan",
+        "name_2": "William Morgan",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Lu Ethan",
+        "name_2": "Wu Ethan",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Noah Stephens",
+        "name_2": "Noah Stevens",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Rex Sisulak",
+        "name_2": "Rexton Sisulak",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Will Tamura",
+        "name_2": "William Tamura",
+        "reason": "Word Overlap (0.88)",
+        "choice": null
+    },
+    {
+        "name_1": "Adam De Games",
+        "name_2": "Adam De Gannes",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "Adham Ali",
+        "name_2": "Adham Aly",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "Austin Wu",
+        "name_2": "Justin Wu",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "Brooks Davison",
+        "name_2": "Brooks Dawson",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "William Kross",
+        "name_2": "William Rossow",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "Zenon Roessler",
+        "name_2": "Zenon Rossier",
+        "reason": "Word Overlap (0.89)",
+        "choice": null
+    },
+    {
+        "name_1": "Jesse Pach",
+        "name_2": "Jessy Pach",
+        "reason": "Word Overlap (0.90)",
+        "choice": null
+    },
+    {
+        "name_1": "Riley Bryk",
+        "name_2": "Riley Byrk",
+        "reason": "Word Overlap (0.90)",
+        "choice": null
+    },
+    {
+        "name_1": "Will Graumann",
+        "name_2": "William Graumann",
+        "reason": "Word Overlap (0.90)",
+        "choice": null
+    }
+]

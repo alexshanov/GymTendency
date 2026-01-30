@@ -74,7 +74,8 @@ def analyze_names():
         results.append({
             "name_1": pair[0],
             "name_2": pair[1],
-            "reason": reason
+            "reason": reason,
+            "choice": None
         })
     
     results.sort(key=lambda x: (x["reason"], x["name_1"]))
