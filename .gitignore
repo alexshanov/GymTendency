@@ -177,7 +177,17 @@ venv/
 venv.bak/
 # Visual Studio Code
 #  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-# .vscode/
-.webassets-cache
-wheels/
-#  you could uncomment the following to ignore the entire vscode folder
+
+# Data and State
+*.db
+*.db-*
+*.json
+
+# Whitelist important config/alias files
+!level_aliases.json
+!person_aliases.json
+!club_aliases.json
+!column_aliases.json
+!kscore_level_aliases.json
+!remediation_queue.json
+!gold_alias_candidates.json
