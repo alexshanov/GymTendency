@@ -226,6 +226,8 @@ def mso_task(meet_id, meet_name, driver_path=None):
     except:
         pass
 
+    return False
+    
 def is_high_priority(meet_type, meet_name, location=''):
     """
     Determines if a meet matches the High Priority criteria based on audio instructions.
@@ -272,12 +274,48 @@ def is_high_priority(meet_type, meet_name, location=''):
         
     return False
 
+class BackgroundLoader:
+    def __init__(self, interval=600): # Default 10 minutes
+        self.interval = interval
+        self.last_run = 0
+        self.process = None
+
+    def is_running(self):
+        if self.process is None:
+            return False
+        return self.process.poll() is None
+
+    def check_and_trigger(self, force=False):
+        """Triggers the loader if interval passed and not already running."""
+        now = time.time()
+        
+        if self.is_running():
+            return False # Already working
+            
+        if force or (now - self.last_run >= self.interval):
+            print(f"\n>>> Launching Background Loader (Scheduled trigger)... <<<")
+            try:
+                # Use Popen for non-blocking execution
+                # We use sys.executable to ensure we use the same environment
+                self.process = subprocess.Popen(
+                    [sys.executable, "load_orchestrator.py"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.STDOUT
+                )
+                self.last_run = now
+                return True
+            except Exception as e:
+                logging.error(f"Failed to launch background loader: {e}")
+                print(f"Error launching loader: {e}")
+        return False
+
 class StatusHeartbeat(threading.Thread):
-    def __init__(self, stop_event, get_remaining_meets, get_pending_csvs, interval=30):
+    def __init__(self, stop_event, get_remaining_meets, get_pending_csvs, loader=None, interval=30):
         super().__init__()
         self.stop_event = stop_event
         self.get_remaining_meets = get_remaining_meets
         self.get_pending_csvs = get_pending_csvs
+        self.loader = loader
         self.interval = interval
         self.daemon = True
 
@@ -289,7 +327,12 @@ class StatusHeartbeat(threading.Thread):
             
             rem_meets = self.get_remaining_meets()
             pending_csvs = self.get_pending_csvs()
-            print(f"\n[ORCHESTRATOR STATUS] Remaining: {rem_meets} meets | Unloaded CSVs: {pending_csvs}")
+            
+            l_status = "IDLE"
+            if self.loader and self.loader.is_running():
+                l_status = "RUNNING"
+                
+            print(f"\n[ORCHESTRATOR STATUS] Remaining: {rem_meets} meets | Unloaded CSVs: {pending_csvs} | Loader: {l_status}")
 
 # --- MAIN ORCHESTRATOR ---
 
@@ -492,7 +535,9 @@ def main():
                     if not os.path.exists("gym_data.db"):
                         return len(files_on_disk)
 
-                    with sqlite3.connect("gym_data.db") as conn:
+                    # Use a timeout and WAL mode to be safe against concurrent loader writes
+                    with sqlite3.connect("gym_data.db", timeout=10) as conn:
+                        conn.execute("PRAGMA journal_mode=WAL")
                         cursor = conn.cursor()
                         cursor.execute("SELECT file_path FROM ProcessedFiles")
                         processed_files = set(os.path.basename(row[0]) for row in cursor.fetchall())
@@ -500,16 +545,24 @@ def main():
                         pending = len(files_on_disk - processed_files)
                         return pending
                 except Exception as e:
-                    return "Err"
+                    return f"Err ({e})"
+
+            # Background Loader Setup
+            loader = BackgroundLoader(interval=600) # Every 10 mins
 
             current_progress = 0
             
             heartbeat = StatusHeartbeat(
                 heartbeat_stop, 
                 get_remaining_meets=lambda: len(queue) - current_progress,
-                get_pending_csvs=count_pending_csvs
+                get_pending_csvs=count_pending_csvs,
+                loader=loader
             )
             heartbeat.start()
+
+            # Initial DB check/load (Background)
+            if not os.path.exists("gym_data.db") or count_pending_csvs() > 0:
+                loader.check_and_trigger(force=True)
 
             try:
                 # Multi-attempt logic
@@ -536,7 +589,7 @@ def main():
                         chunk = queue[i : i + MEET_CHUNK_SIZE]
                         
                         meets_rem = len(queue) - i
-                        print(f"\n[PROGRESS] Meets remaining in this attempt: {meets_rem} | CSVs waiting for next load: {current_csv_count}/{CSV_BATCH_THRESHOLD}")
+                        print(f"\n[PROGRESS] Meets remaining in this attempt: {meets_rem} | CSVs waiting for next push: {current_csv_count}/{CSV_BATCH_THRESHOLD}")
                         
                         futures = {}
                         for stype, mid, mname in chunk:
@@ -589,15 +642,13 @@ def main():
                                     logging.info(f"[{stype}] {mid}: {status} - {message}")
                                     print(f"  [OK] {mid} ({count:2} files) | Total Rem: {rem_total:<4} | Pending: {current_csv_count}/{CSV_BATCH_THRESHOLD} | Scraped: {all_done_count}/{total_loaded}")
                                     
-                                    # CHECK IF WE HIT THE CSV THRESHOLD (inside loop for immediate trigger)
+                                    # Periodic Trigger check
+                                    loader.check_and_trigger()
+
+                                    # Threshold Trigger check
                                     if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:
-                                        print(f"\n>>> Batch Threshold Hit ({current_csv_count} >= {CSV_BATCH_THRESHOLD} CSVs). Running Loader... <<<")
-                                        try:
-                                            subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
-                                            current_csv_count = 0 # Reset counter after load
-                                            print(">>> Loader Complete. Resuming Scraper... <<<")
-                                        except Exception as e:
-                                            logging.error(f"Failed to run incremental load: {e}")
+                                        if loader.check_and_trigger(force=True):
+                                            current_csv_count = 0 
                                     
                                 else:
                                     # ERROR logic
