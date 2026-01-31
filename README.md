@@ -30,6 +30,20 @@ GymTendency is a robust data engineering and analytics pipeline designed to aggr
 
 ## 🔄 Data Pipeline Workflow
 
+```mermaid
+graph TD
+    A[Discovery Scripts] -->|Extract IDs| B(Manifests CSV)
+    B --> C{Orchestrator}
+    C -->|Run Scrapers| D[Platform Scrapers]
+    D -->|Standardized CSVs| E[(Local CSV Storage)]
+    E --> F{Load Orchestrator}
+    F -->|Normalize & Load| G[(SQLite gym_data.db)]
+    G --> H[Create Gold Tables]
+    H -->|Aggregate| I[(Gold Presentation Layer)]
+    G --> J[Sync to Supabase]
+    J --> K[(Cloud Database)]
+```
+
 1.  **Discovery**: Run `extract_*_ids.py` to update the manifests of available meets.
 2.  **Scraping**: Execute platform scrapers (or `orchestrator.py`) to fetch raw competition data.
 3.  **Loading**: Use `load_orchestrator.py` to process CSVs and populate the local SQLite database.
