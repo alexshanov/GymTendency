@@ -1,0 +1,373 @@
+[
+    {
+        "short_name": "Anthony",
+        "full_name": "Anthony Jarmoszuk",
+        "group": 5,
+        "birth_year": 2018,
+        "level": "Provincial 2A"
+    },
+    {
+        "short_name": "Anton P",
+        "full_name": "Anton Prosolin",
+        "group": 1,
+        "birth_year": 2012,
+        "level": "Novice"
+    },
+    {
+        "short_name": "Anton S",
+        "full_name": "Anton Shanov",
+        "group": 4,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Beau",
+        "full_name": "Beau Legault",
+        "group": 2,
+        "birth_year": 2014,
+        "level": "Provincial 4"
+    },
+    {
+        "short_name": "Benjamin",
+        "full_name": "Benjamin Pheebnik",
+        "group": 3,
+        "birth_year": 2015,
+        "level": "Provincial 2D"
+    },
+    {
+        "short_name": "Blake",
+        "full_name": "Blake Balment",
+        "group": 2,
+        "birth_year": 2014,
+        "level": "Provincial 4"
+    },
+    {
+        "short_name": "Bryson",
+        "full_name": "Bryson Poon",
+        "group": 1,
+        "birth_year": 2010,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Caden",
+        "full_name": "Caden McRae",
+        "group": 2,
+        "birth_year": 2016,
+        "level": "Provincial 2C"
+    },
+    {
+        "short_name": "Conrad",
+        "full_name": "Conrad Killam",
+        "group": 3,
+        "birth_year": 2016,
+        "level": "Provincial 2C"
+    },
+    {
+        "short_name": "Cooper",
+        "full_name": "Cooper Mizera",
+        "group": 1,
+        "birth_year": 2012,
+        "level": "Novice"
+    },
+    {
+        "short_name": "David",
+        "full_name": "David Mykolaichuk",
+        "group": 4,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Daxton",
+        "full_name": "Daxton Hull",
+        "group": 1,
+        "birth_year": 2010,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Eli",
+        "full_name": "Eli Pakpahan",
+        "group": 2,
+        "birth_year": 2016,
+        "level": "Provincial 2C"
+    },
+    {
+        "short_name": "Elian",
+        "full_name": "Elian Tong",
+        "group": 1,
+        "birth_year": 2012,
+        "level": "Novice"
+    },
+    {
+        "short_name": "Elias",
+        "full_name": "Elias Alexander",
+        "group": 4,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Evan",
+        "full_name": "Evan Hachey",
+        "group": 1,
+        "birth_year": 2004,
+        "level": "Senior"
+    },
+    {
+        "short_name": "Eytan",
+        "full_name": "Eytan Silberg",
+        "group": 3,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Gavin",
+        "full_name": "Gavin Wiens",
+        "group": 3,
+        "birth_year": 2015,
+        "level": "Provincial 2D"
+    },
+    {
+        "short_name": "George",
+        "full_name": "George Pettigrew",
+        "group": 1,
+        "birth_year": 2011,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Grayson D",
+        "full_name": "Grayson Diehl",
+        "group": 2,
+        "birth_year": 2013,
+        "level": "Novice"
+    },
+    {
+        "short_name": "Grayson G",
+        "full_name": "Grayson Gutsell Vander Meulen",
+        "group": 1,
+        "birth_year": 2006,
+        "level": "Senior"
+    },
+    {
+        "short_name": "Henry",
+        "full_name": "Henry Polnick",
+        "group": 3,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Hewitt",
+        "full_name": "Hewitt Boisjolie",
+        "group": 3,
+        "birth_year": 2016,
+        "level": "Provincial 2C"
+    },
+    {
+        "short_name": "Isaac C",
+        "full_name": "Isaac Chui",
+        "group": 5,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Isaac H",
+        "full_name": "Isaac Hoyem",
+        "group": 1,
+        "birth_year": 2008,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Isaiah",
+        "full_name": "Isaiah Flack",
+        "group": 1,
+        "birth_year": 2008,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Jackson",
+        "full_name": "Jackson Truman",
+        "group": 1,
+        "birth_year": 2012,
+        "level": "Novice"
+    },
+    {
+        "short_name": "James",
+        "full_name": "James Davidson",
+        "group": 3,
+        "birth_year": 2016,
+        "level": "Provincial 2C"
+    },
+    {
+        "short_name": "Jaxon",
+        "full_name": "Jaxon Quaife",
+        "group": 4,
+        "birth_year": 2016,
+        "level": "Provincial 2C"
+    },
+    {
+        "short_name": "Jaydon",
+        "full_name": "Jaydon De Silva",
+        "group": 1,
+        "birth_year": 2010,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Jet",
+        "full_name": "Jet McKay",
+        "group": 5,
+        "birth_year": 2018,
+        "level": "Provincial 2A"
+    },
+    {
+        "short_name": "Joshua",
+        "full_name": "Joshua DeGagne",
+        "group": 4,
+        "birth_year": 2016,
+        "level": "Provincial 2C"
+    },
+    {
+        "short_name": "Kipton",
+        "full_name": "Kipton Teare",
+        "group": 4,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Lachlan",
+        "full_name": "Lachlan Teare",
+        "group": 2,
+        "birth_year": 2014,
+        "level": "Provincial 4"
+    },
+    {
+        "short_name": "Layton",
+        "full_name": "Layton Taylor",
+        "group": 5,
+        "birth_year": 2018,
+        "level": "Provincial 2A"
+    },
+    {
+        "short_name": "Linden",
+        "full_name": "Linden Ahmoye",
+        "group": 4,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Logan",
+        "full_name": "Logan Danysk",
+        "group": 1,
+        "birth_year": 2012,
+        "level": "Novice"
+    },
+    {
+        "short_name": "Lucas",
+        "full_name": "Lucas Blazhkov",
+        "group": 5,
+        "birth_year": 2018,
+        "level": "Provincial 2A"
+    },
+    {
+        "short_name": "Majus",
+        "full_name": "Majus Grabliauskas",
+        "group": 1,
+        "birth_year": 2010,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Maxim",
+        "full_name": "Maxim Strelkov",
+        "group": 1,
+        "birth_year": 2009,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Michael",
+        "full_name": "Mykhailo Yatsiv",
+        "group": 3,
+        "birth_year": 2015,
+        "level": "Provincial 2D"
+    },
+    {
+        "short_name": "Mikhail",
+        "full_name": "Mykhailo Yatsiv",
+        "group": 2,
+        "birth_year": 2013,
+        "level": "Novice"
+    },
+    {
+        "short_name": "Parker",
+        "full_name": "Parker Viehweger",
+        "group": 4,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Remy",
+        "full_name": "Remy Xu",
+        "group": 4,
+        "birth_year": 2017,
+        "level": "Provincial 2B"
+    },
+    {
+        "short_name": "Rory",
+        "full_name": "Rory Freeman",
+        "group": 1,
+        "birth_year": 2011,
+        "level": "Junior"
+    },
+    {
+        "short_name": "Rowan",
+        "full_name": "Rowan McRae",
+        "group": 5,
+        "birth_year": 2018,
+        "level": "Provincial 2A"
+    },
+    {
+        "short_name": "Ryan",
+        "full_name": "Ryan Truman",
+        "group": 2,
+        "birth_year": 2014,
+        "level": "Provincial 4"
+    },
+    {
+        "short_name": "Sam",
+        "full_name": "Samuel Smith",
+        "group": 1,
+        "birth_year": 2005,
+        "level": "Senior"
+    },
+    {
+        "short_name": "Sasha",
+        "full_name": "Alexander Lightbody",
+        "group": 5,
+        "birth_year": 2018,
+        "level": "Provincial 2A"
+    },
+    {
+        "short_name": "Sutton",
+        "full_name": "Sutton Balment",
+        "group": 3,
+        "birth_year": 2015,
+        "level": "Provincial 2D"
+    },
+    {
+        "short_name": "Theo",
+        "full_name": "Theo Freeman",
+        "group": 1,
+        "birth_year": 2007,
+        "level": "Senior"
+    },
+    {
+        "short_name": "Theron",
+        "full_name": "Theron Lewison",
+        "group": 2,
+        "birth_year": 2014,
+        "level": "Provincial 4"
+    },
+    {
+        "short_name": "Thoren",
+        "full_name": "Thoren Lawrence",
+        "group": 1,
+        "birth_year": 2008,
+        "level": "Junior"
+    }
+]
