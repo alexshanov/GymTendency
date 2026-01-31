@@ -51,7 +51,13 @@ CSV_BATCH_THRESHOLD = 300  # Trigger loader after this many CSVs scraped
 def ksis_task(meet_id, meet_name, driver_path=None):
     """Worker task for KSIS scraping."""
     import ksis_scraper  # Local import for worker safety
+    import glob
     try:
+        # CRASH PROTECTION: Delete existing files for this meet to ensure a fresh start
+        for f in glob.glob(os.path.join(KSIS_DIR, f"{meet_id}_*.csv")):
+            try: os.remove(f)
+            except: pass
+
         # Subtle staggered start
         time.sleep(random.random() * 3)
         
@@ -142,7 +148,13 @@ def save_status(status_dict):
 def kscore_task(meet_id, meet_name, driver_path=None):
     """Worker task for KScore scraping."""
     import kscore_scraper # Local import for worker safety
+    import glob
     try:
+        # CRASH PROTECTION: Delete existing files for this meet to ensure a fresh start
+        for f in glob.glob(os.path.join(KSCORE_DIR, f"{meet_id}_*.csv")):
+            try: os.remove(f)
+            except: pass
+
         # Subtle staggered start to avoid resource spikes
         time.sleep(random.random() * 3)
 
@@ -159,7 +171,19 @@ def kscore_task(meet_id, meet_name, driver_path=None):
 def livemeet_task(meet_id, meet_name, driver_path=None):
     """Worker task for LiveMeet scraping and cleaning."""
     import livemeet_scraper # Local import for worker safety
+    import glob
     try:
+        # CRASH PROTECTION: Delete existing files for this meet to ensure a fresh start
+        # Livemeet files have complex names, we usually use the meet_id as the base
+        patterns = [
+            os.path.join(LIVEMEET_MESSY_DIR, f"{meet_id}_*.csv"),
+            os.path.join(LIVEMEET_FINAL_DIR, f"{meet_id}_*.csv")
+        ]
+        for pattern in patterns:
+            for f in glob.glob(pattern):
+                try: os.remove(f)
+                except: pass
+
         meet_url = f"https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id={meet_id}"
         
         # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
@@ -192,8 +216,14 @@ def livemeet_task(meet_id, meet_name, driver_path=None):
 def mso_task(meet_id, meet_name, driver_path=None):
     """Worker task for MSO scraping."""
     import mso_scraper # Local import for worker safety
+    import glob
     driver = None
     try:
+        # CRASH PROTECTION: Delete existing files for this meet to ensure a fresh start
+        for f in glob.glob(os.path.join(MSO_DIR, f"{meet_id}_*.csv")):
+            try: os.remove(f)
+            except: pass
+
         # Subtle staggered start
         time.sleep(random.random() * 3)
 

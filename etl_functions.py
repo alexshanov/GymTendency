@@ -824,9 +824,8 @@ def is_file_processed(conn, filepath, file_hash):
 
 @retry_on_lock()
 def mark_file_processed(conn, filepath, file_hash):
-    """Updates processed state of a file."""
+    """Updates processed state of a file. Caller MUST commit the transaction."""
     cursor = conn.cursor()
     from datetime import datetime
     cursor.execute("INSERT OR REPLACE INTO ProcessedFiles (file_path, file_hash, last_processed) VALUES (?, ?, ?)",
                    (filepath, file_hash, datetime.now().isoformat()))
-    conn.commit()

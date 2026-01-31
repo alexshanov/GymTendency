@@ -697,18 +697,21 @@ def main():
                         try:
                             data_package = future.result()
                             if data_package:
-                                write_to_db(conn, data_package, caches, club_aliases)
-                                mark_file_processed(conn, fpath, fhash)
+                                # ATOMIC TRANSACTION: Ensure file data AND "processed" mark are committed together
+                                # This provides crash protection: if it fails halfway, SQLite rolls back everything for this file.
+                                with conn:
+                                    write_to_db(conn, data_package, caches, club_aliases)
+                                    mark_file_processed(conn, fpath, fhash)
                         except Exception as e:
                             logging.error(f"Error processing {fpath}: {e}")
                         
                         if completed % batch_size == 0:
-                            conn.commit()
                             elapsed = time.time() - start_time
                             rate = completed / elapsed
                             remaining = (total - completed) / rate if rate > 0 else 0
                             logging.info(f"Progress: [{completed}/{total}] ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
                 
+                # Final cleanup commit (though with conn handles it above)
                 conn.commit()
     else:
         logging.info("Skipping CSV processing due to --gold-only flag.")
