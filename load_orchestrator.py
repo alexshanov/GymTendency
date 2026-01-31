@@ -441,6 +441,18 @@ def refresh_gold_tables(conn):
     cursor.execute(wag_query)
     conn.commit()
     logging.info("Gold_Results_MAG and Gold_Results_WAG updated successfully.")
+    
+    # Trigger SQL Export Generation
+    logging.info("Generating SQL exports for Supabase...")
+    try:
+        import subprocess # Added import for subprocess
+        subprocess.run(["python3", "generate_modified_gold.py"], check=True) # Refresh L1/L2 tables first
+        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L0", "--table", "Gold_Results_MAG"], check=True)
+        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L1", "--table", "Gold_Results_MAG_Filtered_L1"], check=True)
+        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L2", "--table", "Gold_Results_MAG_Filtered_L2"], check=True)
+        logging.info("SQL exports generated successfully.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to generate SQL exports: {e}")
 
 
 # ==============================================================================
