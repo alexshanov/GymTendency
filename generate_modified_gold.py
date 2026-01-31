@@ -27,9 +27,18 @@ def generate_modified_gold():
     print(f"Targeting {len(target_names)} unique full names from roster.")
 
     # Check coverage in the database
-    cursor.execute(f"SELECT COUNT(DISTINCT athlete_name) FROM Gold_Results_MAG WHERE athlete_name IN ({placeholders})", target_names)
-    matched_count = cursor.fetchone()[0]
+    cursor.execute(f"SELECT DISTINCT athlete_name FROM Gold_Results_MAG WHERE athlete_name IN ({placeholders})", target_names)
+    matched = set([row[0] for row in cursor.fetchall()])
+    matched_count = len(matched)
+    
     print(f"Found {matched_count} out of {len(target_names)} athletes in Gold_Results_MAG.")
+    
+    if matched_count < len(target_names):
+        missing = [name for name in target_names if name not in matched]
+        print("\nUNMATCHED ATHLETES FROM ROSTER:")
+        for name in sorted(missing):
+            print(f"  - {name}")
+        print("")
 
     # Level 1: Only the matched athletes
     print("Creating Gold_Results_MAG_Filtered_L1...")
