@@ -182,6 +182,7 @@ venv.bak/
 *.db
 *.db-*
 *.json
+*.sql
 
 # Whitelist important config/alias files
 !level_aliases.json
