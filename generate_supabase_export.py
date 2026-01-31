@@ -20,6 +20,7 @@ def clean_record(record):
     numeric_keys = [
         'fx_score', 'fx_d', 'ph_score', 'ph_d', 'sr_score', 'sr_d', 
         'vt_score', 'vt_d', 'pb_score', 'pb_d', 'hb_score', 'hb_d', 
+        'ub_score', 'ub_d', 'bb_score', 'bb_d',
         'aa_score', 'aa_d'
     ]
     for key in numeric_keys:

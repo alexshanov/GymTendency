@@ -3,6 +3,51 @@ import os
 import requests
 import json
 import argparse
+import re
+from datetime import datetime
+
+def parse_date_to_iso(date_str):
+    """
+    Parse various date formats and return ISO format (YYYY-MM-DD).
+    Handles:
+    - Already valid ISO dates: "2025-01-26"
+    - Date ranges: "Jan 24, 2025 - Jan 26, 2025" (uses the last date)
+    - Single text dates: "Jan 26, 2025"
+    """
+    if not date_str or not isinstance(date_str, str):
+        return date_str
+    
+    date_str = date_str.strip()
+    
+    # Already in ISO format (YYYY-MM-DD)
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+        return date_str
+    
+    # Check if it's a date range (contains " - " separator)
+    if ' - ' in date_str:
+        # Take the last date in the range
+        parts = date_str.split(' - ')
+        date_str = parts[-1].strip()
+    
+    # Try parsing various text date formats
+    date_formats = [
+        '%b %d, %Y',   # "Jan 26, 2025"
+        '%B %d, %Y',   # "January 26, 2025"
+        '%d %b %Y',    # "26 Jan 2025"
+        '%d %B %Y',    # "26 January 2025"
+        '%m/%d/%Y',    # "01/26/2025"
+        '%d/%m/%Y',    # "26/01/2025"
+    ]
+    
+    for fmt in date_formats:
+        try:
+            parsed = datetime.strptime(date_str, fmt)
+            return parsed.strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+    
+    # Return original if we can't parse it
+    return date_str
 
 # Manual .env loading
 def load_env_manual():
@@ -32,10 +77,15 @@ def clean_record(record):
     if 'source' in record:
         del record['source']
     
+    # Parse date field to ISO format (handles date ranges like "Jan 24, 2025 - Jan 26, 2025")
+    if 'date' in record:
+        record['date'] = parse_date_to_iso(record['date'])
+    
     # Numerics cleanup
     numeric_keys = [
         'fx_score', 'fx_d', 'ph_score', 'ph_d', 'sr_score', 'sr_d', 
         'vt_score', 'vt_d', 'pb_score', 'pb_d', 'hb_score', 'hb_d', 
+        'ub_score', 'ub_d', 'bb_score', 'bb_d',
         'aa_score', 'aa_d'
     ]
     for key in numeric_keys:
@@ -74,7 +124,9 @@ def export_sql(data, table_name, output_file):
                     values.append(f"'{escaped_v}'")
             
             val_str = ", ".join(values)
-            f.write(f"INSERT INTO \"{table_name}\" ({columns}) VALUES ({val_str});\n")
+            # Use PostgreSQL-compatible ON CONFLICT clause
+            # Assumes a unique index exists on (athlete_name, meet_name, year, level, age)
+            f.write(f"INSERT INTO \"{table_name}\" ({columns}) VALUES ({val_str}) ON CONFLICT DO NOTHING;\n")
 
 def sync_results(level, target_table, format='api'):
     if not os.path.exists(LOCAL_DB_PATH):

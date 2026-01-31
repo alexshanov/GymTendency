@@ -1,5 +1,6 @@
 import os
 import sys
+import traceback
 import subprocess
 import pandas as pd
 import glob
@@ -304,7 +305,22 @@ def main():
     console.setLevel(logging.WARNING) # Only show warnings/errors to console
     logging.getLogger('').addHandler(console)
 
+    # Global Exception Hook
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        logging.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+        print("CRITICAL: Uncaught exception logged to file.", file=sys.stderr)
+        traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
+
+    sys.excepthook = handle_exception
+
     print("--- Scraper Orchestrator Started (Detailed logs in 'scraper_orchestrator.log') ---")
+    logging.info("--- Scraper Orchestrator Started ---")
+
+
+
 
     # Load Status Manifest
     status_manifest = load_status()
@@ -643,8 +659,13 @@ def main():
     print("\nTriggering final load...")
     try:
         subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
+    except KeyboardInterrupt:
+        print("\nOrchestrator stopped by user.")
     except Exception as e:
-        logging.error(f"Final load failed: {e}")
+        logging.critical("Fatal error in main loop", exc_info=True)
+        print(f"\nCRITICAL ERROR: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

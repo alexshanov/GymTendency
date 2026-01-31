@@ -9,6 +9,55 @@ import re
 import hashlib
 import time
 import random
+from datetime import datetime as dt
+
+# ==============================================================================
+#  DATE NORMALIZATION
+#  Handles date ranges and various text formats, normalizes to ISO (YYYY-MM-DD)
+# ==============================================================================
+
+def parse_date_to_iso(date_str):
+    """
+    Parse various date formats and return ISO format (YYYY-MM-DD).
+    Handles:
+    - Already valid ISO dates: "2025-01-26"
+    - Date ranges: "Jan 24, 2025 - Jan 26, 2025" (uses the last date)
+    - Single text dates: "Jan 26, 2025"
+    """
+    if not date_str or not isinstance(date_str, str):
+        return date_str
+    
+    date_str = date_str.strip()
+    
+    # Already in ISO format (YYYY-MM-DD)
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+        return date_str
+    
+    # Check if it's a date range (contains " - " separator)
+    if ' - ' in date_str:
+        # Take the last date in the range (end of meet)
+        parts = date_str.split(' - ')
+        date_str = parts[-1].strip()
+    
+    # Try parsing various text date formats
+    date_formats = [
+        '%b %d, %Y',   # "Jan 26, 2025"
+        '%B %d, %Y',   # "January 26, 2025"
+        '%d %b %Y',    # "26 Jan 2025"
+        '%d %B %Y',    # "26 January 2025"
+        '%m/%d/%Y',    # "01/26/2025"
+        '%d/%m/%Y',    # "26/01/2025"
+    ]
+    
+    for fmt in date_formats:
+        try:
+            parsed = dt.strptime(date_str, fmt)
+            return parsed.strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+    
+    # Return original if we can't parse it
+    return date_str
 
 # ==============================================================================
 #  DATABASE UTILS
@@ -614,7 +663,7 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
              updates.append("comp_year = ?")
              params.append(comp_year)
              
-        new_date = meet_details.get('start_date_iso')
+        new_date = parse_date_to_iso(meet_details.get('start_date_iso'))
         if not db_date and new_date:
              updates.append("start_date_iso = ?")
              params.append(new_date)
@@ -645,10 +694,11 @@ def get_or_create_meet(conn, source, source_meet_id, meet_details, cache):
                 print(f"  -> Warning: Failed to update meet metadata: {e}")
 
     else:
+        normalized_date = parse_date_to_iso(meet_details.get('start_date_iso'))
         cursor.execute("""INSERT INTO Meets 
             (source, source_meet_id, name, start_date_iso, comp_year, location, country, competition_type) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (source, source_meet_id, meet_details.get('name'), meet_details.get('start_date_iso'), 
+            (source, source_meet_id, meet_details.get('name'), normalized_date, 
              comp_year, meet_details.get('location'), country, meet_details.get('competition_type')))
         meet_db_id = cursor.lastrowid
         print(f"  -> New meet intake: '{meet_details.get('name')}' (ID: {meet_db_id}, Year: {comp_year})")

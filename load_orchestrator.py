@@ -33,7 +33,8 @@ from etl_functions import (
     sanitize_column_name,
     ensure_column_exists,
     check_duplicate_result,
-    parse_rank
+    parse_rank,
+    parse_date_to_iso
 )
 
 # --- CONFIGURATION ---
@@ -337,39 +338,39 @@ def refresh_gold_tables(conn):
         c.name AS club,
         
         -- Floor (fx)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.score_text END)) AS fx_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN json_extract(r.details_json, '$.score_d_text') END)) AS fx_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.score_text END)), '') AS fx_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS fx_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)), '') AS fx_rank,
         
         -- Pommel Horse (ph)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_text END)) AS ph_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN json_extract(r.details_json, '$.score_d_text') END)) AS ph_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_text END)) AS ph_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_text END)), '') AS ph_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS ph_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Pommel Horse' THEN r.rank_text END)), '') AS ph_rank,
         
         -- Rings (sr)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Rings' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.score_text END)) AS sr_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Rings' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN json_extract(r.details_json, '$.score_d_text') END)) AS sr_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Rings' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.rank_text END)) AS sr_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Rings' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.score_text END)), '') AS sr_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Rings' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS sr_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Rings' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Rings' THEN r.rank_text END)), '') AS sr_rank,
         
         -- Vault (vt)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.score_text END)) AS vt_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN json_extract(r.details_json, '$.score_d_text') END)) AS vt_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.score_text END)), '') AS vt_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS vt_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)), '') AS vt_rank,
         
         -- Parallel Bars (pb)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_text END)) AS pb_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN json_extract(r.details_json, '$.score_d_text') END)) AS pb_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_text END)) AS pb_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_text END)), '') AS pb_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS pb_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Parallel Bars' THEN r.rank_text END)), '') AS pb_rank,
         
         -- High Bar (hb)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'High Bar' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.score_text END)) AS hb_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'High Bar' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN json_extract(r.details_json, '$.score_d_text') END)) AS hb_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'High Bar' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_text END)) AS hb_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'High Bar' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.score_text END)), '') AS hb_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'High Bar' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS hb_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'High Bar' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'High Bar' THEN r.rank_text END)), '') AS hb_rank,
         
         -- All Around (aa)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)) AS aa_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)) AS aa_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)), '') AS aa_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS aa_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id
@@ -401,29 +402,29 @@ def refresh_gold_tables(conn):
         c.name AS club,
         
         -- Vault (vt)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.score_text END)) AS vt_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN json_extract(r.details_json, '$.score_d_text') END)) AS vt_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)) AS vt_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.score_text END)), '') AS vt_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Vault' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS vt_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Vault' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Vault' THEN r.rank_text END)), '') AS vt_rank,
         
         -- Uneven Bars (ub)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_text END)) AS ub_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN json_extract(r.details_json, '$.score_d_text') END)) AS ub_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_text END)) AS ub_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_text END)), '') AS ub_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS ub_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Uneven Bars' THEN r.rank_text END)), '') AS ub_rank,
         
         -- Beam (bb)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Beam' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.score_text END)) AS bb_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Beam' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN json_extract(r.details_json, '$.score_d_text') END)) AS bb_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Beam' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.rank_text END)) AS bb_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Beam' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.score_text END)), '') AS bb_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Beam' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS bb_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Beam' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Beam' THEN r.rank_text END)), '') AS bb_rank,
         
         -- Floor (fx)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.score_text END)) AS fx_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN json_extract(r.details_json, '$.score_d_text') END)) AS fx_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)) AS fx_rank,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.score_text END)), '') AS fx_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'Floor' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS fx_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'Floor' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'Floor' THEN r.rank_text END)), '') AS fx_rank,
         
         -- All Around (aa)
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)) AS aa_score,
-        COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)) AS aa_d,
-        COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)) AS aa_rank
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)), '') AS aa_score,
+        NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS aa_d,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id
@@ -546,7 +547,7 @@ def heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest, 
             updates.append("name = ?")
             params.append(str(manifest_name).strip())
             
-        manifest_date = details.get('start_date_iso')
+        manifest_date = parse_date_to_iso(details.get('start_date_iso'))
         if manifest_date and (not db_date or str(db_date).strip() == ''):
             updates.append("start_date_iso = ?")
             params.append(str(manifest_date))
