@@ -339,13 +339,46 @@ class BackgroundLoader:
                 print(f"Error launching loader: {e}")
         return False
 
+class GoldRefresher:
+    def __init__(self, interval=1800): # 30 minutes
+        self.interval = interval
+        self.last_run = 0
+        self.process = None
+
+    def is_running(self):
+        if self.process is None:
+            return False
+        return self.process.poll() is None
+
+    def check_and_trigger(self, force=False):
+        """Triggers the gold refresh if interval passed and not already running."""
+        now = time.time()
+        
+        if self.is_running():
+            return False
+            
+        if force or (now - self.last_run >= self.interval):
+            print(f"\n>>> Launching Scheduled Gold Refresh (30-min timer)... <<<")
+            try:
+                self.process = subprocess.Popen(
+                    [sys.executable, "load_orchestrator.py", "--gold-only"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.STDOUT
+                )
+                self.last_run = now
+                return True
+            except Exception as e:
+                logging.error(f"Failed to launch gold refresher: {e}")
+        return False
+
 class StatusHeartbeat(threading.Thread):
-    def __init__(self, stop_event, get_remaining_meets, get_pending_csvs, loader=None, interval=30):
+    def __init__(self, stop_event, get_remaining_meets, get_pending_csvs, loader=None, gold_refresher=None, interval=30):
         super().__init__()
         self.stop_event = stop_event
         self.get_remaining_meets = get_remaining_meets
         self.get_pending_csvs = get_pending_csvs
         self.loader = loader
+        self.gold_refresher = gold_refresher
         self.interval = interval
         self.daemon = True
 
@@ -361,8 +394,12 @@ class StatusHeartbeat(threading.Thread):
             l_status = "IDLE"
             if self.loader and self.loader.is_running():
                 l_status = "RUNNING"
+            
+            g_status = "IDLE"
+            if self.gold_refresher and self.gold_refresher.is_running():
+                g_status = "RUNNING"
                 
-            print(f"\n[ORCHESTRATOR STATUS] Remaining: {rem_meets} meets | Unloaded CSVs: {pending_csvs} | Loader: {l_status}")
+            print(f"\n[ORCHESTRATOR STATUS] Remaining: {rem_meets} meets | Unloaded CSVs: {pending_csvs} | Loader: {l_status} | Gold Refresh: {g_status}")
 
 # --- MAIN ORCHESTRATOR ---
 
@@ -579,6 +616,7 @@ def main():
 
             # Background Loader Setup
             loader = BackgroundLoader(interval=600) # Every 10 mins
+            gold_refresher = GoldRefresher(interval=1800) # Every 30 mins
 
             current_progress = 0
             
@@ -586,7 +624,8 @@ def main():
                 heartbeat_stop, 
                 get_remaining_meets=lambda: len(queue) - current_progress,
                 get_pending_csvs=count_pending_csvs,
-                loader=loader
+                loader=loader,
+                gold_refresher=gold_refresher
             )
             heartbeat.start()
 
@@ -674,6 +713,7 @@ def main():
                                     
                                     # Periodic Trigger check
                                     loader.check_and_trigger()
+                                    gold_refresher.check_and_trigger()
 
                                     # Threshold Trigger check
                                     if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:

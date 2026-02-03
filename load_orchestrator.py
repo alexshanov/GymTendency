@@ -34,7 +34,8 @@ from etl_functions import (
     ensure_column_exists,
     check_duplicate_result,
     parse_rank,
-    parse_date_to_iso
+    parse_date_to_iso,
+    retry_on_lock
 )
 
 # --- CONFIGURATION ---
@@ -306,6 +307,7 @@ def unify_meets(conn):
     conn.commit()
     logging.info(f"Meet unification complete. Removed {total_unified} duplicate meet records.")
 
+@retry_on_lock()
 def refresh_gold_tables(conn):
     """
     Creates/Updates flattened 'Gold' tables for MAG and WAG.
@@ -717,7 +719,7 @@ def main():
         logging.info("Skipping CSV processing due to --gold-only flag.")
 
     # 5. Autonomous Cleanup & Unification
-    with sqlite3.connect(DB_FILE, timeout=30) as conn:
+    with sqlite3.connect(DB_FILE, timeout=60) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         
         logging.info("Running Metadata Healing Pass...")

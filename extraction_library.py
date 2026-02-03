@@ -221,7 +221,13 @@ def extract_livemeet_data(filepath, meet_details):
         pass
     else:
         # Normalize Headers (Sportzsoft triplet logic)
-        raw_apps = ['Vault', 'Uneven_Bars', 'Beam', 'Floor', 'Pommel_Horse', 'Rings', 'Parallel_Bars', 'High_Bar', 'AllAround', 'All_Around', 'PommelHorse', 'ParallelBars', 'HighBar']
+        raw_apps = [
+            'Vault', 'Uneven_Bars', 'Uneven Bars', 'Beam', 'Floor', 
+            'Pommel_Horse', 'Pommel Horse', 'PommelHorse', 
+            'Rings', 'Parallel_Bars', 'Parallel Bars', 'ParallelBars', 
+            'High_Bar', 'High Bar', 'HighBar', 
+            'AllAround', 'All_Around', 'All Around', 'AA'
+        ]
         new_headers = []
         seen_counts = {}
         for col in df.columns:

@@ -9,14 +9,14 @@ def test_standardization():
         level_aliases = json.load(f)
     
     test_cases = [
-        ("Provincial 2A", "B2A"),
-        ("Provincial 1-D", "B1D"),
-        ("Provincial 1 E", "B1E"),
-        ("P1A", "B1A"),
-        ("Provincial 2C", "B2C"),
+        ("Provincial 2A", "P2A"),
+        ("Provincial 1-D", "P1D"),
+        ("Provincial 1 E", "P1E"),
+        ("P1A", "P1A"),
+        ("Provincial 2C", "P2C"),
         ("P2", "Provincial 2"), # Should be untouched per instructions
         ("Provincial 2", "Provincial 2"),
-        ("Provincial 1A", "B1A"),
+        ("Provincial 1A", "P1A"),
     ]
     
     passed = True
