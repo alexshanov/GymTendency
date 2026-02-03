@@ -494,6 +494,7 @@ def main():
         # Manual Injection: 2025 Mens HNI & Vegas Cup 2025
         tasks.append(('mso', '33704', '2025 Mens HNI'))
         tasks.append(('mso', '33619', 'Vegas Cup 2025 - Men'))
+        tasks.append(('mso', '35898', '2026 HNI')) # ADDED PER USER REQUEST
 
         # Load KSIS
         if os.path.exists(KSIS_CSV):
