@@ -621,9 +621,14 @@ def main():
 
             current_progress = 0
             
+            def get_remaining_meets():
+                """Calculate actual remaining meets from status manifest."""
+                all_done_count = len([k for k,v in status_manifest.items() if (isinstance(v, dict) and v.get('status') == 'DONE') or v == 'DONE'])
+                return len(all_tasks) - all_done_count
+
             heartbeat = StatusHeartbeat(
                 heartbeat_stop, 
-                get_remaining_meets=lambda: len(queue) - current_progress,
+                get_remaining_meets=get_remaining_meets,
                 get_pending_csvs=count_pending_csvs,
                 loader=loader,
                 gold_refresher=gold_refresher
