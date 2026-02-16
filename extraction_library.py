@@ -1,7 +1,4 @@
-# extraction_library.py
-
 import os
-import pandas as pd
 import re
 import json
 
@@ -13,6 +10,7 @@ def extract_kscore_data(filepath, meet_details, level_alias_map):
     """
     Extracts data from a single Kscore CSV without DB interaction.
     """
+    import pandas as pd
     try:
         df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
         if df.empty:
@@ -154,250 +152,222 @@ def extract_kscore_data(filepath, meet_details, level_alias_map):
 
 def extract_livemeet_data(filepath, meet_details):
     """
-    Extracts data from a single Livemeet CSV without DB interaction.
+    Extracts data from a single Livemeet CSV using standard csv module for speed and robustness.
     """
+    import csv
+    
     try:
-        df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
-        if df.empty:
+        # We read the file twice: once to find the header row, then to parse
+        with open(filepath, 'r', encoding='utf-8-sig', errors='replace') as f:
+            lines = f.readlines()
+            
+        if not lines:
             return None
             
-        # --- Handle Multi-row / Messy Headers ---
-        # If 'Name' is not in columns, it might be a Sportzsoft CSV with junk rows at the top
-        if 'Name' not in df.columns:
-            found_header = False
-            # Check the first 10 rows for a valid header row
-            for i in range(min(10, len(df))):
-                row_vals = [str(x).strip() for x in df.iloc[i].values]
-                if 'Name' in row_vals and 'Club' in row_vals:
-                    # Found it! Deduplicate columns and set
-                    seen_cols = {}
-                    deduped_cols = []
-                    for c in row_vals:
-                        if c not in seen_cols:
-                            seen_cols[c] = 0
-                            deduped_cols.append(c)
-                        else:
-                            seen_cols[c] += 1
-                            deduped_cols.append(f"{c}.{seen_cols[c]}")
-                    
-                    df.columns = deduped_cols
-                    df = df.iloc[i+1:].reset_index(drop=True)
-                    found_header = True
-                    break
-            if not found_header:
-                # Still didn't find it? Check if we have 'Unnamed: 4' as Name (common offset)
-                # But safer to skip if we can't find 'Name' explicitly
-                return None
-    except Exception as e:
-        print(f"Warning: Could not read CSV file '{filepath}'. Error: {e}")
-        return None
-
-    filename = os.path.basename(filepath)
-    source_meet_id = filename.split('_FINAL_')[0]
-    # Handle PER/BYEVENT variants
-    if '_PEREVENT_' in source_meet_id: source_meet_id = source_meet_id.split('_PEREVENT_')[0]
-    if '_BYEVENT_' in source_meet_id: source_meet_id = source_meet_id.split('_BYEVENT_')[0]
-
-    if not meet_details.get('name'):
-        meet_val = None
-        if 'Meet' in df.columns and not df.empty:
-            raw_meet = df['Meet']
-            if isinstance(raw_meet, pd.DataFrame):
-                raw_meet = raw_meet.iloc[:, 0]
-            meet_val = raw_meet.iloc[0]
+        # Find header row index
+        header_idx = -1
+        for i, line in enumerate(lines[:10]):
+            parts = [p.strip() for p in line.split(',')]
+            if 'Name' in parts and 'Club' in parts:
+                header_idx = i
+                break
+        
+        if header_idx == -1:
+            # Fallback: assume first line is header if it has 'Name' or '@' (some Sportzsoft)
+            header_idx = 0
             
-        meet_details['name'] = meet_val if meet_val else f"Livemeet {source_meet_id}"
-    
-    # FETCH YEAR FROM MANIFEST IF MISSING
-    if not meet_details.get('year'):
-        if 'Year' in meet_details:
-             meet_details['year'] = meet_details['Year']
-        elif 'comp_year' in meet_details:
-             meet_details['year'] = meet_details['comp_year']
-
-    # Recognize Already-Normalized Headers (DETAILED files)
-    if any(col.startswith('Result_') for col in df.columns):
-        # Already normalized, don't apply triplet logic
-        pass
-    else:
-        # Normalize Headers (Sportzsoft triplet logic)
-        raw_apps = [
-            'Vault', 'Uneven_Bars', 'Uneven Bars', 'Beam', 'Floor', 
-            'Pommel_Horse', 'Pommel Horse', 'PommelHorse', 
-            'Rings', 'Parallel_Bars', 'Parallel Bars', 'ParallelBars', 
-            'High_Bar', 'High Bar', 'HighBar', 
-            'AllAround', 'All_Around', 'All Around', 'AA'
-        ]
-        new_headers = []
+        headers = [p.strip() for p in lines[header_idx].split(',')]
+        
+        # Deduplicate headers if Sportzsoft triplet logic is not yet applied
+        seen_cols = {}
         seen_counts = {}
-        for col in df.columns:
-            base = col.split('.')[0]
-            if base in raw_apps:
-                count = seen_counts.get(base, 0)
-                seen_counts[base] = count + 1
-                triplet_pos = count % 3
-                triplet_num = count // 3
-                suffix = ['D', 'Score', 'Rnk'][triplet_pos]
-                proposed_name = f"Result_{base}_{suffix}" if triplet_num == 0 else f"EXTRA_{base}_{triplet_num}_{suffix}"
-                new_headers.append(proposed_name)
-            else:
-                new_headers.append(col)
-        df.columns = new_headers
-
-    # Detect Discipline
-    MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar'}
-    WAG_INDICATORS = {'Uneven_Bars', 'UnevenBars', 'Beam'}
-    
-    mag_score = 0
-    wag_score = 0
-    for col in df.columns:
-        if any(indicator in col for indicator in MAG_INDICATORS): mag_score += 1
-        if any(indicator in col for indicator in WAG_INDICATORS): wag_score += 1
-            
-    discipline_id = 99
-    gender_heuristic = 'Unknown'
-    
-    if wag_score > mag_score:
-        discipline_id = 1; gender_heuristic = 'F'
-    elif mag_score > wag_score:
-        discipline_id = 2; gender_heuristic = 'M'
-    elif mag_score > 0: # Tie but at least some indicators
-        discipline_id = 2; gender_heuristic = 'M'
-            
-    # Add AA to event bases if not implicitly caught
-    # Logic below catches Result_X_Score. We need to ensure Result_AllAround_Score is caught.
-    # The fix_and_standardize_headers in scraper should have produced Result_AllAround_Score if 'AA' or 'All Around' was present.
-    # If not, the AA fallback will catch it.
-
-    result_columns = [col for col in df.columns if col.startswith('Result_')]
-    event_bases = {}
-    for col in result_columns:
-        match = re.search(r'Result_(.*)_(Score|D|E|Rnk|Total)$', col)
-        if match: event_bases[match.group(1)] = match.group(1)
-
-    ignore_cols = list(event_bases.keys()) + result_columns + ['Name', 'Club']
-    dynamic_cols = [col for col in df.columns if col not in ignore_cols and not col.startswith('Result_')]
-
-    extracted_results = []
-    for _, row in df.iterrows():
-        raw_name = row.get('Name')
-        if not raw_name: continue
-
-        dynamic_values = {}
-        for col in dynamic_cols:
-            val = row.get(col)
-            if not val or str(val).strip() == '': continue
-            
-            # Filter out messy metadata keys:
-            # 1. No "Unnamed" columns
-            # 2. No extremely long keys (e.g. sentences incorrectly parsed as headers)
-            # 3. No keys that are actually meet names or session descriptions (heuristic: > 50 chars or contains lots of spaces)
-            safe_key = str(col).strip()
-            if "unnamed" in safe_key.lower(): continue
-            if len(safe_key) > 50: continue
-            if safe_key.count(' ') > 4: continue
-            
-            dynamic_values[safe_key] = str(val)
-
-        apparatus_results = []
-        for raw_event in event_bases:
-            score_val = row.get(f'Result_{raw_event}_Score')
-            d_val = row.get(f'Result_{raw_event}_D')
-            sv_val = row.get(f'Result_{raw_event}_SV')
-            e_val = row.get(f'Result_{raw_event}_E')
-            bonus_val = row.get(f'Result_{raw_event}_Bonus')
-            penalty_val = row.get(f'Result_{raw_event}_Penalty')
-            rank_val = row.get(f'Result_{raw_event}_Rnk')
-            exec_bonus_val = row.get(f'Result_{raw_event}_Exec_Bonus') or row.get(f'Result_{raw_event}_Execution_Bonus')
-            
-            # Fallback: SV is often used for Difficulty in lower levels
-            if (not d_val or str(d_val).strip() == '') and (sv_val and str(sv_val).strip() != ''):
-                d_val = sv_val
-            
-            # Fallback 2: 'Bonus' is often used for Difficulty in international meets (e.g., Tokyo 2020)
-            if (not d_val or str(d_val).strip() == '') and (bonus_val and str(bonus_val).strip() != ''):
-                try:
-                    # Simple heuristic: if it's > 1.0, it's probably a D-score, not a small stick reward.
-                    if float(str(bonus_val).strip()) > 1.0:
-                        d_val = bonus_val
-                except:
-                    pass
-
-            apparatus_results.append({
-                'raw_event': raw_event,
-                'score_final': score_val,
-                'score_d': d_val,
-                'score_sv': sv_val,
-                'score_e': e_val,
-                'bonus': bonus_val,
-                'penalty': penalty_val,
-                'rank_text': rank_val,
-                'execution_bonus': exec_bonus_val
-            })
-            
-            # --- Score Swapping / Preference Logic ---
-            res = apparatus_results[-1]
-            def is_numeric(s):
-                try:
-                    float(str(s).strip().replace(',', ''))
-                    return True
-                except:
-                    return False
-            
-            if is_numeric(res['score_d']) and not is_numeric(res['score_final']):
-                res['score_final'] = res['score_d']
-                # Optionally keep the award text elsewhere, but the priority is the numeric score.
-
-        extracted_results.append({
-            'raw_name': raw_name,
-            'raw_club': row.get('Club', ''),
-            'discipline_id': discipline_id,
-            'gender_heuristic': gender_heuristic,
-            'apparatus_results': apparatus_results,
-            'dynamic_metadata': dynamic_values
-        })
-
-        # --- AA Fallback / Enrichment Calculation ---
-        # 1. Check if we have an AA record and if it's missing a D-score
-        aa_record = next((r for r in apparatus_results if r['raw_event'] in ['AllAround', 'All Around', 'AA']), None)
+        deduped_headers = []
+        is_normalized = any(h.startswith('Result_') for h in headers)
         
-        valid_sum = 0.0
-        valid_d_sum = 0.0
-        valid_app_count = 0
-        
-        for res in apparatus_results:
-            evt = res['raw_event']
-            if evt in ['AllAround', 'All Around', 'AA', 'Team']: continue
-            
-            try:
-                s = float(str(res['score_final']).replace(',', ''))
-                valid_sum += s
-                valid_app_count += 1
-            except (ValueError, TypeError):
-                pass
-            
-            try:
-                d = float(str(res['score_d']).replace(',', ''))
-                valid_d_sum += d
-            except (ValueError, TypeError):
-                pass
-        
-        if not aa_record:
-            # Create a new AA record
-            if valid_app_count > 0:
-                extracted_results[-1]['apparatus_results'].append({
-                    'raw_event': 'All Around',
-                    'score_final': f"{valid_sum:.3f}", 
-                    'score_d': f"{valid_d_sum:.3f}" if valid_d_sum > 0 else '',
-                    'rank_text': '',
-                    'calculated': True
-                })
+        if is_normalized:
+            deduped_headers = headers
         else:
-            # Enrich existing AA record if D-score is missing
-            if (not aa_record.get('score_d') or str(aa_record['score_d']).strip() == '') and valid_d_sum > 0:
-                aa_record['score_d'] = f"{valid_d_sum:.3f}"
-                if not aa_record.get('calculated'):
+            raw_apps = [
+                'Vault', 'Uneven_Bars', 'Uneven Bars', 'Beam', 'Floor', 
+                'Pommel_Horse', 'Pommel Horse', 'PommelHorse', 
+                'Rings', 'Parallel_Bars', 'Parallel Bars', 'ParallelBars', 
+                'High_Bar', 'High Bar', 'HighBar', 
+                'AllAround', 'All_Around', 'All Around', 'AA'
+            ]
+            for col in headers:
+                base = col.split('.')[0]
+                if base in raw_apps:
+                    count = seen_counts.get(base, 0)
+                    seen_counts[base] = count + 1
+                    triplet_pos = count % 3
+                    triplet_num = count // 3
+                    suffix = ['D', 'Score', 'Rnk'][triplet_pos]
+                    proposed_name = f"Result_{base}_{suffix}" if triplet_num == 0 else f"EXTRA_{base}_{triplet_num}_{suffix}"
+                    deduped_headers.append(proposed_name)
+                else:
+                    deduped_headers.append(col)
+
+        # Parse data rows
+        import io
+        content = "".join(lines[header_idx:])
+        
+        filename = os.path.basename(filepath)
+        source_meet_id = filename.split('_FINAL_')[0]
+        if '_PEREVENT_' in source_meet_id: source_meet_id = source_meet_id.split('_PEREVENT_')[0]
+        if '_BYEVENT_' in source_meet_id: source_meet_id = source_meet_id.split('_BYEVENT_')[0]
+
+        # Fetch basic meet info
+        if not meet_details.get('name'):
+            # Try to get from first data row 'Meet' column
+            pass 
+
+        # Event identification
+        result_columns = [h for h in deduped_headers if h.startswith('Result_')]
+        event_bases = {}
+        for col in result_columns:
+            match = re.search(r'Result_(.*)_(Score|D|E|Rnk|Total)$', col)
+            if match: 
+                event_bases[match.group(1)] = match.group(1)
+
+        # Discipline Detection
+        MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar'}
+        WAG_INDICATORS = {'Uneven_Bars', 'UnevenBars', 'Beam'}
+        mag_score = 0; wag_score = 0
+        for col in deduped_headers:
+            if any(ind in col for ind in MAG_INDICATORS): mag_score += 1
+            if any(ind in col for ind in WAG_INDICATORS): wag_score += 1
+        
+        discipline_id = 2 if mag_score >= wag_score and mag_score > 0 else 1
+        gender_heuristic = 'M' if discipline_id == 2 else 'F'
+
+        ignore_cols = list(event_bases.keys()) + result_columns + ['Name', 'Club']
+        dynamic_cols = [h for h in deduped_headers if h not in ignore_cols and not h.startswith('Result_')]
+
+        extracted_results = []
+        
+        f_stream = io.StringIO(content)
+        reader = csv.DictReader(f_stream)
+        
+        for row in reader:
+            raw_name = row.get('Name')
+            if not raw_name: continue
+            
+            # Basic normalization for meet name if missing
+            if not meet_details.get('name') and row.get('Meet'):
+                meet_details['name'] = row.get('Meet')
+
+            dynamic_values = {}
+            session_markers = ['Day', 'Session', 'Flight', 'Combined', 'Finals', 'Apparatus Final']
+            for col in dynamic_cols:
+                val = row.get(col)
+                if not val or str(val).strip() == '': continue
+                safe_key = str(col).strip()
+                if "unnamed" in safe_key.lower(): continue
+                if len(safe_key) > 60: continue # Some are long but we need them
+                
+                # Heuristic: if column header looks like a session and we don't have one yet
+                if any(m.lower() in safe_key.lower() for m in session_markers):
+                    if 'session' not in dynamic_values:
+                        dynamic_values['session'] = str(val).strip()
+                
+                if safe_key.count(' ') > 4 and safe_key not in dynamic_values.get('session', ''): continue
+                dynamic_values[safe_key] = str(val).strip()
+
+            apparatus_results = []
+            for raw_event in event_bases:
+                # Prioritize 'Total' column over 'Score' column if it exists. 
+                # This is crucial for multi-day 'Combined' DETAILED files where 'Score' is often Day 1.
+                score_val = row.get(f'Result_{raw_event}_Total') or row.get(f'Result_{raw_event}_Score')
+                d_val = row.get(f'Result_{raw_event}_D')
+                sv_val = row.get(f'Result_{raw_event}_SV')
+                e_val = row.get(f'Result_{raw_event}_E')
+                bonus_val = row.get(f'Result_{raw_event}_Bonus')
+                penalty_val = row.get(f'Result_{raw_event}_Penalty')
+                rank_val = row.get(f'Result_{raw_event}_Rnk')
+                exec_bonus_val = row.get(f'Result_{raw_event}_Exec_Bonus') or row.get(f'Result_{raw_event}_Execution_Bonus')
+                
+                if (not score_val or str(score_val).strip() == '') and \
+                   (not d_val or str(d_val).strip() == '') and \
+                   (not sv_val or str(sv_val).strip() == ''):
+                    continue
+                
+                # Fallback: SV is often used for Difficulty
+                if (not d_val or str(d_val).strip() == '') and (sv_val and str(sv_val).strip() != ''):
+                    d_val = sv_val
+
+                app_res = {
+                    'raw_event': raw_event,
+                    'score_final': score_val,
+                    'score_d': d_val,
+                    'score_sv': sv_val,
+                    'score_e': e_val,
+                    'bonus': bonus_val,
+                    'penalty': penalty_val,
+                    'rank_text': rank_val,
+                    'execution_bonus': exec_bonus_val
+                }
+                
+                # Score Swap Logic
+                def is_numeric(s):
+                    try:
+                        if not s: return False
+                        float(str(s).strip().replace(',', ''))
+                        return True
+                    except: return False
+                
+                if is_numeric(app_res['score_d']) and not is_numeric(app_res['score_final']):
+                    app_res['score_final'] = app_res['score_d']
+                
+                apparatus_results.append(app_res)
+
+            extracted_results.append({
+                'raw_name': raw_name,
+                'raw_club': row.get('Club', ''),
+                'discipline_id': discipline_id,
+                'gender_heuristic': gender_heuristic,
+                'apparatus_results': apparatus_results,
+                'dynamic_metadata': dynamic_values
+            })
+
+            # AA Enrichement
+            aa_record = next((r for r in apparatus_results if r['raw_event'] in ['AllAround', 'All Around', 'AA']), None)
+            valid_sum = 0.0; valid_d_sum = 0.0; valid_app_count = 0
+            
+            for res in apparatus_results:
+                if res['raw_event'] in ['AllAround', 'All Around', 'AA', 'Team']: continue
+                try:
+                    s = float(str(res['score_final']).replace(',', ''))
+                    valid_sum += s; valid_app_count += 1
+                except: pass
+                try:
+                    d = float(str(res['score_d']).replace(',', ''))
+                    valid_d_sum += d
+                except: pass
+            
+            if not aa_record:
+                if valid_app_count > 0:
+                    apparatus_results.append({
+                        'raw_event': 'All Around',
+                        'score_final': f"{valid_sum:.3f}", 
+                        'score_d': f"{valid_d_sum:.3f}" if valid_d_sum > 0 else '',
+                        'calculated': True
+                    })
+            else:
+                if (not aa_record.get('score_d') or str(aa_record['score_d']).strip() == '') and valid_d_sum > 0:
+                    aa_record['score_d'] = f"{valid_d_sum:.3f}"
                     aa_record['calculated_d'] = True
+
+        return {
+            'source': 'livemeet',
+            'source_meet_id': source_meet_id,
+            'meet_details': meet_details,
+            'results': extracted_results
+        }
+    except Exception as e:
+        print(f"Error in extract_livemeet_data: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
     return {
         'source': 'livemeet',
@@ -453,6 +423,7 @@ def extract_mso_data(filepath, meet_details):
     """
     Extracts data from a single MSO CSV without DB interaction.
     """
+    import pandas as pd
     filename = os.path.basename(filepath)
     source_meet_id = filename.split('_mso.csv')[0]
     
@@ -496,7 +467,7 @@ def extract_mso_data(filepath, meet_details):
     sample_level = str(df['Lvl'].iloc[0]).upper() if 'Lvl' in df.columns and not df.empty else ""
     
     is_wag_level = any(x in sample_level for x in ['XS', 'XG', 'XP', 'XB', 'XCEL', 'CCP'])
-    is_mag_level = any(re.match(r'^P\d', sample_level) for x in [sample_level]) or 'PO' in sample_level
+    is_mag_level = any(re.match(r'^[PB]\d|^AP|^SR|^SNG|^NG|^J\d', sample_level) for x in [sample_level]) or 'PO' in sample_level
     
     if is_wag_level:
         discipline_id = 1; gender_heuristic = 'F'
@@ -557,6 +528,7 @@ def extract_ksis_data(filepath, meet_details):
     """
     Extracts data from a KSIS CSV.
     """
+    import pandas as pd
     try:
         df = pd.read_csv(filepath, keep_default_na=False, dtype=str)
         if df.empty or 'Name' not in df.columns:

@@ -11,6 +11,7 @@ import argparse
 import traceback
 import signal
 import logging
+from functools import lru_cache
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Import extraction library
@@ -50,6 +51,10 @@ LIVEMEET_MANIFEST = "discovered_meet_ids_livemeet.csv"
 MSO_MANIFEST = "discovered_meet_ids_mso.csv"
 KSIS_MANIFEST = "discovered_meet_ids_ksis.csv"
 
+# --- PERFORMANCE TUNING ---
+BATCH_INSERT_SIZE = 500  # Number of rows to accumulate before batch insert
+LRU_CACHE_SIZE = 10000   # Max entries for entity caches
+
 # ==============================================================================
 #  WORKER: READER (Parallel)
 # ==============================================================================
@@ -75,9 +80,12 @@ def reader_worker(scraper_type, filepath, manifest, aliases=None):
 #  LOADER: WRITER (Serial)
 # ==============================================================================
 
-def write_to_db(conn, data_package, caches, club_alias_map):
+def write_to_db(conn, data_package, caches, club_alias_map, existing_results, pending_inserts):
     """
     Serial function that takes extracted data and writes it to the database.
+    
+    OPTIMIZED: Uses in-memory duplicate set (existing_results) for O(1) dupe checking
+    and accumulates inserts in pending_inserts list for batch processing.
     """
     if not data_package or 'error' in data_package:
         if data_package and 'error' in data_package:
@@ -94,6 +102,13 @@ def write_to_db(conn, data_package, caches, club_alias_map):
     
     cursor = conn.cursor()
     inserted_count = 0
+    
+    # Helper for numeric conversions (defined once, not per-loop)
+    def to_float(v):
+        if v is None: return None
+        try: 
+            return float(str(v).replace(',', ''))
+        except: return None
     
     for athlete_res in results:
         # 2. Athlete Identification
@@ -160,19 +175,13 @@ def write_to_db(conn, data_package, caches, club_alias_map):
                 
             apparatus_id = caches['apparatus'][app_key]
             
-            # Check Session-Aware Uniqueness
+            # Check Session-Aware Uniqueness via IN-MEMORY SET (O(1) instead of SQL query)
             current_session = dynamic_values.get('session') or dynamic_values.get('group')
             current_level = dynamic_values.get('level')
+            dup_key = (meet_db_id, athlete_id, apparatus_id, current_session, current_level)
             
-            existing_result_id = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id, session=current_session, level=current_level)
-            
-            # Numeric conversions
-            def to_float(v):
-                if v is None: return None
-                try: 
-                    # Remove potential comma from things like "1,000"
-                    return float(str(v).replace(',', ''))
-                except: return None
+            # Check if this result already exists
+            is_duplicate = dup_key in existing_results
 
             score_raw = app_res.get('score_final')
             score_final = to_float(score_raw)
@@ -199,62 +208,77 @@ def write_to_db(conn, data_package, caches, club_alias_map):
                 final_details['score_d_text'] = str(score_d_raw).strip()
                 details_json = json.dumps(final_details)
 
-            if existing_result_id:
-                # 1. Fetch existing state to see if we should update
-                cursor.execute("SELECT score_final, score_d, score_text, rank_text, details_json FROM Results WHERE result_id = ?", (existing_result_id,))
-                db_res = cursor.fetchone()
-                db_final, db_d, db_text, db_rank, db_json_str = db_res if db_res else (None, None, None, None, None)
-                db_json = json.loads(db_json_str) if db_json_str else {}
-                
-                # 2. OVERWRITE LOGIC:
-                # Always update if current source is 'DETAILED' or 'PEREVENT'.
-                # Otherwise, update ONLY if we are filling a gap (NULL -> Value).
+            if is_duplicate:
+                # For duplicates from DETAILED/PEREVENT files, we still want to update
                 is_detailed = "DETAILED" in data_package.get('filepath', '') or "PEREVENT" in data_package.get('filepath', '')
-                
-                new_json = json.loads(details_json) if details_json else {}
-                has_new_d_text = 'score_d_text' in new_json and 'score_d_text' not in db_json
-                
-                should_update = is_detailed or \
-                               (score_final is not None and db_final is None) or \
-                               (score_d is not None and db_d is None) or \
-                               (score_text and not db_text) or \
-                               (rank_text and not db_rank) or \
-                               has_new_d_text
-                
-                if should_update:
-                     # If not detailed, merge JSON to preserve existing metadata
-                     if not is_detailed and db_json:
-                         merged_json = db_json.copy()
-                         merged_json.update(new_json)
-                         details_json = json.dumps(merged_json)
-                     
-                     cursor.execute("""
-                        UPDATE Results 
-                        SET score_final = COALESCE(?, score_final), 
-                            score_d = COALESCE(?, score_d), 
-                            score_text = COALESCE(?, score_text), 
-                            rank_numeric = COALESCE(?, rank_numeric), 
-                            rank_text = COALESCE(?, rank_text), 
-                            details_json = ? 
-                        WHERE result_id = ?
-                     """, (score_final, score_d, score_text, rank_numeric, rank_text, details_json, existing_result_id))
+                if is_detailed:
+                    # Fall back to SQL update for detailed files (these are rare)
+                    existing_result_id = check_duplicate_result(conn, meet_db_id, athlete_id, apparatus_id, session=current_session, level=current_level)
+                    if existing_result_id:
+                        cursor.execute("SELECT score_final, score_d, score_text, rank_text, details_json FROM Results WHERE result_id = ?", (existing_result_id,))
+                        db_res = cursor.fetchone()
+                        db_final, db_d, db_text, db_rank, db_json_str = db_res if db_res else (None, None, None, None, None)
+                        db_json = json.loads(db_json_str) if db_json_str else {}
+                        
+                        new_json = json.loads(details_json) if details_json else {}
+                        merged_json = db_json.copy()
+                        merged_json.update(new_json)
+                        details_json = json.dumps(merged_json)
+                        
+                        cursor.execute("""
+                            UPDATE Results 
+                            SET score_final = COALESCE(?, score_final), 
+                                score_d = COALESCE(?, score_d), 
+                                score_text = COALESCE(?, score_text), 
+                                rank_numeric = COALESCE(?, rank_numeric), 
+                                rank_text = COALESCE(?, rank_text), 
+                                details_json = ? 
+                            WHERE result_id = ?
+                        """, (score_final, score_d, score_text, rank_numeric, rank_text, details_json, existing_result_id))
                 continue
             
-            # SQL Construction
+            # Build row for batch insert
             cols = ['meet_db_id', 'athlete_id', 'apparatus_id', 'gender', 'score_final', 'score_d', 'score_sv', 'score_e', 'penalty', 'rank_numeric', 'rank_text', 'score_text', 'bonus', 'execution_bonus', 'details_json']
             vals = [meet_db_id, athlete_id, apparatus_id, gender, score_final, score_d, score_sv, score_e, penalty, rank_numeric, rank_text, score_text, bonus, exec_bonus, details_json]
             
             for col_name, col_val in dynamic_values.items():
                 cols.append(col_name)
                 vals.append(col_val)
-                
-            placeholders = ', '.join(['?'] * len(cols))
-            quoted_cols = [f'"{c}"' for c in cols]
-            sql = f"INSERT INTO Results ({', '.join(quoted_cols)}) VALUES ({placeholders})"
-            cursor.execute(sql, vals)
+            
+            # Add to pending inserts list for batch processing
+            pending_inserts.append((tuple(cols), tuple(vals)))
+            
+            # Track this result in the in-memory set to prevent future duplicates
+            existing_results.add(dup_key)
             inserted_count += 1
             
-    return
+    return inserted_count
+
+
+def flush_pending_inserts(cursor, pending_inserts):
+    """
+    Batch insert all pending results. Groups by column signature for executemany().
+    """
+    if not pending_inserts:
+        return 0
+    
+    # Group inserts by column signature (since dynamic columns can vary)
+    by_cols = {}
+    for cols, vals in pending_inserts:
+        if cols not in by_cols:
+            by_cols[cols] = []
+        by_cols[cols].append(vals)
+    
+    total_inserted = 0
+    for cols, vals_list in by_cols.items():
+        placeholders = ', '.join(['?'] * len(cols))
+        quoted_cols = [f'"{c}"' for c in cols]
+        sql = f"INSERT INTO Results ({', '.join(quoted_cols)}) VALUES ({placeholders})"
+        cursor.executemany(sql, vals_list)
+        total_inserted += len(vals_list)
+    
+    pending_inserts.clear()
+    return total_inserted
 
 def unify_meets(conn):
     """
@@ -308,13 +332,13 @@ def unify_meets(conn):
     logging.info(f"Meet unification complete. Removed {total_unified} duplicate meet records.")
 
 @retry_on_lock()
-def refresh_gold_tables(conn):
+def refresh_gold_tables(conn, db_path=DB_FILE):
     """
     Creates/Updates flattened 'Gold' tables for MAG and WAG.
     MAG: Gold_Results_MAG (7 triples)
     WAG: Gold_Results_WAG (5 triples)
     """
-    logging.info("Refreshing Gold_Results tables (MAG & WAG)...")
+    logging.info(f"Refreshing Gold_Results tables (MAG & WAG) in {db_path}...")
     cursor = conn.cursor()
     
     # We drop and recreate for simplicity since it's an aggregation table
@@ -381,7 +405,7 @@ def refresh_gold_tables(conn):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'M'
-    GROUP BY p.person_id, m.meet_db_id
+    GROUP BY p.person_id, m.meet_db_id, r.session
     HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
@@ -435,24 +459,100 @@ def refresh_gold_tables(conn):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'F'
-    GROUP BY p.person_id, m.meet_db_id
+    GROUP BY p.person_id, m.meet_db_id, r.session
     HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
     
     cursor.execute(mag_query)
     cursor.execute(wag_query)
+
+    # --- DEDUPLICATION (Prioritize Combined over Session, but leave Day/Jour alone) ---
+    logging.info("Creating indexes for Gold table deduplication...")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_gold_mag_dedup ON Gold_Results_MAG(athlete_name, year, source, date)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_gold_wag_dedup ON Gold_Results_WAG(athlete_name, year, source, date)")
+
+    dedup_mag = """
+    DELETE FROM Gold_Results_MAG
+    WHERE rowid IN (
+        SELECT rowid FROM (
+            SELECT 
+                rowid,
+                RANK() OVER (
+                    PARTITION BY athlete_name, year, source, date,
+                        CASE 
+                            WHEN meet_name LIKE '%Day 1%' OR meet_name LIKE '%Jour 1%' THEN 'D1'
+                            WHEN meet_name LIKE '%Day 2%' OR meet_name LIKE '%Jour 2%' THEN 'D2'
+                            WHEN meet_name LIKE '%Day 3%' OR meet_name LIKE '%Jour 3%' THEN 'D3'
+                            WHEN meet_name LIKE '%Day 4%' OR meet_name LIKE '%Jour 4%' THEN 'D4'
+                            WHEN meet_name LIKE '%Day%' OR meet_name LIKE '%Jour%' THEN 'DX'
+                            ELSE 'MAIN_OR_COMBINED' 
+                        END
+                        ORDER BY 
+                            (CASE WHEN aa_rank IS NOT NULL AND aa_rank != '' THEN 0 ELSE 1 END) ASC,
+                            (CASE WHEN fx_rank IS NOT NULL AND fx_rank != '' THEN 0 ELSE 1 END) ASC,
+                            CASE 
+                                WHEN meet_name LIKE '%Combined%' THEN 1
+                                WHEN meet_name LIKE '%All-Around%' THEN 2
+                                ELSE 3
+                            END ASC,
+                            meet_name DESC,
+                            rowid DESC
+                ) as rnk
+            FROM Gold_Results_MAG
+        )
+        WHERE rnk > 1
+    );
+    """
+    
+    dedup_wag = """
+    DELETE FROM Gold_Results_WAG
+    WHERE rowid IN (
+        SELECT rowid FROM (
+            SELECT 
+                rowid,
+                RANK() OVER (
+                    PARTITION BY athlete_name, year, source, date,
+                        CASE 
+                            WHEN meet_name LIKE '%Day 1%' OR meet_name LIKE '%Jour 1%' THEN 'D1'
+                            WHEN meet_name LIKE '%Day 2%' OR meet_name LIKE '%Jour 2%' THEN 'D2'
+                            WHEN meet_name LIKE '%Day 3%' OR meet_name LIKE '%Jour 3%' THEN 'D3'
+                            WHEN meet_name LIKE '%Day 4%' OR meet_name LIKE '%Jour 4%' THEN 'D4'
+                            WHEN meet_name LIKE '%Day%' OR meet_name LIKE '%Jour%' THEN 'DX'
+                            ELSE 'MAIN_OR_COMBINED' 
+                        END
+                        ORDER BY 
+                            (CASE WHEN aa_rank IS NOT NULL AND aa_rank != '' THEN 0 ELSE 1 END) ASC,
+                            (CASE WHEN vt_rank IS NOT NULL AND vt_rank != '' THEN 0 ELSE 1 END) ASC,
+                            CASE 
+                                WHEN meet_name LIKE '%Combined%' THEN 1
+                                WHEN meet_name LIKE '%All-Around%' THEN 2
+                                ELSE 3
+                            END ASC,
+                            meet_name DESC,
+                            rowid DESC
+                ) as rnk
+            FROM Gold_Results_WAG
+        )
+        WHERE rnk > 1
+    );
+    """
+    
+    logging.info("Running Gold table deduplication...")
+    cursor.execute(dedup_mag)
+    cursor.execute(dedup_wag)
     conn.commit()
+    
     logging.info("Gold_Results_MAG and Gold_Results_WAG updated successfully.")
     
     # Trigger SQL Export Generation
-    logging.info("Generating SQL exports for Supabase...")
+    logging.info(f"Generating SQL exports for Supabase from {db_path}...")
     try:
         import subprocess # Added import for subprocess
-        subprocess.run(["python3", "generate_modified_gold.py"], check=True) # Refresh L1/L2 tables first
-        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L0", "--table", "Gold_Results_MAG"], check=True)
-        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L1", "--table", "Gold_Results_MAG_Filtered_L1"], check=True)
-        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L2", "--table", "Gold_Results_MAG_Filtered_L2"], check=True)
+        subprocess.run(["python3", "generate_modified_gold.py", "--db-file", db_path], check=True) # Refresh L1/L2 tables first
+        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L0", "--table", "Gold_Results_MAG", "--db-file", db_path], check=True)
+        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L1", "--table", "Gold_Results_MAG_Filtered_L1", "--db-file", db_path], check=True)
+        subprocess.run(["python3", "generate_supabase_export.py", "--level", "L2", "--table", "Gold_Results_MAG_Filtered_L2", "--db-file", db_path], check=True)
         logging.info("SQL exports generated successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to generate SQL exports: {e}")
@@ -574,10 +674,11 @@ def main():
     parser.add_argument("--sample", type=int, default=1, help="Process every Nth file")
     parser.add_argument("--limit", type=int, default=0, help="Maximum number of files to process")
     parser.add_argument("--gold-only", action="store_true", help="Skip file processing and only refresh Gold tables")
+    parser.add_argument("--db-file", type=str, default=DB_FILE, help="Path to SQLite database file")
     args = parser.parse_args()
 
     # 1. Load context
-    if not setup_database(DB_FILE):
+    if not setup_database(args.db_file):
         logging.error("Database setup failed. Exiting.")
         return
         
@@ -588,7 +689,7 @@ def main():
     ksis_manifest = load_manifest('ksis', KSIS_MANIFEST)
     
     # HEAL METADATA FIRST
-    with sqlite3.connect(DB_FILE, timeout=30) as conn:
+    with sqlite3.connect(args.db_file, timeout=30) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         heal_meets_metadata(conn, kscore_manifest, livemeet_manifest, mso_manifest, ksis_manifest)
 
@@ -622,8 +723,10 @@ def main():
         mid = os.path.basename(f).split('_')[0]
         files_to_process.append(('ksis', f, ksis_manifest.get(mid, {}), None))
 
-    import random
-    random.shuffle(files_to_process) # Shuffle to ensure parallel processing of different sources
+    # Prioritize MSO files by sorting them to the front of the queue
+    files_to_process.sort(key=lambda x: 0 if x[0] == 'mso' else 1)
+    # Note: We don't shuffle anymore to maintain this priority, 
+    # but the ProcessPoolExecutor will still process files in parallel.
     if args.sample > 1: files_to_process = files_to_process[::args.sample]
 
     if not files_to_process and not args.gold_only:
@@ -637,7 +740,7 @@ def main():
     unprocessed = []
     
     if not args.gold_only:
-        with sqlite3.connect(DB_FILE) as conn:
+        with sqlite3.connect(args.db_file) as conn:
             processed_map = {row[0]: True for row in conn.execute("SELECT file_hash FROM ProcessedFiles").fetchall()}
             
             for stype, fpath, manifest, aliases in files_to_process:
@@ -656,17 +759,40 @@ def main():
         if not unprocessed:
             logging.info("No unprocessed files found.")
         else:
-            # 4. Process in Parallel
+            # 4. Process in Parallel with OPTIMIZED caching
             caches = {}
-            with sqlite3.connect(DB_FILE) as conn:
-                caches['person'] = {row[1]: row[0] for row in conn.execute("SELECT person_id, full_name FROM Persons").fetchall()}
-                caches['club'] = {row[1]: row[0] for row in conn.execute("SELECT club_id, name FROM Clubs").fetchall()}
-                caches['athlete'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT athlete_id, person_id, club_id FROM Athletes").fetchall()}
+            with sqlite3.connect(args.db_file) as conn:
+                # --- CREATE MISSING INDEX for duplicate checks (one-time operation) ---
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_results_dup_check 
+                    ON Results(meet_db_id, athlete_id, apparatus_id, session, level)
+                """)
+                conn.commit()
+                
+                # --- LRU BOUNDED CACHES ---
+                # Only load small, static tables fully (apparatus ~50 rows, meets ~1.4K rows)
+                # Person, Club, Athlete use LRU caches populated on-demand by etl_functions
+                caches['person'] = {}  # Start empty, filled on-demand with LRU_CACHE_SIZE limit
+                caches['club'] = {}    # Start empty, filled on-demand
+                caches['athlete'] = {} # Start empty, filled on-demand
                 caches['apparatus'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT apparatus_id, name, discipline_id FROM Apparatus").fetchall()}
                 caches['meet'] = {(row[1], row[2]): row[0] for row in conn.execute("SELECT meet_db_id, source, source_meet_id FROM Meets").fetchall()}
+                
+                # --- BUILD IN-MEMORY DUPLICATE SET (O(1) lookup instead of per-row SQL) ---
+                logging.info("Building in-memory duplicate check set...")
+                existing_results = set()
+                cursor = conn.cursor()
+                cursor.execute("SELECT meet_db_id, athlete_id, apparatus_id, session, level FROM Results")
+                while True:
+                    rows = cursor.fetchmany(50000)  # Fetch in batches to reduce memory spikes
+                    if not rows:
+                        break
+                    for row in rows:
+                        existing_results.add(tuple(row))
+                logging.info(f"Loaded {len(existing_results)} existing result keys for duplicate checking.")
 
             total = len(unprocessed)
-            batch_size = 10 
+            log_interval = 10  # Log progress every N files
             
             stop_requested = False
             def signal_handler(sig, frame):
@@ -676,9 +802,12 @@ def main():
 
             signal.signal(signal.SIGINT, signal_handler)
 
-            with sqlite3.connect(DB_FILE) as conn:
+            with sqlite3.connect(args.db_file) as conn:
                 conn.execute("PRAGMA journal_mode=WAL;")
                 conn.execute("PRAGMA synchronous=NORMAL;")
+                
+                # --- BATCH INSERT ACCUMULATOR ---
+                pending_inserts = []
                 
                 with ProcessPoolExecutor(max_workers=args.workers) as executor:
                     future_to_file = {
@@ -700,26 +829,37 @@ def main():
                             data_package = future.result()
                             if data_package:
                                 # ATOMIC TRANSACTION: Ensure file data AND "processed" mark are committed together
-                                # This provides crash protection: if it fails halfway, SQLite rolls back everything for this file.
                                 with conn:
-                                    write_to_db(conn, data_package, caches, club_aliases)
+                                    write_to_db(conn, data_package, caches, club_aliases, existing_results, pending_inserts)
+                                    
+                                    # Flush batch when threshold reached
+                                    if len(pending_inserts) >= BATCH_INSERT_SIZE:
+                                        cursor = conn.cursor()
+                                        flush_pending_inserts(cursor, pending_inserts)
+                                    
                                     mark_file_processed(conn, fpath, fhash)
                         except Exception as e:
                             logging.error(f"Error processing {fpath}: {e}")
+                            import traceback
+                            logging.error(traceback.format_exc())
                         
-                        if completed % batch_size == 0:
+                        if completed % log_interval == 0:
                             elapsed = time.time() - start_time
                             rate = completed / elapsed
                             remaining = (total - completed) / rate if rate > 0 else 0
                             logging.info(f"Progress: [{completed}/{total}] ({rate:.2f} files/s, ETA: {remaining/60:.1f}m)")
                 
-                # Final cleanup commit (though with conn handles it above)
-                conn.commit()
+                # Flush any remaining pending inserts
+                if pending_inserts:
+                    cursor = conn.cursor()
+                    flushed = flush_pending_inserts(cursor, pending_inserts)
+                    logging.info(f"Final batch flush: {flushed} results inserted.")
+                    conn.commit()
     else:
         logging.info("Skipping CSV processing due to --gold-only flag.")
 
     # 5. Autonomous Cleanup & Unification
-    with sqlite3.connect(DB_FILE, timeout=60) as conn:
+    with sqlite3.connect(args.db_file, timeout=60) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         
         logging.info("Running Metadata Healing Pass...")
@@ -727,7 +867,7 @@ def main():
         
         unify_meets(conn)
         
-        refresh_gold_tables(conn)
+        refresh_gold_tables(conn, args.db_file)
 
     if not args.gold_only:
         logging.info(f"Finished! Processed {completed} files in {time.time() - start_time:.2f}s.")

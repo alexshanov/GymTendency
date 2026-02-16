@@ -17,7 +17,9 @@ def extract_meet_ids_from_html(filename="meets_livemeet.html"):
         with open(filename, 'r', encoding='utf-8') as f:
             html_content = f.read()
     except FileNotFoundError:
-        print(f"Error: The file '{filename}' was not found. Please save the HTML first.")
+        print(f"Warning: The file '{filename}' was not found. LiveMeet discovery requires manual saving of the HTML page.")
+        # Create empty CSV to prevent downstream errors
+        pd.DataFrame(columns=['Source', 'MeetID', 'MeetName', 'Dates', 'start_date_iso', 'Location', 'Year']).to_csv('discovered_meet_ids_livemeet.csv', index=False)
         return None
 
     soup = BeautifulSoup(html_content, 'html.parser')

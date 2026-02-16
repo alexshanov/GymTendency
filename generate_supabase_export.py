@@ -65,9 +65,9 @@ def export_sql(data, table_name, output_file):
             # Assumes a unique index exists on (athlete_name, meet_name, year, level, age)
             f.write(f"INSERT INTO \"{table_name}\" ({columns}) VALUES ({val_str}) ON CONFLICT DO NOTHING;\n")
 
-def generate_export(level, target_table):
-    if not os.path.exists(LOCAL_DB_PATH):
-        print(f"Error: Local database not found at {LOCAL_DB_PATH}")
+def generate_export(level, target_table, db_path=LOCAL_DB_PATH):
+    if not os.path.exists(db_path):
+        print(f"Error: Local database not found at {db_path}")
         return
 
     source_table = TABLE_MAP.get(level)
@@ -75,7 +75,7 @@ def generate_export(level, target_table):
         print(f"Error: Invalid level {level}")
         return
 
-    conn = sqlite3.connect(LOCAL_DB_PATH)
+    conn = sqlite3.connect(db_path)
     # Set busy timeout to handle concurrent loader writes
     conn.execute("PRAGMA busy_timeout = 60000")
     cursor = conn.cursor()
@@ -125,6 +125,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export Gold Results as SQL for Supabase.")
     parser.add_argument("--level", choices=["L0", "L1", "L2"], default="L1", help="Level of filtering to export (L0=Main, L1=Roster, L2=Peers)")
     parser.add_argument("--table", default="Gold_Results", help="Target table name in SQL (Schema: public)")
+    parser.add_argument("--db-file", type=str, default=LOCAL_DB_PATH, help="Path to SQLite database")
     
     args = parser.parse_args()
-    generate_export(args.level, args.table)
+    generate_export(args.level, args.table, db_path=args.db_file)

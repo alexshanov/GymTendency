@@ -17,6 +17,10 @@ def test_standardization():
         ("P2", "Provincial 2"), # Should be untouched per instructions
         ("Provincial 2", "Provincial 2"),
         ("Provincial 1A", "P1A"),
+        ("B1A", "P1A"),
+        ("B2A", "P2A"),
+        ("B2C", "P2C"),
+        ("B2E", "P2E"),
     ]
     
     passed = True

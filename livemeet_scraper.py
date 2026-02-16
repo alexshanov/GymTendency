@@ -148,8 +148,9 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                 if any(k in meet_name.upper() for k in tnt_keywords) or \
                    "DOUBLE MINI" in page_text_upper or \
                    ("TRAMPOLINE" in page_text_upper and "TUMBLING" in page_text_upper):
-                    print(f"--> SKIPPING TNT MEET SIDE: '{meet_name}' ({gender_label})")
-                    continue # Skip this gender side
+                    print(f"--> SKIPPING TNT MEET: '{meet_name}' (ID: {meet_id_for_filename})")
+                    # Return special tuple to signal TNT skip to caller
+                    return 'TNT_SKIP', 0, meet_id_for_filename
                 # ----------------------
                 
                 # === LEVEL-BASED EXTRACTION (PRIORITY) ===
@@ -877,6 +878,21 @@ def fix_and_standardize_headers(input_filename, output_filename):
 #  MAIN EXECUTION BLOCK (The "Application")
 # ==============================================================================
 
+# --- TNT SKIPPED MEETS PERSISTENCE ---
+TNT_SKIPPED_FILE = "tnt_skipped_meets.txt"
+
+def load_tnt_skipped_meets():
+    """Load set of meet IDs that were previously identified as TNT meets."""
+    if os.path.exists(TNT_SKIPPED_FILE):
+        with open(TNT_SKIPPED_FILE, 'r') as f:
+            return set(line.strip() for line in f if line.strip())
+    return set()
+
+def mark_meet_as_tnt(meet_id):
+    """Append a meet ID to the TNT skipped list."""
+    with open(TNT_SKIPPED_FILE, 'a') as f:
+        f.write(f"{meet_id}\n")
+
 if __name__ == "__main__":
     
     # --- CONFIGURATION ---
@@ -891,6 +907,11 @@ if __name__ == "__main__":
     os.makedirs(MESSY_FOLDER, exist_ok=True)
     os.makedirs(FINAL_FOLDER, exist_ok=True)
     print(f"Ensured output directories exist: '{MESSY_FOLDER}' and '{FINAL_FOLDER}'")
+    
+    # Load TNT skipped meets
+    tnt_skipped_meets = load_tnt_skipped_meets()
+    if tnt_skipped_meets:
+        print(f"Loaded {len(tnt_skipped_meets)} previously skipped TNT meets.")
 
     try:
         meet_ids_df = pd.read_csv(MEET_IDS_CSV)
@@ -911,6 +932,11 @@ if __name__ == "__main__":
         print(f"\n[{i}/{total_meets}] {'='*20} PROCESSING MEET ID: {meet_id} {'='*20}")
         
         # --- SKIP LOGIC ---
+        # Check if this meet was previously identified as TNT
+        if str(meet_id) in tnt_skipped_meets:
+            print(f"Skipping previously identified TNT meet: {meet_id}")
+            continue
+            
         # Check if any final CSVs already exist for this meet ID
         final_files_found = glob.glob(os.path.join(FINAL_FOLDER, f"{meet_id}_FINAL_*.csv"))
         if final_files_found:
@@ -921,7 +947,15 @@ if __name__ == "__main__":
         meet_url = f"{BASE_URL}{meet_id}"
         
         # --- STEP 1: Scrape messy files ---
-        success, files_saved, file_base_id = scrape_raw_data_to_separate_files(meet_url, meet_id, MESSY_FOLDER)
+        result = scrape_raw_data_to_separate_files(meet_url, meet_id, MESSY_FOLDER)
+        success, files_saved, file_base_id = result
+        
+        # Handle TNT skip - persist for future runs
+        if success == 'TNT_SKIP':
+            print(f"Marking meet {meet_id} as TNT for future skipping.")
+            mark_meet_as_tnt(meet_id)
+            tnt_skipped_meets.add(str(meet_id))
+            continue
         
         if files_saved > 0:
             print(f"Scraping complete. Found {files_saved} tables for Meet ID {file_base_id}.")

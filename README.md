@@ -67,3 +67,19 @@ Each result captures D-Scores, Final Scores, and Ranks where available. Detailed
 - **Scraping**: BeautifulSoup4, Selenium
 - **Data Handling**: Pandas, JSON
 - **Environment**: Virtualenv
+
+## 🧰 Maintenance Utilities
+
+### Reset Recent Meets
+Use `reset_recent_meets.py` to force re-scraping of meets from a specific timeframe. This is useful for picking up late updates or correcting recent data gaps.
+
+```bash
+# Default: Reset meets since Jan 1, 2026
+python3 reset_recent_meets.py
+
+# Reset meets from the last 30 days
+python3 reset_recent_meets.py --days 30
+
+# Reset all meets from the current year (approx)
+python3 reset_recent_meets.py --years 1
+```

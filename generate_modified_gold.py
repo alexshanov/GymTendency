@@ -1,11 +1,12 @@
 import sqlite3
 import json
 import os
+import argparse
 
 DB_PATH = 'gym_data.db'
 ROSTER_PATH = 'internal_roster.json'
 
-def generate_modified_gold():
+def generate_modified_gold(db_path=DB_PATH):
     if not os.path.exists(ROSTER_PATH):
         print(f"Error: {ROSTER_PATH} not found.")
         return
@@ -17,7 +18,7 @@ def generate_modified_gold():
     # Some names might be duplicates (like Mykhailo Yatsiv) so use a set
     target_names = list(set([a['full_name'] for a in roster if a['full_name'] != '-']))
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA busy_timeout = 60000") # Wait up to 60 seconds if locked
     cursor = conn.cursor()
 
@@ -78,4 +79,8 @@ def generate_modified_gold():
     print("Done!")
 
 if __name__ == "__main__":
-    generate_modified_gold()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--db-file", type=str, default=DB_PATH, help="Path to SQLite database")
+    args = parser.parse_args()
+    
+    generate_modified_gold(db_path=args.db_file)

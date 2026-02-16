@@ -45,6 +45,7 @@ WORKERS = {
 }
 
 MAX_RETRIES = 3
+MAX_FAILURES = 5 # Permanent failure threshold
 POLL_INTERVAL = 60  # Seconds to wait before re-checking for new tasks
 CSV_BATCH_THRESHOLD = 300  # Trigger loader after this many CSVs scraped
 
@@ -161,10 +162,10 @@ def kscore_task(meet_id, meet_name, driver_path=None):
         # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
         success, count = kscore_scraper.scrape_kscore_meet(str(meet_id), str(meet_name), KSCORE_DIR, driver_path=driver_path)
         
-        if success:
+        if success and count > 0:
             return f"DONE: {meet_id}:{count}"
         else:
-            return f"ERROR: {meet_id} (Scraper reported failure or partial data)"
+            return f"ERROR: {meet_id} (0 files scraped, avoiding false positive DONE)"
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
 
@@ -523,8 +524,9 @@ def main():
             else:
                 low_priority_tasks.append((m_type, m_id, m_name))
 
-        # Randomize within groups
-        random.shuffle(high_priority_tasks)
+        # Prioritize MSO within the High Priority group
+        high_priority_tasks.sort(key=lambda x: 0 if x[0] == 'mso' else 1)
+        # Randomize others (optional, but keep it simple)
         random.shuffle(low_priority_tasks)
         
         # Combined Queue: High Priority FIRST
@@ -537,7 +539,7 @@ def main():
                 return val.get('status')
             return val
 
-        queue = [t for t in final_queue_list if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"]
+        queue = [t for t in final_queue_list if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]]
         return queue, get_status_simple
     
     # Initial load
@@ -731,6 +733,28 @@ def main():
                                     message = parts[1] if len(parts) > 1 else "Unknown Error"
                                     logging.error(f"  [FAIL] {mid}: {message}")
                                     print(f"  [FAIL] {mid}: {message}")
+                                    
+                                    # --- FAILURE TRACKING ---
+                                    fail_data = status_manifest.get(key, {})
+                                    if not isinstance(fail_data, dict):
+                                        fail_data = {}
+                                    
+                                    current_fails = fail_data.get('fail_count', 0) + 1
+                                    fail_data['fail_count'] = current_fails
+                                    fail_data['name'] = mname 
+                                    
+                                    if current_fails >= MAX_FAILURES:
+                                        fail_data['status'] = "FAILED"
+                                        fail_message = f"Exceeded max retries ({current_fails}). Marking FAILED."
+                                        logging.error(f"  [PERMANENT FAIL] {mid} {fail_message}")
+                                        print(f"  [STOP] {mid} {fail_message}")
+                                    else:
+                                        # Ensure we don't accidentally mark it as DONE or FAILED yet
+                                        fail_data['status'] = fail_data.get('status', 'RETRYING')
+
+                                    status_manifest[key] = fail_data
+                                    save_status(status_manifest)
+                                    # ------------------------
                                     current_progress += 1 # Still progress even if fail
                                     
                             except Exception as e:
@@ -742,7 +766,14 @@ def main():
                         save_status(status_manifest)
         
                     # Prepare queue for next attempt (retry failed items)
-                    queue = [t for t in queue if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"]
+                    # Prepare queue for next attempt (retry failed items)
+                    new_queue = []
+                    for t in queue:
+                        # Re-check status in case it failed in this chunk and is now FAILED
+                        s = get_status_simple(f"{t[0]}_{t[1]}")
+                        if s not in ["DONE", "FAILED"]:
+                            new_queue.append(t)
+                    queue = new_queue
                     
                     if queue and attempt < MAX_RETRIES:
                         jitter = random.randint(5, 15)
@@ -752,7 +783,7 @@ def main():
                 heartbeat_stop.set()
 
         # Check if we should continue with a new round
-        remaining_count = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"])
+        remaining_count = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]])
         
         if remaining_count == 0:
             print("\n=== All tasks completed! Waiting for new tasks... ===")
@@ -776,7 +807,7 @@ def main():
                 print(f"Reloaded: {len(all_tasks)} total tasks, {len(queue)} remaining")
 
     # Final summary
-    final_remaining = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") != "DONE"])
+    final_remaining = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]])
     msg = f"Scraper Orchestration finished. Remaining tasks: {final_remaining}"
     logging.info(msg)
     print(f"\n--- {msg} ---")
