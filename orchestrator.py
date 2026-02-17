@@ -541,6 +541,11 @@ def main():
 
     def build_queue(all_tasks, status_manifest):
         """Build prioritized queue from tasks, filtering out completed ones."""
+        # Hard filter if priority_only is active
+        if args.priority_only:
+            all_tasks = [t for t in all_tasks if (t[0], str(t[1])) in priority_keys]
+            print(f"  [FILTER] --priority-only active. Restricted to {len(all_tasks)} relevant meets.")
+
         high_priority_tasks = []
         low_priority_tasks = []
 
@@ -558,7 +563,7 @@ def main():
 
         # Prioritize MSO within the High Priority group
         high_priority_tasks.sort(key=lambda x: 0 if x[0] == 'mso' else 1)
-        # Randomize others (optional, but keep it simple)
+        # Randomize others
         random.shuffle(low_priority_tasks)
         
         # Combined Queue: High Priority FIRST
