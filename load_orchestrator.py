@@ -178,7 +178,8 @@ def write_to_db(conn, data_package, caches, club_alias_map, existing_results, pe
             # Check Session-Aware Uniqueness via IN-MEMORY SET (O(1) instead of SQL query)
             current_session = dynamic_values.get('session') or dynamic_values.get('group')
             current_level = dynamic_values.get('level')
-            dup_key = (meet_db_id, athlete_id, apparatus_id, current_session, current_level)
+            session_id = dynamic_values.get('session_id')
+            dup_key = (meet_db_id, athlete_id, apparatus_id, current_session, current_level, session_id)
             
             # Check if this result already exists
             is_duplicate = dup_key in existing_results
@@ -909,7 +910,7 @@ def main():
                 # --- CREATE MISSING INDEX for duplicate checks (one-time operation) ---
                 conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_results_dup_check 
-                    ON Results(meet_db_id, athlete_id, apparatus_id, session, level)
+                    ON Results(meet_db_id, athlete_id, apparatus_id, session, level, session_id)
                 """)
                 conn.commit()
                 
@@ -926,7 +927,7 @@ def main():
                 logging.info("Building in-memory duplicate check set...")
                 existing_results = set()
                 cursor = conn.cursor()
-                cursor.execute("SELECT meet_db_id, athlete_id, apparatus_id, session, level FROM Results")
+                cursor.execute("SELECT meet_db_id, athlete_id, apparatus_id, session, level, session_id FROM Results")
                 while True:
                     rows = cursor.fetchmany(50000)  # Fetch in batches to reduce memory spikes
                     if not rows:

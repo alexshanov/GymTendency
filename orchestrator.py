@@ -15,6 +15,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from webdriver_manager.chrome import ChromeDriverManager
 import threading
 import sqlite3
+import argparse
 import etl_functions # for hash calculation
 
 # Import Scrapers
@@ -259,15 +260,15 @@ def mso_task(meet_id, meet_name, driver_path=None):
 
     return False
     
-def is_high_priority(meet_type, meet_name, location='', meet_id=None, priority_ids=None):
+def is_high_priority(meet_type, meet_name, location='', meet_id=None, priority_keys=None):
     """
     Determines if a meet matches the High Priority criteria.
     """
     n = str(meet_name).upper()
     l = str(location).upper()
     
-    # Check if this meet is a prioritized LiveMeet (passed from caller)
-    if priority_ids and meet_id in priority_ids:
+    # Check if this meet is in our priority keys (source, id)
+    if priority_keys and (meet_type, str(meet_id)) in priority_keys:
         return True
 
     if meet_type == 'kscore':
@@ -431,6 +432,10 @@ def main():
 
     sys.excepthook = handle_exception
 
+    parser = argparse.ArgumentParser(description="Scraper Orchestrator")
+    parser.add_argument("--priority-only", action="store_true", help="Only scrape meets already in Gold L1/L2")
+    args = parser.parse_args()
+
     print("--- Scraper Orchestrator Started (Detailed logs in 'scraper_orchestrator.log') ---")
     logging.info("--- Scraper Orchestrator Started ---")
 
@@ -440,31 +445,30 @@ def main():
     # Load Status Manifest
     status_manifest = load_status()
 
-    # Determine priority LiveMeet IDs from Gold tables (L1/L2)
-    # Priority: Meets that made it into L1/L2 AND were scraped off livemeet
-    priority_ids = []
+    # Determine priority IDs from Gold tables (L1/L2)
+    # Priority: Meets that made it into L1/L2
+    priority_keys = set()
     if os.path.exists("gym_data.db"):
         try:
             with sqlite3.connect("gym_data.db") as conn:
                 q = """
-                    SELECT DISTINCT source_meet_id 
+                    SELECT DISTINCT m.source, m.source_meet_id 
                     FROM Meets m 
                     JOIN Results r ON m.meet_db_id = r.meet_db_id 
-                    WHERE m.source = 'livemeet' 
-                      AND r.athlete_id IN (
+                    WHERE r.athlete_id IN (
                           SELECT athlete_id FROM Gold_Results_MAG_Filtered_L1 
                           UNION 
                           SELECT athlete_id FROM Gold_Results_MAG_Filtered_L2
                           UNION
-                          SELECT athlete_id FROM Gold_Results_WAG -- WAG doesn't always have L1 filter yet
+                          SELECT athlete_id FROM Gold_Results_WAG
                       )
                 """
-                priority_ids = [row[0] for row in conn.execute(q).fetchall()]
-                print(f"  -> Identified {len(priority_ids)} LiveMeet meets in Gold L1/L2 for priority queue.")
+                priority_keys = set((row[0], str(row[1])) for row in conn.execute(q).fetchall())
+                print(f"  -> Identified {len(priority_keys)} meets in Gold L1/L2 for priority queue.")
         except Exception as e:
             print(f"  -> Warning: Failed to query priority meets from DB: {e}")
     
-    status_manifest['priority_livemeet_ids'] = priority_ids
+    status_manifest['priority_keys'] = list(priority_keys)
 
     # Ensure directories exist
     for d in [KSCORE_DIR, LIVEMEET_MESSY_DIR, LIVEMEET_FINAL_DIR, MSO_DIR]:
@@ -549,7 +553,7 @@ def main():
                 m_type, m_id, m_name = t
                 m_loc = ''
                 
-            if is_high_priority(m_type, m_name, m_loc, meet_id=m_id, priority_ids=status_manifest.get('priority_livemeet_ids', [])):
+            if is_high_priority(m_type, m_name, m_loc, meet_id=m_id, priority_keys=priority_keys):
                 high_priority_tasks.append((m_type, m_id, m_name))
             else:
                 low_priority_tasks.append((m_type, m_id, m_name))
@@ -574,6 +578,12 @@ def main():
     
     # Initial load
     all_tasks = load_all_tasks()
+    
+    # Apply --priority-only filter if requested
+    if args.priority_only:
+        all_tasks = [t for t in all_tasks if (t[0], str(t[1])) in priority_keys]
+        print(f"  [FILTER] --priority-only active. Restricted to {len(all_tasks)} relevant meets.")
+
     queue, get_status_simple = build_queue(all_tasks, status_manifest)
     
     logging.info(f"Total tasks loaded: {len(all_tasks)}. Remaining: {len(queue)}")
