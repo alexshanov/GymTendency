@@ -352,7 +352,9 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     CREATE TABLE Gold_Results_MAG AS
     SELECT
         p.full_name AS athlete_name,
+        r.athlete_id AS athlete_id,
         m.source AS source,
+        m.source_meet_id AS source_meet_id,
         m.comp_year AS year,
         m.start_date_iso AS date,
         CASE 
@@ -397,7 +399,7 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
         -- All Around (aa)
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)), '') AS aa_score,
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS aa_d,
-        MAX(r.aa_rank) AS aa_rank,
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank,
         MAX(r.session_id) AS session_id
         
     FROM Results r
@@ -407,7 +409,7 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'M'
-    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id
+    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id, m.source_meet_id
     HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
@@ -417,7 +419,9 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     CREATE TABLE Gold_Results_WAG AS
     SELECT
         p.full_name AS athlete_name,
+        r.athlete_id AS athlete_id,
         m.source AS source,
+        m.source_meet_id AS source_meet_id,
         m.comp_year AS year,
         m.start_date_iso AS date,
         CASE 
@@ -462,7 +466,7 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'F'
-    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id
+    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id, m.source_meet_id
     HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """

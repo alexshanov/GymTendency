@@ -445,28 +445,18 @@ def main():
     # Load Status Manifest
     status_manifest = load_status()
 
-    # Determine priority IDs from Gold tables (L1/L2)
-    # Priority: Meets that made it into L1/L2
+    # Determine priority IDs from static file (Generated one-off)
     priority_keys = set()
-    if os.path.exists("gym_data.db"):
+    if os.path.exists("priority_meets.json"):
         try:
-            with sqlite3.connect("gym_data.db") as conn:
-                q = """
-                    SELECT DISTINCT m.source, m.source_meet_id 
-                    FROM Meets m 
-                    JOIN Results r ON m.meet_db_id = r.meet_db_id 
-                    WHERE r.athlete_id IN (
-                          SELECT athlete_id FROM Gold_Results_MAG_Filtered_L1 
-                          UNION 
-                          SELECT athlete_id FROM Gold_Results_MAG_Filtered_L2
-                          UNION
-                          SELECT athlete_id FROM Gold_Results_WAG
-                      )
-                """
-                priority_keys = set((row[0], str(row[1])) for row in conn.execute(q).fetchall())
-                print(f"  -> Identified {len(priority_keys)} meets in Gold L1/L2 for priority queue.")
+            with open("priority_meets.json", "r") as f:
+                raw_keys = json.load(f)
+                priority_keys = set((row[0], str(row[1])) for row in raw_keys)
+                print(f"  -> Loaded {len(priority_keys)} priority meets from 'priority_meets.json'.")
         except Exception as e:
-            print(f"  -> Warning: Failed to query priority meets from DB: {e}")
+            print(f"  -> Warning: Failed to load 'priority_meets.json': {e}")
+    else:
+        print("  -> Info: 'priority_meets.json' not found. Priority queue will be empty.")
     
     status_manifest['priority_keys'] = list(priority_keys)
 

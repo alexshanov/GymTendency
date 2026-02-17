@@ -193,3 +193,4 @@ venv.bak/
 !remediation_queue.json
 !gold_alias_candidates.json
 !internal_roster.json
+gym_data.db.bak
