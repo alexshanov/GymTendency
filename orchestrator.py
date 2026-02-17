@@ -517,6 +517,26 @@ def main():
             for _, row in df.iterrows():
                 tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
         
+        # INJECT MISSING PRIORITY MEETS FROM DB
+        if args.priority_only and priority_keys:
+            existing_ids = set((t[0], str(t[1])) for t in tasks)
+            missing_keys = [k for k in priority_keys if k not in existing_ids]
+            if missing_keys:
+                print(f"  -> Fetching metadata for {len(missing_keys)} missing priority meets from DB...")
+                try:
+                    with sqlite3.connect("gym_data.db") as conn:
+                        for source, m_id in missing_keys:
+                            q = "SELECT name, location FROM Meets WHERE source = ? AND source_meet_id = ?"
+                            res = conn.execute(q, (source, m_id)).fetchone()
+                            if res:
+                                name, loc = res
+                                if source == 'livemeet':
+                                    tasks.append((source, str(m_id), name, loc))
+                                else:
+                                    tasks.append((source, str(m_id), name))
+                except Exception as e:
+                    print(f"  -> Warning: Failed to fetch missing priority metadata: {e}")
+
         return tasks
 
     def build_queue(all_tasks, status_manifest):
