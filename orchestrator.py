@@ -246,19 +246,6 @@ def mso_task(meet_id, meet_name, driver_path=None):
                 driver.quit()
             except:
                 pass
-
-    try:
-        # Use pkill if available for efficiency
-        subprocess.run(["pkill", "-f", "chrome"], capture_output=True)
-        subprocess.run(["pkill", "-f", "chromedriver"], capture_output=True)
-        # Aggressive fallback
-        subprocess.run(["killall", "-9", "chrome"], capture_output=True)
-        subprocess.run(["killall", "-9", "chromedriver"], capture_output=True)
-        time.sleep(2) # Allow system to release ports
-    except:
-        pass
-
-    return False
     
 def is_high_priority(meet_type, meet_name, location='', meet_id=None, priority_keys=None):
     """
@@ -437,6 +424,7 @@ def main():
     args = parser.parse_args()
 
     print("--- Scraper Orchestrator Started (Detailed logs in 'scraper_orchestrator.log') ---")
+    cleanup_orphaned_processes()
     logging.info("--- Scraper Orchestrator Started ---")
 
 
@@ -583,7 +571,7 @@ def main():
     
     logging.info(f"Total tasks loaded: {len(all_tasks)}. Remaining: {len(queue)}")
     print(f"Total tasks loaded: {len(all_tasks)}. Remaining to process: {len(queue)}")
-    print(f"  > High Priority Workload: {len([t for t in queue if is_high_priority(t[0], t[2])])}")
+    print(f"  > High Priority Workload: {len([t for t in queue if is_high_priority(t[0], t[2], meet_id=t[1], priority_keys=priority_keys)])}")
 
     # Graceful Shutdown Handling
     import signal
