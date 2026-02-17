@@ -227,7 +227,11 @@ def extract_livemeet_data(filepath, meet_details):
         for col in result_columns:
             match = re.search(r'Result_(.*)_(Score|D|E|Rnk|Total)$', col)
             if match: 
-                event_bases[match.group(1)] = match.group(1)
+                base_name = match.group(1)
+                # EXPLICITLY IGNORE PHYSICAL PREPARATION
+                if 'physical' in base_name.lower():
+                    continue
+                event_bases[base_name] = base_name
 
         # Discipline Detection
         MAG_INDICATORS = {'Pommel_Horse', 'PommelHorse', 'Rings', 'Parallel_Bars', 'ParallelBars', 'High_Bar', 'HighBar'}
