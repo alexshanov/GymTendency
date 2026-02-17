@@ -548,11 +548,12 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                                         athlete_data_wide[key] = {
                                                             'Name': athlete_name,
                                                             'Club': athlete_club,
-                                                            'Age_Group': age_group,
-                                                            'Group': f"{group_name} - {sub_label}",
-                                                            'Meet': meet_name,
+                                                            'Level': str(row_data.get('Level', '')),
                                                             'Prov': str(row_data.get('Prov', '')),
-                                                            'Level': str(row_data.get('Level', ''))
+                                                            'Age_Group': age_group,
+                                                            'Meet': meet_name,
+                                                            'Group': f"{group_name} - {sub_label}",
+                                                            'SessionID': sub_id
                                                         }
                                                     
                                                     # Map columns
@@ -623,6 +624,7 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
                                         be_df['Meet'] = meet_name
                                         be_df['Group'] = f"{group_name} - {sub_label}"
                                         be_df['Level'] = group_name
+                                        be_df['SessionID'] = sub_id
                                         all_be_rows.append(be_df)
                                     except Exception:
                                         continue

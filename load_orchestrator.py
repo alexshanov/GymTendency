@@ -396,7 +396,8 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
         -- All Around (aa)
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)), '') AS aa_score,
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS aa_d,
-        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank
+        MAX(r.aa_rank) AS aa_rank,
+        MAX(r.session_id) AS session_id
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id
@@ -405,7 +406,7 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'M'
-    GROUP BY p.person_id, m.meet_db_id, r.session
+    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id
     HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
@@ -450,7 +451,8 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
         -- All Around (aa)
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)), '') AS aa_score,
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS aa_d,
-        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank,
+        MAX(r.session_id) AS session_id
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id
@@ -459,91 +461,107 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'F'
-    GROUP BY p.person_id, m.meet_db_id, r.session
+    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id
     HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
     
     cursor.execute(mag_query)
     cursor.execute(wag_query)
-
-    # --- DEDUPLICATION (Prioritize Combined over Session, but leave Day/Jour alone) ---
-    logging.info("Creating indexes for Gold table deduplication...")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_gold_mag_dedup ON Gold_Results_MAG(athlete_name, year, source, date)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_gold_wag_dedup ON Gold_Results_WAG(athlete_name, year, source, date)")
-
-    dedup_mag = """
-    DELETE FROM Gold_Results_MAG
-    WHERE rowid IN (
-        SELECT rowid FROM (
-            SELECT 
-                rowid,
-                RANK() OVER (
-                    PARTITION BY athlete_name, year, source, date,
-                        CASE 
-                            WHEN meet_name LIKE '%Day 1%' OR meet_name LIKE '%Jour 1%' THEN 'D1'
-                            WHEN meet_name LIKE '%Day 2%' OR meet_name LIKE '%Jour 2%' THEN 'D2'
-                            WHEN meet_name LIKE '%Day 3%' OR meet_name LIKE '%Jour 3%' THEN 'D3'
-                            WHEN meet_name LIKE '%Day 4%' OR meet_name LIKE '%Jour 4%' THEN 'D4'
-                            WHEN meet_name LIKE '%Day%' OR meet_name LIKE '%Jour%' THEN 'DX'
-                            ELSE 'MAIN_OR_COMBINED' 
-                        END
-                        ORDER BY 
-                            (CASE WHEN aa_rank IS NOT NULL AND aa_rank != '' THEN 0 ELSE 1 END) ASC,
-                            (CASE WHEN fx_rank IS NOT NULL AND fx_rank != '' THEN 0 ELSE 1 END) ASC,
-                            CASE 
-                                WHEN meet_name LIKE '%Combined%' THEN 1
-                                WHEN meet_name LIKE '%All-Around%' THEN 2
-                                ELSE 3
-                            END ASC,
-                            meet_name DESC,
-                            rowid DESC
-                ) as rnk
-            FROM Gold_Results_MAG
-        )
-        WHERE rnk > 1
-    );
-    """
-    
-    dedup_wag = """
-    DELETE FROM Gold_Results_WAG
-    WHERE rowid IN (
-        SELECT rowid FROM (
-            SELECT 
-                rowid,
-                RANK() OVER (
-                    PARTITION BY athlete_name, year, source, date,
-                        CASE 
-                            WHEN meet_name LIKE '%Day 1%' OR meet_name LIKE '%Jour 1%' THEN 'D1'
-                            WHEN meet_name LIKE '%Day 2%' OR meet_name LIKE '%Jour 2%' THEN 'D2'
-                            WHEN meet_name LIKE '%Day 3%' OR meet_name LIKE '%Jour 3%' THEN 'D3'
-                            WHEN meet_name LIKE '%Day 4%' OR meet_name LIKE '%Jour 4%' THEN 'D4'
-                            WHEN meet_name LIKE '%Day%' OR meet_name LIKE '%Jour%' THEN 'DX'
-                            ELSE 'MAIN_OR_COMBINED' 
-                        END
-                        ORDER BY 
-                            (CASE WHEN aa_rank IS NOT NULL AND aa_rank != '' THEN 0 ELSE 1 END) ASC,
-                            (CASE WHEN vt_rank IS NOT NULL AND vt_rank != '' THEN 0 ELSE 1 END) ASC,
-                            CASE 
-                                WHEN meet_name LIKE '%Combined%' THEN 1
-                                WHEN meet_name LIKE '%All-Around%' THEN 2
-                                ELSE 3
-                            END ASC,
-                            meet_name DESC,
-                            rowid DESC
-                ) as rnk
-            FROM Gold_Results_WAG
-        )
-        WHERE rnk > 1
-    );
-    """
-    
-    logging.info("Running Gold table deduplication...")
-    cursor.execute(dedup_mag)
-    cursor.execute(dedup_wag)
     conn.commit()
+
+    # --- RANK PROPAGATION (Ensure ranks show on session rows) ---
+    logging.info("Creating temporary indexes for rank propagation...")
+    cursor.execute("CREATE INDEX IF NOT EXISTS tmp_mag_rank_match ON Gold_Results_MAG(athlete_name, date, level)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS tmp_wag_rank_match ON Gold_Results_WAG(athlete_name, date, level)")
+
+    logging.info("Propagating ranks across sessions...")
+    for table_name in ["Gold_Results_MAG", "Gold_Results_WAG"]:
+        rank_cols = ["fx_rank", "ph_rank", "sr_rank", "vt_rank", "pb_rank", "hb_rank", "aa_rank"] if "MAG" in table_name else ["vt_rank", "ub_rank", "bb_rank", "fx_rank", "aa_rank"]
+        for col in rank_cols:
+            logging.info(f"  -> Propagating {col} in {table_name}...")
+            # Use a more efficient self-join UPDATE
+            cursor.execute(f"""
+                UPDATE {table_name}
+                SET {col} = t2.best_rank
+                FROM (
+                    SELECT athlete_name, date, level, MIN(CAST({col} AS INTEGER)) as best_rank
+                    FROM {table_name}
+                    WHERE {col} IS NOT NULL AND {col} != ''
+                    GROUP BY athlete_name, date, level
+                ) AS t2
+                WHERE {table_name}.athlete_name = t2.athlete_name
+                  AND {table_name}.date = t2.date
+                  AND {table_name}.level = t2.level
+                  AND ({table_name}.{col} IS NULL OR {table_name}.{col} = '');
+            """)
+            
+            # Fallback: Propagate to rows with MISSING levels (e.g. MAG CWG Trials)
+            cursor.execute(f"""
+                UPDATE {table_name}
+                SET {col} = t2.best_rank
+                FROM (
+                    SELECT athlete_name, date, MIN(CAST({col} AS INTEGER)) as best_rank
+                    FROM {table_name}
+                    WHERE {col} IS NOT NULL AND {col} != ''
+                    GROUP BY athlete_name, date
+                ) AS t2
+                WHERE {table_name}.athlete_name = t2.athlete_name
+                  AND {table_name}.date = t2.date
+                  AND ({table_name}.level IS NULL OR {table_name}.level = '' OR {table_name}.level = 'nan')
+                  AND ({table_name}.{col} IS NULL OR {table_name}.{col} = '')
+            """)
+    conn.commit()
+
+    # --- DEDUPLICATION (Similarity-based merge) ---
+    logging.info("Running similarity-based deduplication...")
+    for table_name in ["Gold_Results_MAG", "Gold_Results_WAG"]:
+        deduplicate_by_similarity(cursor, table_name)
+
+    # --- VERIFICATION (Multi-day AA totals) ---
+    for table_name in ["Gold_Results_MAG", "Gold_Results_WAG"]:
+        verify_multi_day_totals(cursor, table_name)
     
-    logging.info("Gold_Results_MAG and Gold_Results_WAG updated successfully.")
+    # Drop temporary indexes
+    cursor.execute("DROP INDEX IF EXISTS tmp_mag_rank_match")
+    cursor.execute("DROP INDEX IF EXISTS tmp_wag_rank_match")
+    conn.commit()
+    logging.info("Gold tables cleaned and deduplicated successfully.")
+
+def deduplicate_by_similarity(cursor, table_name):
+    """
+    Identifies rows for the same athlete/date/level that have identical or 80%+ similar scores.
+    Keeps the one with fewer gaps (more non-null scores).
+    """
+    cursor.execute(f"SELECT rowid, * FROM {table_name}")
+    rows = cursor.fetchall()
+    if not rows: return
+    
+    # Get column names to handle MAG/WAG differences
+    cursor.execute(f"SELECT * FROM {table_name} LIMIT 0")
+    cols = [description[0] for description in cursor.description]
+    rowid_idx = 0
+    athlete_idx = cols.index('athlete_name')
+    date_idx = cols.index('date')
+    level_idx = cols.index('level')
+    aa_score_idx = cols.index('aa_score')
+    
+    score_cols = [i for i, c in enumerate(cols) if c.endswith('_score')]
+    
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for r in rows:
+        groups[(r[athlete_idx], r[date_idx], r[level_idx])].append(r)
+        
+    to_delete = []
+    for key, items in groups.items():
+        if len(items) <= 1: continue
+        
+        # Sort items: rows with more non-null scores first
+        items.sort(key=lambda x: sum(1 for i in score_cols if x[i] is not None and str(x[i]).strip() != ''), reverse=True)
+        
+        kept = [items[0]]
+        logging.info("Gold tables cleaned and deduplicated successfully.")
     
     # Trigger SQL Export Generation
     logging.info(f"Generating SQL exports for Supabase from {db_path}...")
@@ -556,6 +574,132 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
         logging.info("SQL exports generated successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to generate SQL exports: {e}")
+
+def deduplicate_by_similarity(cursor, table_name):
+    """
+    Identifies rows for the same athlete/date/level that have identical or 80%+ similar scores.
+    Keeps the one with fewer gaps (more non-null scores).
+    """
+    cursor.execute(f"SELECT rowid, * FROM {table_name}")
+    rows = cursor.fetchall()
+    if not rows: return
+    
+    # Get column names to handle MAG/WAG differences
+    cursor.execute(f"SELECT * FROM {table_name} LIMIT 0")
+    cols = [description[0] for description in cursor.description]
+    rowid_idx = 0
+    athlete_idx = cols.index('athlete_name')
+    date_idx = cols.index('date')
+    level_idx = cols.index('level')
+    aa_score_idx = cols.index('aa_score')
+    
+    score_cols = [i for i, c in enumerate(cols) if c.endswith('_score')]
+    
+    def normalize_level(l):
+        if l is None: return ""
+        s = str(l).strip().lower()
+        if s in ["nan", "none", ""]: return ""
+        return s
+
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for r in rows:
+        # Widen group to just athlete and date to catch cross-level/session mislabeling
+        groups[(r[athlete_idx+1], r[date_idx+1])].append(r)
+        
+    to_delete = []
+    for key, items in groups.items():
+        if len(items) <= 1: continue
+        
+        # Sort items: 
+        # 1. More non-null scores first
+        # 2. Prefer specific level labels over empty/nan
+        items.sort(key=lambda x: (
+            sum(1 for i in score_cols if x[i+1] is not None and str(x[i+1]).strip() != ''),
+            1 if normalize_level(x[level_idx+1]) != "" else 0,
+            -1 if "(Combined)" in str(x[cols.index('meet_name')+1]) else 0
+        ), reverse=True)
+        
+        kept = [items[0]]
+        for i in range(1, len(items)):
+            current = items[i]
+            is_dup = False
+            
+            for k_row in kept:
+                # 1. AA match (primary indicator)
+                c_aa = current[aa_score_idx+1]
+                k_aa = k_row[aa_score_idx+1]
+                if c_aa and k_aa:
+                    try:
+                        if abs(float(c_aa) - float(k_aa)) < 0.005:
+                            is_dup = True
+                            break
+                    except: pass
+                
+                # 2. Apparatus similarity (fallback for partial/avg discrepancies)
+                matches = 0
+                total_to_compare = 0
+                for idx in score_cols:
+                    s1 = current[idx+1]
+                    s2 = k_row[idx+1]
+                    if (s1 is not None and str(s1).strip() != '') or (s2 is not None and str(s2).strip() != ''):
+                        total_to_compare += 1
+                        try:
+                            if abs(float(s1) - float(s2)) < 0.005:
+                                matches += 1
+                        except:
+                            if s1 == s2:
+                                matches += 1
+                
+                if total_to_compare > 0:
+                    similarity = matches / total_to_compare
+                    # If 80% matches, it's the same meet. 
+                    if similarity >= 0.8:
+                        is_dup = True
+                        break
+                    
+                    # Special Case: Summit/Salto 2022 where PH and AA differ due to averaging.
+                    # Usually 5 matches out of 7 (FX, SR, VT, PB, HB vs PH, AA).
+                    if matches >= 4 and matches >= (total_to_compare - 2):
+                         is_dup = True
+                         break
+            
+            if is_dup:
+                to_delete.append(current[rowid_idx])
+            else:
+                kept.append(current)
+                
+    if to_delete:
+        cursor.execute(f"DELETE FROM {table_name} WHERE rowid IN ({','.join(map(str, to_delete))})")
+
+def verify_multi_day_totals(cursor, table_name):
+    """Logs verification of whether Combined AA score matches the sum of Day 1 and Day 2."""
+    logging.info(f"Verifying multi-day AA totals for {table_name}...")
+    cursor.execute(f"""
+        WITH SessionScores AS (
+            SELECT athlete_name, date, level, 
+                   MAX(CASE WHEN meet_name LIKE '%Day 1%' OR meet_name LIKE '%Jour 1%' OR meet_name LIKE '% D1%' THEN CAST(aa_score AS REAL) ELSE 0 END) as d1,
+                   MAX(CASE WHEN meet_name LIKE '%Day 2%' OR meet_name LIKE '%Jour 2%' OR meet_name LIKE '% D2%' THEN CAST(aa_score AS REAL) ELSE 0 END) as d2,
+                   MAX(CASE WHEN meet_name NOT LIKE '%Day%' AND meet_name NOT LIKE '%Jour%' AND meet_name NOT LIKE '% D1%' AND meet_name NOT LIKE '% D2%' THEN CAST(aa_score AS REAL) ELSE 0 END) as combined
+            FROM {table_name}
+            GROUP BY athlete_name, date, level
+        )
+        SELECT athlete_name, date, level, d1, d2, (d1+d2) as sum_d, combined
+        FROM SessionScores
+        WHERE d1 > 0 AND d2 > 0 AND combined > 0
+    """)
+    checks = cursor.fetchall()
+    if not checks:
+        logging.info("  No multi-day aggregate matches found to verify.")
+        return
+        
+    mismatches = [c for c in checks if abs(c[5] - c[6]) > 0.1]
+    if mismatches:
+        logging.warning(f"  Found {len(mismatches)} athletes where D1+D2 != Combined AA score!")
+        for m in mismatches[:5]: # Log first 5
+            logging.warning(f"    Mismatch: {m[0]} ({m[1]} {m[2]}) Sum: {m[5]}, Combined: {m[6]}")
+    else:
+        logging.info(f"  Success: All {len(checks)} multi-day aggregates match (D1+D2 == Combined).")
 
 
 # ==============================================================================

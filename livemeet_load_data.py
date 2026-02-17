@@ -132,7 +132,8 @@ def parse_livemeet_file(filepath, conn, person_cache, club_cache, athlete_cache,
         'Prov': 'Prov',
         'Meet': 'Meet',
         'Group': 'Group',
-        'Age_Group': 'Age_Group'
+        'Age_Group': 'Age_Group',
+        'SessionID': 'session_id'
     }
 
     # --- 1. Detect and Normalize Raw Headers (Sportzsoft/LiveMeet messy format) ---

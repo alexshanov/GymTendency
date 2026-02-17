@@ -259,13 +259,17 @@ def mso_task(meet_id, meet_name, driver_path=None):
 
     return False
     
-def is_high_priority(meet_type, meet_name, location=''):
+def is_high_priority(meet_type, meet_name, location='', meet_id=None, priority_ids=None):
     """
-    Determines if a meet matches the High Priority criteria based on audio instructions.
+    Determines if a meet matches the High Priority criteria.
     """
     n = str(meet_name).upper()
     l = str(location).upper()
     
+    # Check if this meet is a prioritized LiveMeet (passed from caller)
+    if priority_ids and meet_id in priority_ids:
+        return True
+
     if meet_type == 'kscore':
         return 'ED VINCENT' in n
         
@@ -436,6 +440,32 @@ def main():
     # Load Status Manifest
     status_manifest = load_status()
 
+    # Determine priority LiveMeet IDs from Gold tables (L1/L2)
+    # Priority: Meets that made it into L1/L2 AND were scraped off livemeet
+    priority_ids = []
+    if os.path.exists("gym_data.db"):
+        try:
+            with sqlite3.connect("gym_data.db") as conn:
+                q = """
+                    SELECT DISTINCT source_meet_id 
+                    FROM Meets m 
+                    JOIN Results r ON m.meet_db_id = r.meet_db_id 
+                    WHERE m.source = 'livemeet' 
+                      AND r.athlete_id IN (
+                          SELECT athlete_id FROM Gold_Results_MAG_Filtered_L1 
+                          UNION 
+                          SELECT athlete_id FROM Gold_Results_MAG_Filtered_L2
+                          UNION
+                          SELECT athlete_id FROM Gold_Results_WAG -- WAG doesn't always have L1 filter yet
+                      )
+                """
+                priority_ids = [row[0] for row in conn.execute(q).fetchall()]
+                print(f"  -> Identified {len(priority_ids)} LiveMeet meets in Gold L1/L2 for priority queue.")
+        except Exception as e:
+            print(f"  -> Warning: Failed to query priority meets from DB: {e}")
+    
+    status_manifest['priority_livemeet_ids'] = priority_ids
+
     # Ensure directories exist
     for d in [KSCORE_DIR, LIVEMEET_MESSY_DIR, LIVEMEET_FINAL_DIR, MSO_DIR]:
         os.makedirs(d, exist_ok=True)
@@ -519,7 +549,7 @@ def main():
                 m_type, m_id, m_name = t
                 m_loc = ''
                 
-            if is_high_priority(m_type, m_name, m_loc):
+            if is_high_priority(m_type, m_name, m_loc, meet_id=m_id, priority_ids=status_manifest.get('priority_livemeet_ids', [])):
                 high_priority_tasks.append((m_type, m_id, m_name))
             else:
                 low_priority_tasks.append((m_type, m_id, m_name))
