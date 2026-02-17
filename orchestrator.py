@@ -556,14 +556,19 @@ def main():
         # Combined Queue: High Priority FIRST
         final_queue_list = high_priority_tasks + low_priority_tasks
         
-        # Filter out already finished tasks
+        # Filter out already finished tasks (unless forcing priority)
         def get_status_simple(key):
             val = status_manifest.get(key)
             if isinstance(val, dict):
                 return val.get('status')
             return val
 
-        queue = [t for t in final_queue_list if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]]
+        if args.priority_only:
+            print("  [FORCE] --priority-only active. Bypassing status check to allow rescrapes.")
+            queue = final_queue_list
+        else:
+            queue = [t for t in final_queue_list if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]]
+        
         return queue, get_status_simple
     
     # Initial load
