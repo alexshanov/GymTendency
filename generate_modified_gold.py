@@ -2,77 +2,87 @@ import sqlite3
 import json
 import os
 import argparse
+import pandas as pd
 
 DB_PATH = 'gym_data.db'
 ROSTER_PATH = 'internal_roster.json'
+ALIAS_PATH = 'person_aliases.json'
+CLUB_ALIAS_PATH = 'club_aliases.json'
+
+def load_json(path):
+    if not os.path.exists(path):
+        return {}
+    with open(path, 'r') as f:
+        return json.load(f)
 
 def generate_modified_gold(db_path=DB_PATH):
     if not os.path.exists(ROSTER_PATH):
         print(f"Error: {ROSTER_PATH} not found.")
         return
 
+    person_aliases = load_json(ALIAS_PATH)
+    club_aliases = load_json(CLUB_ALIAS_PATH)
     with open(ROSTER_PATH, 'r') as f:
         roster = json.load(f)
 
-    # Get the list of full names from the roster
-    # Some names might be duplicates (like Mykhailo Yatsiv) so use a set
-    target_names = list(set([a['full_name'] for a in roster if a['full_name'] != '-']))
-
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA busy_timeout = 60000") # Wait up to 60 seconds if locked
-    cursor = conn.cursor()
-
-    # Placeholders for the query
-    placeholders = ', '.join(['?'] * len(target_names))
-
+    # Get the list of canonical names from the roster
+    target_names = set([a['full_name'] for a in roster if a['full_name'] != '-'])
+    
     print(f"Targeting {len(target_names)} unique full names from roster.")
 
-    # Check coverage in the database
-    cursor.execute(f"SELECT DISTINCT athlete_name FROM Gold_Results_MAG WHERE athlete_name IN ({placeholders})", target_names)
-    matched = set([row[0] for row in cursor.fetchall()])
-    matched_count = len(matched)
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA busy_timeout = 60000")
     
-    print(f"Found {matched_count} out of {len(target_names)} athletes in Gold_Results_MAG.")
+    # 1. Load the main Gold table into a DataFrame for easier manipulation
+    print("Loading Gold_Results_MAG into memory...")
+    df = pd.read_sql_query("SELECT * FROM Gold_Results_MAG", conn)
     
-    if matched_count < len(target_names):
-        missing = [name for name in target_names if name not in matched]
-        print("\nUNMATCHED ATHLETES FROM ROSTER:")
-        for name in sorted(missing):
-            print(f"  - {name}")
-        print("")
+    # 2. Apply Aliases
+    print("Applying person aliases...")
+    df['athlete_name'] = df['athlete_name'].map(lambda x: person_aliases.get(x, x))
+    
+    print("Applying club aliases...")
+    df['club'] = df['club'].map(lambda x: club_aliases.get(x, x))
+    
+    # 3. Deduplicate (Aliases might have caused new duplicates)
+    # We keep the row with the most non-null scores
+    score_cols = [c for c in df.columns if c.endswith('_score')]
+    df['non_null_count'] = df[score_cols].notnull().sum(axis=1)
+    
+    # Sort to keep the best record first
+    df = df.sort_values(by=['athlete_name', 'date', 'meet_name', 'level', 'age', 'non_null_count'], ascending=[True, True, True, True, True, False])
+    df = df.drop_duplicates(subset=['athlete_name', 'date', 'meet_name', 'level', 'age'], keep='first')
+    df = df.drop(columns=['non_null_count'])
 
-    # Level 1: Only the matched athletes
+    # 4. Filter for L1 (Athletes in Roster)
     print("Creating Gold_Results_MAG_Filtered_L1...")
-    cursor.execute("DROP TABLE IF EXISTS Gold_Results_MAG_Filtered_L1")
-    cursor.execute(f"""
-        CREATE TABLE Gold_Results_MAG_Filtered_L1 AS
-        SELECT * FROM Gold_Results_MAG
-        WHERE athlete_name IN ({placeholders})
-    """, target_names)
-    
-    cursor.execute("SELECT COUNT(*) FROM Gold_Results_MAG_Filtered_L1")
-    l1_rows = cursor.fetchone()[0]
-    print(f"L1 created with {l1_rows} rows.")
+    l1_df = df[df['athlete_name'].isin(target_names)]
+    l1_df.to_sql("Gold_Results_MAG_Filtered_L1", conn, if_exists="replace", index=False)
+    print(f"L1 created with {len(l1_df)} rows.")
 
-    # Level 2: Matched athletes + their competitors in same meets and groups
+    # 5. Filter for L2 (Roster athletes + their session peers)
     print("Creating Gold_Results_MAG_Filtered_L2...")
-    cursor.execute("DROP TABLE IF EXISTS Gold_Results_MAG_Filtered_L2")
+    # Define session groups based on the roster athletes' sessions
+    target_sessions = l1_df[['meet_name', 'level', 'age']].drop_duplicates()
+    target_sessions['age'] = target_sessions['age'].fillna('')
     
-    # We define a "group" as (meet_name, level, age)
-    # Since age can be NULL, we use COALESCE to ensure matching works
-    cursor.execute(f"""
-        CREATE TABLE Gold_Results_MAG_Filtered_L2 AS
-        SELECT * FROM Gold_Results_MAG
-        WHERE (meet_name, level, COALESCE(age, '')) IN (
-            SELECT DISTINCT meet_name, level, COALESCE(age, '')
-            FROM Gold_Results_MAG
-            WHERE athlete_name IN ({placeholders})
-        )
-    """, target_names)
-
-    cursor.execute("SELECT COUNT(*) FROM Gold_Results_MAG_Filtered_L2")
-    l2_rows = cursor.fetchone()[0]
-    print(f"L2 created with {l2_rows} rows.")
+    # Merge back to the full dataset to find peers
+    df_with_age = df.copy()
+    df_with_age['age_match'] = df_with_age['age'].fillna('')
+    
+    l2_df = pd.merge(
+        df_with_age, 
+        target_sessions, 
+        left_on=['meet_name', 'level', 'age_match'], 
+        right_on=['meet_name', 'level', 'age'],
+        suffixes=('', '_r')
+    )
+    
+    # Cleanup extra columns from merge
+    l2_df = l2_df[df.columns]
+    
+    l2_df.to_sql("Gold_Results_MAG_Filtered_L2", conn, if_exists="replace", index=False)
+    print(f"L2 created with {len(l2_df)} rows.")
 
     conn.commit()
     conn.close()

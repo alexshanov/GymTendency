@@ -352,9 +352,6 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     CREATE TABLE Gold_Results_MAG AS
     SELECT
         p.full_name AS athlete_name,
-        r.athlete_id AS athlete_id,
-        m.source AS source,
-        m.source_meet_id AS source_meet_id,
         m.comp_year AS year,
         m.start_date_iso AS date,
         CASE 
@@ -399,8 +396,7 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
         -- All Around (aa)
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)), '') AS aa_score,
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS aa_d,
-        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank,
-        MAX(r.session_id) AS session_id
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id
@@ -409,7 +405,7 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'M'
-    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id, m.source_meet_id
+    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id
     HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
@@ -419,9 +415,6 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     CREATE TABLE Gold_Results_WAG AS
     SELECT
         p.full_name AS athlete_name,
-        r.athlete_id AS athlete_id,
-        m.source AS source,
-        m.source_meet_id AS source_meet_id,
         m.comp_year AS year,
         m.start_date_iso AS date,
         CASE 
@@ -456,8 +449,7 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
         -- All Around (aa)
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_final END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.score_text END)), '') AS aa_score,
         NULLIF(COALESCE(CAST(MAX(CASE WHEN app.name = 'All Around' THEN r.score_d END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN json_extract(r.details_json, '$.score_d_text') END)), '') AS aa_d,
-        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank,
-        MAX(r.session_id) AS session_id
+        NULLIF(COALESCE(CAST(MIN(CASE WHEN app.name = 'All Around' THEN r.rank_numeric END) AS TEXT), MAX(CASE WHEN app.name = 'All Around' THEN r.rank_text END)), '') AS aa_rank
         
     FROM Results r
     JOIN Athletes a ON r.athlete_id = a.athlete_id
@@ -466,7 +458,7 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     JOIN Meets m ON r.meet_db_id = m.meet_db_id
     JOIN Apparatus app ON r.apparatus_id = app.apparatus_id
     WHERE r.gender = 'F'
-    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id, m.source_meet_id
+    GROUP BY p.person_id, m.meet_db_id, r.session, r.session_id
     HAVING MAX(r.score_final) IS NOT NULL
     ORDER BY m.comp_year DESC, p.full_name;
     """
@@ -532,46 +524,11 @@ def refresh_gold_tables(conn, db_path=DB_FILE):
     cursor.execute("DROP INDEX IF EXISTS tmp_wag_rank_match")
     conn.commit()
     logging.info("Gold tables cleaned and deduplicated successfully.")
-
-def deduplicate_by_similarity(cursor, table_name):
-    """
-    Identifies rows for the same athlete/date/level that have identical or 80%+ similar scores.
-    Keeps the one with fewer gaps (more non-null scores).
-    """
-    cursor.execute(f"SELECT rowid, * FROM {table_name}")
-    rows = cursor.fetchall()
-    if not rows: return
-    
-    # Get column names to handle MAG/WAG differences
-    cursor.execute(f"SELECT * FROM {table_name} LIMIT 0")
-    cols = [description[0] for description in cursor.description]
-    rowid_idx = 0
-    athlete_idx = cols.index('athlete_name')
-    date_idx = cols.index('date')
-    level_idx = cols.index('level')
-    aa_score_idx = cols.index('aa_score')
-    
-    score_cols = [i for i, c in enumerate(cols) if c.endswith('_score')]
-    
-    from collections import defaultdict
-    groups = defaultdict(list)
-    for r in rows:
-        groups[(r[athlete_idx], r[date_idx], r[level_idx])].append(r)
-        
-    to_delete = []
-    for key, items in groups.items():
-        if len(items) <= 1: continue
-        
-        # Sort items: rows with more non-null scores first
-        items.sort(key=lambda x: sum(1 for i in score_cols if x[i] is not None and str(x[i]).strip() != ''), reverse=True)
-        
-        kept = [items[0]]
-        logging.info("Gold tables cleaned and deduplicated successfully.")
     
     # Trigger SQL Export Generation
     logging.info(f"Generating SQL exports for Supabase from {db_path}...")
     try:
-        import subprocess # Added import for subprocess
+        import subprocess
         subprocess.run(["python3", "generate_modified_gold.py", "--db-file", db_path], check=True) # Refresh L1/L2 tables first
         subprocess.run(["python3", "generate_supabase_export.py", "--level", "L0", "--table", "Gold_Results_MAG", "--db-file", db_path], check=True)
         subprocess.run(["python3", "generate_supabase_export.py", "--level", "L1", "--table", "Gold_Results_MAG_Filtered_L1", "--db-file", db_path], check=True)
@@ -892,12 +849,32 @@ def main():
         with sqlite3.connect(args.db_file) as conn:
             processed_map = {row[0]: True for row in conn.execute("SELECT file_hash FROM ProcessedFiles").fetchall()}
             
-            for stype, fpath, manifest, aliases in files_to_process:
-                fhash = calculate_file_hash(fpath)
-                if fhash not in processed_map:
-                     unprocessed.append((stype, fpath, fhash, manifest, aliases))
-                     if args.limit > 0 and len(unprocessed) >= args.limit:
-                         break
+            print(f"Checking {len(files_to_process)} files against DB...")
+            # Parallelize hashing
+            with ProcessPoolExecutor(max_workers=args.workers) as executor:
+                # We need to map back the results to our files_to_process items
+                # Pass only filepath to hash_worker
+                future_to_file_info = {
+                    executor.submit(calculate_file_hash, item[1]): item 
+                    for item in files_to_process
+                }
+                
+                h_done = 0
+                h_total = len(files_to_process)
+                for future in as_completed(future_to_file_info):
+                    item = future_to_file_info[future]
+                    stype, fpath, manifest, aliases = item
+                    fhash = future.result()
+                    h_done += 1
+                    
+                    if fhash and fhash not in processed_map:
+                         unprocessed.append((stype, fpath, fhash, manifest, aliases))
+                         if args.limit > 0 and len(unprocessed) >= args.limit:
+                             executor.shutdown(wait=False, cancel_futures=True)
+                             break
+                    
+                    if h_done % 5000 == 0:
+                        logging.info(f"Hashing Progress: {h_done}/{h_total}")
     
     logging.info(f"Total files found: {len(files_to_process)}. New/Changed: {len(unprocessed)}")
     print(f"Total files found: {len(files_to_process)}. New to process: {len(unprocessed)}")

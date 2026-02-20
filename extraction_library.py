@@ -109,7 +109,12 @@ def extract_kscore_data(filepath, meet_details, level_alias_map):
             actual_d = d_val
             actual_rank = rank_val
             
-            if is_numeric(d_val) and not is_numeric(score_val):
+            # Define scratch markers
+            scratch_markers = ['S', 'DNS', 'SCRATCH', 'SCR', 'WD', 'SC']
+            s_val_upper = str(score_val).strip().upper()
+            is_scratch = any(marker == s_val_upper for marker in scratch_markers) or s_val_upper.startswith('SCR')
+
+            if is_numeric(d_val) and not is_numeric(score_val) and not is_scratch:
                 # Swap: use numeric D as the actual score
                 actual_score = d_val
                 # If rank is empty, move the non-numeric "Score" (e.g. "Gold") to rank_text
@@ -311,7 +316,7 @@ def extract_livemeet_data(filepath, meet_details):
                     'execution_bonus': exec_bonus_val
                 }
                 
-                # Score Swap Logic
+                # Score Swap Logic (For Level 1/Awards)
                 def is_numeric(s):
                     try:
                         if not s: return False
@@ -319,7 +324,12 @@ def extract_livemeet_data(filepath, meet_details):
                         return True
                     except: return False
                 
-                if is_numeric(app_res['score_d']) and not is_numeric(app_res['score_final']):
+                # Define scratch markers
+                scratch_markers = ['S', 'DNS', 'SCRATCH', 'SCR', 'WD', 'SC']
+                s_val_upper = str(app_res['score_final']).strip().upper()
+                is_scratch = any(marker == s_val_upper for marker in scratch_markers) or s_val_upper.startswith('SCR')
+
+                if is_numeric(app_res['score_d']) and not is_numeric(app_res['score_final']) and not is_scratch:
                     app_res['score_final'] = app_res['score_d']
                 
                 apparatus_results.append(app_res)

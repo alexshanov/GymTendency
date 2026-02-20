@@ -27,7 +27,7 @@ from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentE
 #  LIBRARY OF FUNCTIONS (The "Tools")
 # ==============================================================================
 
-def wait_for_results_to_load(driver, timeout=30):
+def wait_for_results_to_load(driver, timeout=60):
     """
     Polls the page until the sportzsoft results table is fully rendered
     and not in a 'Loading...' or empty state.
@@ -83,8 +83,8 @@ def scrape_raw_data_to_separate_files(main_page_url, meet_id_for_filename, outpu
         
         try:
             # Step 1: Wait for page content and check if results are available
-            time.sleep(5)
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            time.sleep(7) # Increased from 5 to 7 for stability
+            WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             
             # Check for "disabled results" variants
             page_text = driver.page_source

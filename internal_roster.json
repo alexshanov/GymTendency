@@ -369,5 +369,19 @@
         "group": 1,
         "birth_year": 2008,
         "level": "Junior"
+    },
+    {
+        "short_name": "Toby",
+        "full_name": "Toby Cairns",
+        "group": 0,
+        "birth_year": 2003,
+        "level": "Senior Next Gen"
+    },
+    {
+        "short_name": "Liam",
+        "full_name": "Liam Sutton",
+        "group": 0,
+        "birth_year": 2005,
+        "level": "Open"
     }
 ]
