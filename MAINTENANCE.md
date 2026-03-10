@@ -37,16 +37,18 @@ Use this if you only want to pick up updates for recent meets (e.g., meets from 
 To reset and re-scrape all meets from the **last 30 days**:
 ```bash
 python3 reset_recent_meets.py --days 30
+python3 orchestrator.py --days 30
 ```
+
+> **Note**: The `--days` flag on `orchestrator.py` restricts the task list to only meets within that time window, preventing the scraper from processing historical backlog.
 
 ### Other Options:
 - **Reset current year**: `python3 reset_recent_meets.py --years 1`
 - **Default (Since Jan 1, 2026)**: `python3 reset_recent_meets.py`
 
 ### What this does:
-1.  Identifies meets in the source manifests that fall within the time window.
-2.  Removes their `DONE` status from `scraped_meets_status.json`.
-3.  They will now be picked up the next time you run `python3 orchestrator.py`.
+1.  `reset_recent_meets.py` removes the `DONE` status for meets in the time window.
+2.  `orchestrator.py --days 30` loads only meets from the last 30 days, then scrapes any without `DONE` status.
 
 ---
 

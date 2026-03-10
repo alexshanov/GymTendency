@@ -421,7 +421,14 @@ def main():
 
     parser = argparse.ArgumentParser(description="Scraper Orchestrator")
     parser.add_argument("--priority-only", action="store_true", help="Only scrape meets already in Gold L1/L2")
+    parser.add_argument("--days", type=int, default=None, help="Only scrape meets from the last N days")
     args = parser.parse_args()
+
+    # Calculate cutoff date if --days is provided
+    days_cutoff = None
+    if args.days is not None:
+        days_cutoff = pd.Timestamp.now() - pd.Timedelta(days=args.days)
+        print(f"  [FILTER] --days {args.days} active. Only processing meets since {days_cutoff.date()}.")
 
     print("--- Scraper Orchestrator Started (Detailed logs in 'scraper_orchestrator.log') ---")
     cleanup_orphaned_processes()
@@ -475,9 +482,39 @@ def main():
         except Exception as e:
             print(f"Warning: Initial load failed: {e}")
 
+    def _parse_meet_date(row):
+        """Parse the date from a manifest row. Returns pd.Timestamp or None."""
+        # Try start_date_iso first (most reliable)
+        if 'start_date_iso' in row.index and pd.notna(row.get('start_date_iso')):
+            try: return pd.Timestamp(row['start_date_iso'])
+            except: pass
+        # Try Dates column (format: "Mar 1-2, 2026" etc)
+        if 'Dates' in row.index and pd.notna(row.get('Dates')):
+            try:
+                d_str = str(row['Dates']).split('-')[0].strip()
+                return pd.Timestamp(d_str)
+            except: pass
+        # Fallback to Year column
+        if 'Year' in row.index and pd.notna(row.get('Year')):
+            try:
+                y = int(row['Year'])
+                return pd.Timestamp(f"{y}-01-02")
+            except: pass
+        return None
+
+    def _passes_date_filter(row, cutoff):
+        """Returns True if the meet is after cutoff, or if no cutoff/no date."""
+        if cutoff is None:
+            return True
+        meet_date = _parse_meet_date(row)
+        if meet_date is None:
+            return False  # Skip meets with unknown dates when filtering
+        return meet_date >= cutoff
+
     def load_all_tasks():
         """Load all tasks from manifest files and manual injections."""
         tasks = []
+        skipped = 0
         
         # Load KScore
         if os.path.exists(KSCORE_CSV):
@@ -485,7 +522,10 @@ def main():
             id_col = [c for c in df.columns if 'MeetID' in c][0]
             name_col = [c for c in df.columns if 'MeetName' in c][0]
             for _, row in df.iterrows():
-                tasks.append(('kscore', str(row[id_col]), str(row[name_col])))
+                if _passes_date_filter(row, days_cutoff):
+                    tasks.append(('kscore', str(row[id_col]), str(row[name_col])))
+                else:
+                    skipped += 1
 
         # Load LiveMeet
         if os.path.exists(LIVEMEET_CSV):
@@ -494,7 +534,10 @@ def main():
             name_col = [c for c in df.columns if 'MeetName' in c][0]
             loc_col = [c for c in df.columns if 'Location' in c][0]
             for _, row in df.iterrows():
-                tasks.append(('livemeet', str(row[id_col]), str(row[name_col]), str(row[loc_col])))
+                if _passes_date_filter(row, days_cutoff):
+                    tasks.append(('livemeet', str(row[id_col]), str(row[name_col]), str(row[loc_col])))
+                else:
+                    skipped += 1
 
         # Load MSO (PAUSED)
         if False and os.path.exists(MSO_CSV):
@@ -502,7 +545,10 @@ def main():
             id_col = [c for c in df.columns if 'MeetID' in c][0]
             name_col = [c for c in df.columns if 'MeetName' in c][0]
             for _, row in df.iterrows():
-                tasks.append(('mso', str(row[id_col]), str(row[name_col])))
+                if _passes_date_filter(row, days_cutoff):
+                    tasks.append(('mso', str(row[id_col]), str(row[name_col])))
+                else:
+                    skipped += 1
 
         # Manual Injection: 2025 Mens HNI & Vegas Cup 2025
         tasks.append(('mso', '33704', '2025 Mens HNI'))
@@ -515,7 +561,13 @@ def main():
             id_col = [c for c in df.columns if 'MeetID' in c][0]
             name_col = [c for c in df.columns if 'MeetName' in c][0]
             for _, row in df.iterrows():
-                tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
+                if _passes_date_filter(row, days_cutoff):
+                    tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
+                else:
+                    skipped += 1
+
+        if days_cutoff is not None:
+            print(f"  [FILTER] Skipped {skipped} meets outside the {args.days}-day window.")
         
         # INJECT MISSING PRIORITY MEETS FROM DB
         if args.priority_only and priority_keys:
