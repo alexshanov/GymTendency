@@ -187,14 +187,29 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
 
                 # 3. Select the Category/Level in the UI
                 try:
+                    # Get current results-name text BEFORE clicking
+                    try:
+                        old_results_name = driver.find_element(By.ID, "results-name").text.strip()
+                    except:
+                        old_results_name = ""
+
                     # Re-fetch the select element to avoid stale reference
                     cat_select_el = driver.find_element(By.ID, "sel-cat")
                     for option in cat_select_el.find_elements(By.TAG_NAME, "option"):
                         if option.get_attribute("value") == cat['value']:
                             option.click()
-                            # Wait for the table to refresh or update. 
-                            # A simple sleep is often most reliable for K-Score's older AJAX.
-                            time.sleep(2) 
+                            time.sleep(1) # brief initial pause
+                            
+                            # Wait until #results-name text differs from old value (max 10s)
+                            try:
+                                WebDriverWait(driver, 10).until(
+                                    lambda d: d.find_element(By.ID, "results-name").text.strip() != old_results_name
+                                )
+                            except:
+                                # If it didn't change after 10s, add extra sleep as fallback
+                                time.sleep(3)
+                            
+                            time.sleep(1) # extra settle time for table DOM
                             break
                 except Exception as e:
                     print(f"       Warning: Could not select level {level_name}: {e}")
@@ -203,10 +218,8 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
 
                 # 4. Grab the HTML from the live DOM
                 try:
-                    # Ensure #results-name has updated to match expectation or just grab what's there
-                    results_name_el = WebDriverWait(driver, 5).until(
-                        EC.presence_of_element_located((By.ID, "results-name"))
-                    )
+                    # Results name should now be fresh
+                    results_name_el = driver.find_element(By.ID, "results-name")
                     group_label = results_name_el.text.strip()
                     
                     # Find the table. Class 'a-results' is the standard results table.
@@ -272,6 +285,10 @@ def scrape_kscore_meet(meet_id, meet_name, output_dir, driver_path=None):
                 output_path = os.path.join(output_dir, output_filename)
                 df.to_csv(output_path, index=False)
                 saved_files_count += 1
+                
+                print(f"       ✅ Saved {len(df)} athletes. Group='{group_label}', Expected='{level_name}'")
+                if group_label != level_name and level_name not in group_label:
+                    print(f"       ⚠️  WARNING: Group label mismatch! Got '{group_label}', expected '{level_name}'")
                 
         return full_success, saved_files_count
     except Exception as e:

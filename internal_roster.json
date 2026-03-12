@@ -383,5 +383,103 @@
         "group": 0,
         "birth_year": 2005,
         "level": "Open"
+    },
+    {
+        "short_name": "Artin",
+        "full_name": "Artin Tong",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Beau J",
+        "full_name": "Beau Jardine",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Cooper G",
+        "full_name": "Cooper Goss",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Darwin",
+        "full_name": "Darwin Hodges",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Eric",
+        "full_name": "Eric Zamiesov",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Jacob",
+        "full_name": "Jacob Borys",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Leon",
+        "full_name": "Leon Guo",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Lucas Z",
+        "full_name": "Lucas Zhang",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Madden",
+        "full_name": "Madden Ellis",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Wells",
+        "full_name": "Wells Jones",
+        "group": 6,
+        "birth_year": 2019,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Felix",
+        "full_name": "Felix Ryley",
+        "group": 6,
+        "birth_year": 2018,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Quinton",
+        "full_name": "Quinton Jardine",
+        "group": 6,
+        "birth_year": 2018,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Robert",
+        "full_name": "Robert Tarko",
+        "group": 6,
+        "birth_year": 2018,
+        "level": "Provincial 1A"
+    },
+    {
+        "short_name": "Shiloh",
+        "full_name": "Shiloh Silberg",
+        "group": 6,
+        "birth_year": 2018,
+        "level": "Provincial 1A"
     }
 ]
