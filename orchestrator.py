@@ -25,18 +25,19 @@ import mso_scraper
 import ksis_scraper
 
 # --- CONFIGURATION ---
-KSCORE_CSV = "discovered_meet_ids_kscore.csv"
-LIVEMEET_CSV = "discovered_meet_ids_livemeet.csv"
-MSO_CSV = "discovered_meet_ids_mso.csv"
-KSIS_CSV = "discovered_meet_ids_ksis.csv"
+BASE_DIR = "/home/alex-shanov/GymTendency"
+KSCORE_CSV = os.path.join(BASE_DIR, "discovered_meet_ids_kscore.csv")
+LIVEMEET_CSV = os.path.join(BASE_DIR, "discovered_meet_ids_livemeet.csv")
+MSO_CSV = os.path.join(BASE_DIR, "discovered_meet_ids_mso.csv")
+KSIS_CSV = os.path.join(BASE_DIR, "discovered_meet_ids_ksis.csv")
 
-KSCORE_DIR = "CSVs_kscore_final"
-LIVEMEET_MESSY_DIR = "CSVs_Livemeet_messy"
-LIVEMEET_FINAL_DIR = "CSVs_Livemeet_final"
-MSO_DIR = "CSVs_mso_final"
-KSIS_DIR = "CSVs_ksis_messy"
+KSCORE_DIR = os.path.join(BASE_DIR, "CSVs_kscore_final")
+LIVEMEET_MESSY_DIR = os.path.join(BASE_DIR, "CSVs_Livemeet_messy")
+LIVEMEET_FINAL_DIR = os.path.join(BASE_DIR, "CSVs_Livemeet_final")
+MSO_DIR = os.path.join(BASE_DIR, "CSVs_mso_final")
+KSIS_DIR = os.path.join(BASE_DIR, "CSVs_ksis_messy")
 
-STATUS_MANIFEST = "scraped_meets_status.json"
+STATUS_MANIFEST = os.path.join(BASE_DIR, "scraped_meets_status.json")
 
 WORKERS = {
     'kscore': 2,
@@ -75,8 +76,6 @@ def ksis_task(meet_id, meet_name, driver_path=None):
     except Exception as e:
         return f"ERROR: {meet_id} ({e})"
 
-
-
 # --- UTILS ---
 
 def cleanup_orphaned_processes():
@@ -101,13 +100,6 @@ def load_status():
         except:
             return {}
     return {}
-
-def save_status(status_dict):
-    try:
-        with open(STATUS_MANIFEST, 'w') as f:
-            json.dump(status_dict, f, indent=4)
-    except Exception as e:
-        logging.error(f"Failed to save status manifest: {e}")
 
 def export_status_csv(status_dict):
     """
@@ -176,7 +168,6 @@ def livemeet_task(meet_id, meet_name, driver_path=None):
     import glob
     try:
         # CRASH PROTECTION: Delete existing files for this meet to ensure a fresh start
-        # Livemeet files have complex names, we usually use the meet_id as the base
         patterns = [
             os.path.join(LIVEMEET_MESSY_DIR, f"{meet_id}_*.csv"),
             os.path.join(LIVEMEET_FINAL_DIR, f"{meet_id}_*.csv")
@@ -188,7 +179,6 @@ def livemeet_task(meet_id, meet_name, driver_path=None):
 
         meet_url = f"https://www.sportzsoft.com/meet/meetWeb.dll/MeetResults?Id={meet_id}"
         
-        # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
         success, count, file_base_id = livemeet_scraper.scrape_raw_data_to_separate_files(meet_url, str(meet_id), LIVEMEET_MESSY_DIR, driver_path=driver_path)
             
         if success:
@@ -229,9 +219,7 @@ def mso_task(meet_id, meet_name, driver_path=None):
         # Subtle staggered start
         time.sleep(random.random() * 3)
 
-        # with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
         driver = mso_scraper.setup_driver(driver_path=driver_path)
-        # process_meet returns (success, message)
         success, msg = mso_scraper.process_meet(driver, str(meet_id), str(meet_name), 0, 0)
         
         if success:
@@ -318,8 +306,6 @@ class BackgroundLoader:
         if force or (now - self.last_run >= self.interval):
             print(f"\n>>> Launching Background Loader (Scheduled trigger)... <<<")
             try:
-                # Use Popen for non-blocking execution
-                # We use sys.executable to ensure we use the same environment
                 self.process = subprocess.Popen(
                     [sys.executable, "load_orchestrator.py"],
                     stdout=subprocess.DEVNULL,
@@ -377,7 +363,6 @@ class StatusHeartbeat(threading.Thread):
 
     def run(self):
         while not self.stop_event.is_set():
-            # Wait for interval or stop event
             if self.stop_event.wait(self.interval):
                 break
             
@@ -394,548 +379,208 @@ class StatusHeartbeat(threading.Thread):
                 
             print(f"\n[ORCHESTRATOR STATUS] Remaining: {rem_meets} meets | Unloaded CSVs: {pending_csvs} | Loader: {l_status} | Gold Refresh: {g_status}")
 
+def _parse_meet_date(row):
+    """Parse the date from a manifest row. Returns pd.Timestamp or None."""
+    if 'start_date_iso' in row.index and pd.notna(row.get('start_date_iso')):
+        try: return pd.Timestamp(row['start_date_iso'])
+        except: pass
+    if 'Dates' in row.index and pd.notna(row.get('Dates')):
+        try:
+            d_str = str(row['Dates'])
+            euro_match = re.match(r'(\d{2})\.(\d{2})\.(\d{4})', d_str)
+            if euro_match:
+                day, month, year = euro_match.groups()
+                return pd.Timestamp(f"{year}-{month}-{day}")
+            d_str = d_str.split('-')[0].strip()
+            return pd.Timestamp(d_str)
+        except: pass
+    if 'Year' in row.index and pd.notna(row.get('Year')):
+        try:
+            y = int(row['Year'])
+            return pd.Timestamp(f"{y}-01-02")
+        except: pass
+    return None
+
+def _passes_date_filter(row, cutoff):
+    """Returns True if the meet is after cutoff, or if no cutoff/no date."""
+    if cutoff is None:
+        return True
+    meet_date = _parse_meet_date(row)
+    if meet_date is None:
+        return False
+    return meet_date >= cutoff
+
+def load_all_tasks(days_cutoff=None, days_arg=None, priority_only=False, priority_keys=None):
+    """Load all tasks from manifest files and manual injections."""
+    tasks = []
+    skipped = 0
+    if os.path.exists(KSCORE_CSV):
+        df = pd.read_csv(KSCORE_CSV)
+        id_col = [c for c in df.columns if 'MeetID' in c][0]
+        name_col = [c for c in df.columns if 'MeetName' in c][0]
+        for _, row in df.iterrows():
+            if _passes_date_filter(row, days_cutoff):
+                tasks.append(('kscore', str(row[id_col]), str(row[name_col])))
+            else: skipped += 1
+    if os.path.exists(LIVEMEET_CSV):
+        df = pd.read_csv(LIVEMEET_CSV)
+        id_col = [c for c in df.columns if 'MeetID' in c][0]
+        name_col = [c for c in df.columns if 'MeetName' in c][0]
+        loc_col = [c for c in df.columns if 'Location' in c][0]
+        for _, row in df.iterrows():
+            if _passes_date_filter(row, days_cutoff):
+                tasks.append(('livemeet', str(row[id_col]), str(row[name_col]), str(row[loc_col])))
+            else: skipped += 1
+    manual_mso = [
+        ('mso', '33704', '2025 Mens HNI', 2025),
+        ('mso', '33619', 'Vegas Cup 2025 - Men', 2025),
+        ('mso', '35898', '2026 HNI', 2026),
+    ]
+    for mtype, mid, mname, myear in manual_mso:
+        if days_cutoff is None or pd.Timestamp(f"{myear}-01-02") >= days_cutoff:
+            tasks.append((mtype, mid, mname))
+    if os.path.exists(KSIS_CSV):
+        df = pd.read_csv(KSIS_CSV)
+        id_col = [c for c in df.columns if 'MeetID' in c][0]
+        name_col = [c for c in df.columns if 'MeetName' in c][0]
+        for _, row in df.iterrows():
+            if _passes_date_filter(row, days_cutoff):
+                tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
+            else: skipped += 1
+    if days_cutoff is not None:
+        print(f"  [FILTER] Skipped {skipped} meets outside the {days_arg}-day window.")
+    return tasks
+
+def build_queue(all_tasks, status_manifest, priority_only=False, priority_keys=None):
+    if priority_only:
+        all_tasks = [t for t in all_tasks if (t[0], str(t[1])) in priority_keys]
+    high, low = [], []
+    for t in all_tasks:
+        m_type, m_id, m_name = t[0], t[1], t[2]
+        m_loc = t[3] if len(t) == 4 else ''
+        if is_high_priority(m_type, m_name, m_loc, meet_id=m_id, priority_keys=priority_keys):
+            high.append((m_type, m_id, m_name))
+        else: low.append((m_type, m_id, m_name))
+    high.sort(key=lambda x: 0 if x[0] == 'mso' else 1)
+    random.shuffle(low)
+    final = high + low
+    def get_status_simple(key):
+        val = status_manifest.get(key)
+        return val.get('status') if isinstance(val, dict) else val
+    if priority_only: return final, get_status_simple
+    queue = [t for t in final if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]]
+    return queue, get_status_simple
+
 # --- MAIN ORCHESTRATOR ---
 
 def main():
-    # Setup Logging
-    logging.basicConfig(
-        filename='scraper_orchestrator.log',
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        filemode='a'
-    )
-    console = logging.StreamHandler()
-    console.setLevel(logging.WARNING) # Only show warnings/errors to console
-    logging.getLogger('').addHandler(console)
-
-    # Global Exception Hook
+    logging.basicConfig(filename='scraper_orchestrator.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filemode='a')
+    console = logging.StreamHandler(); console.setLevel(logging.WARNING); logging.getLogger('').addHandler(console)
     def handle_exception(exc_type, exc_value, exc_traceback):
-        if issubclass(exc_type, KeyboardInterrupt):
-            sys.__excepthook__(exc_type, exc_value, exc_traceback)
-            return
+        if issubclass(exc_type, KeyboardInterrupt): sys.__excepthook__(exc_type, exc_value, exc_traceback); return
         logging.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
-        print("CRITICAL: Uncaught exception logged to file.", file=sys.stderr)
         traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
-
     sys.excepthook = handle_exception
-
     parser = argparse.ArgumentParser(description="Scraper Orchestrator")
-    parser.add_argument("--priority-only", action="store_true", help="Only scrape meets already in Gold L1/L2")
-    parser.add_argument("--days", type=int, default=None, help="Only scrape meets from the last N days")
+    parser.add_argument("--priority-only", action="store_true")
+    parser.add_argument("--days", type=int, default=None)
     args = parser.parse_args()
-
-    # Calculate cutoff date if --days is provided
     days_cutoff = None
     if args.days is not None:
         days_cutoff = pd.Timestamp.now() - pd.Timedelta(days=args.days)
         print(f"  [FILTER] --days {args.days} active. Only processing meets since {days_cutoff.date()}.")
-
-    print("--- Scraper Orchestrator Started (Detailed logs in 'scraper_orchestrator.log') ---")
+    print("--- Scraper Orchestrator Started ---")
     cleanup_orphaned_processes()
-    logging.info("--- Scraper Orchestrator Started ---")
-
-
-
-
-    # Load Status Manifest
     status_manifest = load_status()
-
-    # Determine priority IDs from static file (Generated one-off)
     priority_keys = set()
     if os.path.exists("priority_meets.json"):
         try:
             with open("priority_meets.json", "r") as f:
-                raw_keys = json.load(f)
-                priority_keys = set((row[0], str(row[1])) for row in raw_keys)
-                print(f"  -> Loaded {len(priority_keys)} priority meets from 'priority_meets.json'.")
-        except Exception as e:
-            print(f"  -> Warning: Failed to load 'priority_meets.json': {e}")
-    else:
-        print("  -> Info: 'priority_meets.json' not found. Priority queue will be empty.")
-    
+                raw = json.load(f)
+                priority_keys = set((row[0], str(row[1])) for row in raw)
+        except: pass
     status_manifest['priority_keys'] = list(priority_keys)
-
-    # Ensure directories exist
-    for d in [KSCORE_DIR, LIVEMEET_MESSY_DIR, LIVEMEET_FINAL_DIR, MSO_DIR]:
-        os.makedirs(d, exist_ok=True)
-
-    # PRE-INSTALL WEBDRIVER
-    print("Pre-installing/checking WebDriver...")
-    # Force clear cache if needed or just trust manager
-    # os.environ['WDM_LOG_LEVEL'] = '0' 
+    for d in [KSCORE_DIR, LIVEMEET_MESSY_DIR, LIVEMEET_FINAL_DIR, MSO_DIR, KSIS_DIR]: os.makedirs(d, exist_ok=True)
+    print("Pre-installing WebDriver...")
     valid_driver_path = None
-    try:
-        # from webdriver_manager.core.utils import ChromeType
-        # Explicitly requesting the version matching the installed browser if accessible,
-        # but usually .install() handles this. The ERROR says 114 vs 144.
-        # Let's try to print what we are getting.
-        valid_driver_path = ChromeDriverManager().install()
-        print(f"WebDriver installed at: {valid_driver_path}")
-    except Exception as e:
-        print(f"Warning: WebDriver pre-install failed: {e}")
-
-    # Ensure Database exists (Load once if missing)
+    try: valid_driver_path = ChromeDriverManager().install()
+    except Exception as e: print(f"Warning: WebDriver pre-install failed: {e}")
     if not os.path.exists("gym_data.db"):
-        print("\n>>> Database missing! Triggering initial load of existing CSVs... <<<")
-        try:
-            subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
-        except Exception as e:
-            print(f"Warning: Initial load failed: {e}")
-
-    def _parse_meet_date(row):
-        """Parse the date from a manifest row. Returns pd.Timestamp or None."""
-        # Try start_date_iso first (most reliable)
-        if 'start_date_iso' in row.index and pd.notna(row.get('start_date_iso')):
-            try: return pd.Timestamp(row['start_date_iso'])
-            except: pass
-        # Try Dates column (format: "Mar 1-2, 2026" or KSIS "DD.MM.YYYY - DD.MM.YYYY")
-        if 'Dates' in row.index and pd.notna(row.get('Dates')):
-            try:
-                d_str = str(row['Dates'])
-                # Handle European DD.MM.YYYY format (KSIS manifests)
-                euro_match = re.match(r'(\d{2})\.(\d{2})\.(\d{4})', d_str)
-                if euro_match:
-                    day, month, year = euro_match.groups()
-                    return pd.Timestamp(f"{year}-{month}-{day}")
-                # Handle other formats ("Mar 1-2, 2026", etc)
-                d_str = d_str.split('-')[0].strip()
-                return pd.Timestamp(d_str)
-            except: pass
-        # Fallback to Year column
-        if 'Year' in row.index and pd.notna(row.get('Year')):
-            try:
-                y = int(row['Year'])
-                return pd.Timestamp(f"{y}-01-02")
-            except: pass
-        return None
-
-    def _passes_date_filter(row, cutoff):
-        """Returns True if the meet is after cutoff, or if no cutoff/no date."""
-        if cutoff is None:
-            return True
-        meet_date = _parse_meet_date(row)
-        if meet_date is None:
-            return False  # Skip meets with unknown dates when filtering
-        return meet_date >= cutoff
-
-    def load_all_tasks():
-        """Load all tasks from manifest files and manual injections."""
-        tasks = []
-        skipped = 0
-        
-        # Load KScore
-        if os.path.exists(KSCORE_CSV):
-            df = pd.read_csv(KSCORE_CSV)
-            id_col = [c for c in df.columns if 'MeetID' in c][0]
-            name_col = [c for c in df.columns if 'MeetName' in c][0]
-            for _, row in df.iterrows():
-                if _passes_date_filter(row, days_cutoff):
-                    tasks.append(('kscore', str(row[id_col]), str(row[name_col])))
-                else:
-                    skipped += 1
-
-        # Load LiveMeet
-        if os.path.exists(LIVEMEET_CSV):
-            df = pd.read_csv(LIVEMEET_CSV)
-            id_col = [c for c in df.columns if 'MeetID' in c][0]
-            name_col = [c for c in df.columns if 'MeetName' in c][0]
-            loc_col = [c for c in df.columns if 'Location' in c][0]
-            for _, row in df.iterrows():
-                if _passes_date_filter(row, days_cutoff):
-                    tasks.append(('livemeet', str(row[id_col]), str(row[name_col]), str(row[loc_col])))
-                else:
-                    skipped += 1
-
-        # Load MSO (PAUSED)
-        if False and os.path.exists(MSO_CSV):
-            df = pd.read_csv(MSO_CSV)
-            id_col = [c for c in df.columns if 'MeetID' in c][0]
-            name_col = [c for c in df.columns if 'MeetName' in c][0]
-            for _, row in df.iterrows():
-                if _passes_date_filter(row, days_cutoff):
-                    tasks.append(('mso', str(row[id_col]), str(row[name_col])))
-                else:
-                    skipped += 1
-
-        # Manual Injection: 2025 Mens HNI & Vegas Cup 2025
-        manual_mso = [
-            ('mso', '33704', '2025 Mens HNI', 2025),
-            ('mso', '33619', 'Vegas Cup 2025 - Men', 2025),
-            ('mso', '35898', '2026 HNI', 2026),
-        ]
-        for mtype, mid, mname, myear in manual_mso:
-            if days_cutoff is None or pd.Timestamp(f"{myear}-01-02") >= days_cutoff:
-                tasks.append((mtype, mid, mname))
-
-        # Load KSIS
-        if os.path.exists(KSIS_CSV):
-            df = pd.read_csv(KSIS_CSV)
-            id_col = [c for c in df.columns if 'MeetID' in c][0]
-            name_col = [c for c in df.columns if 'MeetName' in c][0]
-            for _, row in df.iterrows():
-                if _passes_date_filter(row, days_cutoff):
-                    tasks.append(('ksis', str(row[id_col]), str(row[name_col])))
-                else:
-                    skipped += 1
-
-        if days_cutoff is not None:
-            print(f"  [FILTER] Skipped {skipped} meets outside the {args.days}-day window.")
-        
-        # INJECT MISSING PRIORITY MEETS FROM DB
-        if args.priority_only and priority_keys:
-            existing_ids = set((t[0], str(t[1])) for t in tasks)
-            missing_keys = [k for k in priority_keys if k not in existing_ids]
-            if missing_keys:
-                print(f"  -> Fetching metadata for {len(missing_keys)} missing priority meets from DB...")
-                try:
-                    with sqlite3.connect("gym_data.db") as conn:
-                        for source, m_id in missing_keys:
-                            q = "SELECT name, location FROM Meets WHERE source = ? AND source_meet_id = ?"
-                            res = conn.execute(q, (source, m_id)).fetchone()
-                            if res:
-                                name, loc = res
-                                if source == 'livemeet':
-                                    tasks.append((source, str(m_id), name, loc))
-                                else:
-                                    tasks.append((source, str(m_id), name))
-                except Exception as e:
-                    print(f"  -> Warning: Failed to fetch missing priority metadata: {e}")
-
-        return tasks
-
-    def build_queue(all_tasks, status_manifest):
-        """Build prioritized queue from tasks, filtering out completed ones."""
-        # Hard filter if priority_only is active
-        if args.priority_only:
-            all_tasks = [t for t in all_tasks if (t[0], str(t[1])) in priority_keys]
-            print(f"  [FILTER] --priority-only active. Restricted to {len(all_tasks)} relevant meets.")
-
-        high_priority_tasks = []
-        low_priority_tasks = []
-
-        for t in all_tasks:
-            if len(t) == 4:
-                m_type, m_id, m_name, m_loc = t
-            else:
-                m_type, m_id, m_name = t
-                m_loc = ''
-                
-            if is_high_priority(m_type, m_name, m_loc, meet_id=m_id, priority_keys=priority_keys):
-                high_priority_tasks.append((m_type, m_id, m_name))
-            else:
-                low_priority_tasks.append((m_type, m_id, m_name))
-
-        # Prioritize MSO within the High Priority group
-        high_priority_tasks.sort(key=lambda x: 0 if x[0] == 'mso' else 1)
-        # Randomize others
-        random.shuffle(low_priority_tasks)
-        
-        # Combined Queue: High Priority FIRST
-        final_queue_list = high_priority_tasks + low_priority_tasks
-        
-        # Filter out already finished tasks (unless forcing priority)
-        def get_status_simple(key):
-            val = status_manifest.get(key)
-            if isinstance(val, dict):
-                return val.get('status')
-            return val
-
-        if args.priority_only:
-            print("  [FORCE] --priority-only active. Bypassing status check to allow rescrapes.")
-            queue = final_queue_list
-        else:
-            queue = [t for t in final_queue_list if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]]
-        
-        return queue, get_status_simple
-    
-    # Initial load
-    all_tasks = load_all_tasks()
-    
-    # Apply --priority-only filter if requested
-    if args.priority_only:
-        all_tasks = [t for t in all_tasks if (t[0], str(t[1])) in priority_keys]
-        print(f"  [FILTER] --priority-only active. Restricted to {len(all_tasks)} relevant meets.")
-
-    queue, get_status_simple = build_queue(all_tasks, status_manifest)
-    
-    logging.info(f"Total tasks loaded: {len(all_tasks)}. Remaining: {len(queue)}")
-    print(f"Total tasks loaded: {len(all_tasks)}. Remaining to process: {len(queue)}")
-    print(f"  > High Priority Workload: {len([t for t in queue if is_high_priority(t[0], t[2], meet_id=t[1], priority_keys=priority_keys)])}")
-
-    # Graceful Shutdown Handling
+        try: subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
+        except: pass
+    all_tasks = load_all_tasks(days_cutoff, args.days, args.priority_only, priority_keys)
+    queue, get_status_simple = build_queue(all_tasks, status_manifest, args.priority_only, priority_keys)
+    logging.info(f"Loaded: {len(all_tasks)}. Remaining: {len(queue)}")
+    print(f"Total tasks: {len(all_tasks)}. Remaining: {len(queue)}")
     import signal
     stop_requested = False
-    def signal_handler(sig, frame):
-        nonlocal stop_requested
-        print("\n\n!!! SHUTDOWN REQUESTED... !!!\n")
-        stop_requested = True
-        # Aggressive cleanup on first signal
-        try:
-             # Try clean shutdown first
-             print("Initiating emergency pool shutdown...")
-        except:
-             pass
-
+    def signal_handler(sig, frame): nonlocal stop_requested; print("\nSHUTDOWN REQUESTED..."); stop_requested = True
     signal.signal(signal.SIGINT, signal_handler)
-
-    task_functions = {
-        'kscore': kscore_task,
-        'livemeet': livemeet_task,
-        'mso': mso_task,
-        'ksis': ksis_task
-    }
-
-    # Main continuous loop
+    task_functions = {'kscore': kscore_task, 'livemeet': livemeet_task, 'mso': mso_task, 'ksis': ksis_task}
     while True:
         with ProcessPoolExecutor(max_workers=WORKERS['kscore']) as k_pool, \
              ProcessPoolExecutor(max_workers=WORKERS['livemeet']) as l_pool, \
              ProcessPoolExecutor(max_workers=WORKERS['mso']) as m_pool, \
              ProcessPoolExecutor(max_workers=WORKERS['ksis']) as ksis_pool:
-            
-            pools = {
-                'kscore': k_pool,
-                'livemeet': l_pool,
-                'mso': m_pool,
-                'ksis': ksis_pool
-            }
-
-            # Start Heartbeat Thread
+            pools = {'kscore': k_pool, 'livemeet': l_pool, 'mso': m_pool, 'ksis': ksis_pool}
             heartbeat_stop = threading.Event()
-            
             def count_pending_csvs():
-                """Counts CSVs on disk not yet in ProcessedFiles table."""
                 try:
-                    files_on_disk = set()
+                    on_disk = set()
                     for d in [KSCORE_DIR, LIVEMEET_FINAL_DIR, MSO_DIR, KSIS_DIR]:
                         if os.path.exists(d):
-                            for f in glob.glob(os.path.join(d, "*.csv")):
-                                files_on_disk.add(os.path.basename(f))
-                    
-                    if not files_on_disk:
-                        return 0
-
-                    if not os.path.exists("gym_data.db"):
-                        return len(files_on_disk)
-
-                    # Use a timeout and WAL mode to be safe against concurrent loader writes
+                            for f in glob.glob(os.path.join(d, "*.csv")): on_disk.add(os.path.basename(f))
+                    if not on_disk: return 0
                     with sqlite3.connect("gym_data.db", timeout=10) as conn:
-                        conn.execute("PRAGMA journal_mode=WAL")
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT file_path FROM ProcessedFiles")
-                        processed_files = set(os.path.basename(row[0]) for row in cursor.fetchall())
-                        
-                        pending = len(files_on_disk - processed_files)
-                        return pending
-                except Exception as e:
-                    return f"Err ({e})"
-
-            # Background Loader Setup
-            loader = BackgroundLoader(interval=600) # Every 10 mins
-            gold_refresher = GoldRefresher(interval=1800) # Every 30 mins
-
-            current_progress = 0
-            
-            def get_remaining_meets():
-                """Calculate actual remaining meets from status manifest."""
-                all_done_count = len([k for k,v in status_manifest.items() if (isinstance(v, dict) and v.get('status') == 'DONE') or v == 'DONE'])
-                return len(all_tasks) - all_done_count
-
-            heartbeat = StatusHeartbeat(
-                heartbeat_stop, 
-                get_remaining_meets=get_remaining_meets,
-                get_pending_csvs=count_pending_csvs,
-                loader=loader,
-                gold_refresher=gold_refresher
-            )
+                        processed = set(os.path.basename(row[0]) for row in conn.execute("SELECT file_path FROM ProcessedFiles").fetchall())
+                        return len(on_disk - processed)
+                except: return "Err"
+            loader = BackgroundLoader(); gold_refresher = GoldRefresher()
+            def get_rem(): return len(all_tasks) - len([k for k,v in status_manifest.items() if (isinstance(v, dict) and v.get('status') == 'DONE') or v == 'DONE'])
+            heartbeat = StatusHeartbeat(heartbeat_stop, get_remaining_meets=get_rem, get_pending_csvs=count_pending_csvs, loader=loader, gold_refresher=gold_refresher)
             heartbeat.start()
-
-            # Initial DB check/load (Background)
-            if not os.path.exists("gym_data.db") or count_pending_csvs() > 0:
-                loader.check_and_trigger(force=True)
-
             try:
-                # Multi-attempt logic
                 for attempt in range(1, MAX_RETRIES + 1):
-                    if stop_requested or not queue:
-                        break
-                    
-                    print(f"\n--- ATTEMPT {attempt}/{MAX_RETRIES} ---")
-                    logging.info(f"Starting attempt {attempt}/{MAX_RETRIES}")
-                    
-                    # Resource cleanup before each attempt
+                    if stop_requested or not queue: break
+                    print(f"--- ATTEMPT {attempt}/{MAX_RETRIES} ---")
                     cleanup_orphaned_processes()
-                    
-                    # Chunk the queue for incremental processing based on file count
-                    # Trigger loader every CSV_BATCH_THRESHOLD files
-                    MEET_CHUNK_SIZE = 50 
-                    
-                    current_csv_count = 0
-                    
-                    for i in range(0, len(queue), MEET_CHUNK_SIZE):
-                        if stop_requested:
-                            break
-                            
-                        chunk = queue[i : i + MEET_CHUNK_SIZE]
-                        
-                        meets_rem = len(queue) - i
-                        print(f"\n[PROGRESS] Meets remaining in this attempt: {meets_rem} | CSVs waiting for next push: {current_csv_count}/{CSV_BATCH_THRESHOLD}")
-                        
+                    CH_SIZE = 50; current_csv_count = 0
+                    for i in range(0, len(queue), CH_SIZE):
+                        if stop_requested: break
+                        chunk = queue[i : i + CH_SIZE]
                         futures = {}
                         for stype, mid, mname in chunk:
-                            pool = pools[stype]
-                            func = task_functions[stype]
-                            
-                            # Pass driver_path to all Selenium-based tasks
-                            futures[pool.submit(func, mid, mname, valid_driver_path)] = (stype, mid, mname)
-                        
-                        # Wait for this chunk to complete
+                            futures[pools[stype].submit(task_functions[stype], mid, mname, valid_driver_path)] = (stype, mid, mname)
                         for future in as_completed(futures):
-                            if stop_requested:
-                                # Cancel remaining futures in this chunk
-                                for f in futures: f.cancel()
-                                break
-        
-                            stype, mid, mname = futures[future]
-                            key = f"{stype}_{mid}"
-                            
+                            if stop_requested: break
+                            stype, mid, mname = futures[future]; key = f"{stype}_{mid}"
                             try:
-                                result = future.result()
-                                parts = result.split(':', 2) # Expect DONE:mid:count or ERROR:mid:msg
-                                status = parts[0]
-                                
-                                message = ""
-                                count = 0
-                                
-                                if "DONE" in status:
-                                    if len(parts) >= 3:
-                                        mid_res = parts[1]
-                                        try:
-                                            count = int(parts[2])
-                                        except:
-                                            count = 0
-                                        message = f"{count} files"
-                                    else:
-                                        message = "0 files" # Should not happen with new logic
-                                        
+                                res = future.result(); parts = res.split(':', 2)
+                                if "DONE" in parts[0]:
+                                    count = int(parts[2]) if len(parts) >= 3 else 0
                                     status_manifest[key] = {"status": "DONE", "name": mname}
-                                    save_status(status_manifest) # Save immediately
-                                    current_csv_count += count
-                                    current_progress += 1 # Important for heartbeat
-                                    
-                                    # Calculate real-time stats
-                                    all_done_count = len([k for k,v in status_manifest.items() if (isinstance(v, dict) and v.get('status') == 'DONE') or v == 'DONE'])
-                                    total_loaded = len(all_tasks)
-                                    # Fallback simple count
-                                    rem_total = total_loaded - all_done_count
-                                    
-                                    logging.info(f"[{stype}] {mid}: {status} - {message}")
-                                    print(f"  [OK] {mid} ({count:2} files) | Total Rem: {rem_total:<4} | Pending: {current_csv_count}/{CSV_BATCH_THRESHOLD} | Scraped: {all_done_count}/{total_loaded}")
-                                    
-                                    # Periodic Trigger check
-                                    loader.check_and_trigger()
-                                    gold_refresher.check_and_trigger()
-
-                                    # Threshold Trigger check
-                                    if current_csv_count >= CSV_BATCH_THRESHOLD and not stop_requested:
-                                        if loader.check_and_trigger(force=True):
-                                            current_csv_count = 0 
-                                    
+                                    save_status(status_manifest); current_csv_count += count
+                                    done_c = len([k for k,v in status_manifest.items() if (isinstance(v, dict) and v.get('status') == 'DONE') or v == 'DONE'])
+                                    print(f"  [OK] {mid} | Rem: {len(all_tasks)-done_c} | Scraped: {done_c}/{len(all_tasks)}")
+                                    loader.check_and_trigger(); gold_refresher.check_and_trigger()
                                 else:
-                                    # ERROR logic
-                                    message = parts[1] if len(parts) > 1 else "Unknown Error"
-                                    logging.error(f"  [FAIL] {mid}: {message}")
-                                    print(f"  [FAIL] {mid}: {message}")
-                                    
-                                    # --- FAILURE TRACKING ---
-                                    fail_data = status_manifest.get(key, {})
-                                    if not isinstance(fail_data, dict):
-                                        fail_data = {}
-                                    
-                                    current_fails = fail_data.get('fail_count', 0) + 1
-                                    fail_data['fail_count'] = current_fails
-                                    fail_data['name'] = mname 
-                                    
-                                    if current_fails >= MAX_FAILURES:
-                                        fail_data['status'] = "FAILED"
-                                        fail_message = f"Exceeded max retries ({current_fails}). Marking FAILED."
-                                        logging.error(f"  [PERMANENT FAIL] {mid} {fail_message}")
-                                        print(f"  [STOP] {mid} {fail_message}")
-                                    else:
-                                        # Ensure we don't accidentally mark it as DONE or FAILED yet
-                                        fail_data['status'] = fail_data.get('status', 'RETRYING')
-
-                                    status_manifest[key] = fail_data
-                                    save_status(status_manifest)
-                                    # ------------------------
-                                    current_progress += 1 # Still progress even if fail
-                                    
-                            except Exception as e:
-                                logging.error(f"  [EXCEPTION] {mid}: {e}")
-                                print(f"  [EXCEPTION] {mid}: {e}")
-                                current_progress += 1
-                        
-                        # Update status after chunk
-                        save_status(status_manifest)
-        
-                    # Prepare queue for next attempt (retry failed items)
-                    # Prepare queue for next attempt (retry failed items)
-                    new_queue = []
+                                    msg = parts[1] if len(parts) > 1 else "Error"
+                                    f_data = status_manifest.get(key, {}); c_f = (f_data.get('fail_count', 0) if isinstance(f_data, dict) else 0) + 1
+                                    status_manifest[key] = {"status": "FAILED" if c_f >= MAX_FAILURES else "RETRYING", "fail_count": c_f, "name": mname}
+                                    save_status(status_manifest); print(f"  [FAIL] {mid}: {msg}")
+                            except Exception as e: print(f"  [EXE] {mid}: {e}")
+                    new_q = []
                     for t in queue:
-                        # Re-check status in case it failed in this chunk and is now FAILED
-                        s = get_status_simple(f"{t[0]}_{t[1]}")
-                        if s not in ["DONE", "FAILED"]:
-                            new_queue.append(t)
-                    queue = new_queue
-                    
-                    if queue and attempt < MAX_RETRIES:
-                        jitter = random.randint(5, 15)
-                        print(f"Waiting {jitter}s before next retry attempt...")
-                        time.sleep(jitter)
-            finally:
-                heartbeat_stop.set()
-
-        # Check if we should continue with a new round
-        remaining_count = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]])
-        
-        if remaining_count == 0:
-            print("\n=== All tasks completed! Waiting for new tasks... ===")
-            # break  <-- REMOVED to enable persistence
-        elif stop_requested:
-            print(f"\n=== Shutdown requested. {remaining_count} tasks remaining. ===")
-            break
-        else:
-            print(f"\n--- Round complete. {remaining_count} tasks remaining. Reloading in {POLL_INTERVAL}s... ---")
-            time.sleep(POLL_INTERVAL)
-            
-            # Reload status manifest and rebuild queue
-            status_manifest = load_status()
-            all_tasks = load_all_tasks()
-            queue, get_status_simple = build_queue(all_tasks, status_manifest)
-            
-            if not queue:
-                print("\n=== No pending tasks after reload. Waiting... ===")
-                # break <-- REMOVED to enable persistence
-            else:
-                print(f"Reloaded: {len(all_tasks)} total tasks, {len(queue)} remaining")
-
-    # Final summary
-    final_remaining = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]])
-    msg = f"Scraper Orchestration finished. Remaining tasks: {final_remaining}"
-    logging.info(msg)
-    print(f"\n--- {msg} ---")
-    if final_remaining > 0:
-        print(f"Warning: {final_remaining} tasks could not be completed.")
-    
-    print("\nTriggering final load...")
-    try:
-        subprocess.run([sys.executable, "load_orchestrator.py"], check=False)
-    except KeyboardInterrupt:
-        print("\nOrchestrator stopped by user.")
-    except Exception as e:
-        logging.critical("Fatal error in main loop", exc_info=True)
-        print(f"\nCRITICAL ERROR: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+                        if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]: new_q.append(t)
+                    queue = new_q
+                    if queue and attempt < MAX_RETRIES: time.sleep(random.randint(5, 15))
+            finally: heartbeat_stop.set()
+        rem = len([t for t in all_tasks if get_status_simple(f"{t[0]}_{t[1]}") not in ["DONE", "FAILED"]])
+        if rem == 0 or stop_requested: break
+        print(f"--- Round complete. {rem} tasks remaining. Reloading in {POLL_INTERVAL}s... ---")
+        time.sleep(POLL_INTERVAL); status_manifest = load_status()
+        all_tasks = load_all_tasks(days_cutoff, args.days, args.priority_only, priority_keys)
+        queue, get_status_simple = build_queue(all_tasks, status_manifest, args.priority_only, priority_keys)
 
 if __name__ == "__main__":
     main()
