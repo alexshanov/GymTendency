@@ -488,10 +488,17 @@ def main():
         if 'start_date_iso' in row.index and pd.notna(row.get('start_date_iso')):
             try: return pd.Timestamp(row['start_date_iso'])
             except: pass
-        # Try Dates column (format: "Mar 1-2, 2026" etc)
+        # Try Dates column (format: "Mar 1-2, 2026" or KSIS "DD.MM.YYYY - DD.MM.YYYY")
         if 'Dates' in row.index and pd.notna(row.get('Dates')):
             try:
-                d_str = str(row['Dates']).split('-')[0].strip()
+                d_str = str(row['Dates'])
+                # Handle European DD.MM.YYYY format (KSIS manifests)
+                euro_match = re.match(r'(\d{2})\.(\d{2})\.(\d{4})', d_str)
+                if euro_match:
+                    day, month, year = euro_match.groups()
+                    return pd.Timestamp(f"{year}-{month}-{day}")
+                # Handle other formats ("Mar 1-2, 2026", etc)
+                d_str = d_str.split('-')[0].strip()
                 return pd.Timestamp(d_str)
             except: pass
         # Fallback to Year column
@@ -551,9 +558,14 @@ def main():
                     skipped += 1
 
         # Manual Injection: 2025 Mens HNI & Vegas Cup 2025
-        tasks.append(('mso', '33704', '2025 Mens HNI'))
-        tasks.append(('mso', '33619', 'Vegas Cup 2025 - Men'))
-        tasks.append(('mso', '35898', '2026 HNI')) # ADDED PER USER REQUEST
+        manual_mso = [
+            ('mso', '33704', '2025 Mens HNI', 2025),
+            ('mso', '33619', 'Vegas Cup 2025 - Men', 2025),
+            ('mso', '35898', '2026 HNI', 2026),
+        ]
+        for mtype, mid, mname, myear in manual_mso:
+            if days_cutoff is None or pd.Timestamp(f"{myear}-01-02") >= days_cutoff:
+                tasks.append((mtype, mid, mname))
 
         # Load KSIS
         if os.path.exists(KSIS_CSV):
