@@ -4,8 +4,8 @@ import json
 import itertools
 from difflib import SequenceMatcher
 
-DB_FILE = "/home/alex-shanov/OneDrive/AnalyticsProjects/GymTendency/gym_data.db"
-OUTPUT_FILE = "/home/alex-shanov/OneDrive/AnalyticsProjects/GymTendency/gold_alias_candidates.json"
+DB_FILE = "/home/alex-shanov/GymTendency/gym_data.db"
+OUTPUT_FILE = "/home/alex-shanov/GymTendency/gold_alias_candidates.json"
 
 def similarity(a, b):
     return SequenceMatcher(None, a, b).ratio()

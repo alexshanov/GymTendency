@@ -53,7 +53,7 @@ def parse_ksis_table(html_content):
     return meets
 
 # Manifest file
-manifest_file = "/home/alex-shanov/OneDrive/AnalyticsProjects/GymTendency/discovered_meet_ids_ksis.csv"
+manifest_file = "/home/alex-shanov/GymTendency/discovered_meet_ids_ksis.csv"
 
 # Load existing
 if os.path.exists(manifest_file):

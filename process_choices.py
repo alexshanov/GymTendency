@@ -2,8 +2,8 @@
 import json
 import os
 
-CANDIDATES_FILE = "/home/alex-shanov/OneDrive/AnalyticsProjects/GymTendency/gold_alias_candidates.json"
-ALIASES_FILE = "/home/alex-shanov/OneDrive/AnalyticsProjects/GymTendency/person_aliases.json"
+CANDIDATES_FILE = "/home/alex-shanov/GymTendency/gold_alias_candidates.json"
+ALIASES_FILE = "/home/alex-shanov/GymTendency/person_aliases.json"
 
 def process_choices():
     if not os.path.exists(CANDIDATES_FILE):

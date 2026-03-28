@@ -2,7 +2,7 @@
 # One-click launcher for GymTendency Orchestrator
 
 # Navigate to the project directory
-cd "/home/alex-shanov/OneDrive/AnalyticsProjects/GymTendency" || exit
+cd "/home/alex-shanov/GymTendency" || exit
 
 # Activate virtual environment
 if [ -d "venv" ]; then

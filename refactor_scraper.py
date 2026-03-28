@@ -2,7 +2,7 @@
 import sys
 import os
 
-filename = '/home/alex-shanov/OneDrive/AnalyticsProjects/GymTendency/livemeet_scraper.py'
+filename = '/home/alex-shanov/GymTendency/livemeet_scraper.py'
 
 with open(filename, 'r') as f:
     lines = f.readlines()
