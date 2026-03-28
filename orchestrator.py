@@ -402,13 +402,15 @@ def _parse_meet_date(row):
     return None
 
 def _passes_date_filter(row, cutoff):
-    """Returns True if the meet is after cutoff, or if no cutoff/no date."""
+    """Returns True if the meet falls within [cutoff, today+2d] window.
+    Excludes future meets that haven't happened yet (no results to scrape)."""
     if cutoff is None:
         return True
     meet_date = _parse_meet_date(row)
     if meet_date is None:
         return False
-    return meet_date >= cutoff
+    upper_bound = pd.Timestamp.now() + pd.Timedelta(days=2)  # small grace window
+    return cutoff <= meet_date <= upper_bound
 
 def load_all_tasks(days_cutoff=None, days_arg=None, priority_only=False, priority_keys=None):
     """Load all tasks from manifest files and manual injections."""
@@ -488,7 +490,8 @@ def main():
     days_cutoff = None
     if args.days is not None:
         days_cutoff = pd.Timestamp.now() - pd.Timedelta(days=args.days)
-        print(f"  [FILTER] --days {args.days} active. Only processing meets since {days_cutoff.date()}.")
+        upper_bound = (pd.Timestamp.now() + pd.Timedelta(days=2)).date()
+        print(f"  [FILTER] --days {args.days} active. Processing meets from {days_cutoff.date()} to {upper_bound}.")
     print("--- Scraper Orchestrator Started ---")
     cleanup_orphaned_processes()
     status_manifest = load_status()
@@ -536,7 +539,11 @@ def main():
                         return len(on_disk - processed)
                 except: return "Err"
             loader = BackgroundLoader(); gold_refresher = GoldRefresher()
-            def get_rem(): return len(all_tasks) - len([k for k,v in status_manifest.items() if (isinstance(v, dict) and v.get('status') == 'DONE') or v == 'DONE'])
+            # Build set of task keys in current run for accurate counting
+            task_keys_set = set(f"{t[0]}_{t[1]}" for t in all_tasks)
+            def get_rem():
+                done_in_run = sum(1 for k in task_keys_set if k in status_manifest and ((isinstance(status_manifest[k], dict) and status_manifest[k].get('status') == 'DONE') or status_manifest[k] == 'DONE'))
+                return len(all_tasks) - done_in_run
             heartbeat = StatusHeartbeat(heartbeat_stop, get_remaining_meets=get_rem, get_pending_csvs=count_pending_csvs, loader=loader, gold_refresher=gold_refresher)
             heartbeat.start()
             try:
@@ -560,7 +567,7 @@ def main():
                                     count = int(parts[2]) if len(parts) >= 3 else 0
                                     status_manifest[key] = {"status": "DONE", "name": mname}
                                     save_status(status_manifest); current_csv_count += count
-                                    done_c = len([k for k,v in status_manifest.items() if (isinstance(v, dict) and v.get('status') == 'DONE') or v == 'DONE'])
+                                    done_c = sum(1 for k in task_keys_set if k in status_manifest and ((isinstance(status_manifest[k], dict) and status_manifest[k].get('status') == 'DONE') or status_manifest[k] == 'DONE'))
                                     print(f"  [OK] {mid} | Rem: {len(all_tasks)-done_c} | Scraped: {done_c}/{len(all_tasks)}")
                                     loader.check_and_trigger(); gold_refresher.check_and_trigger()
                                 else:
