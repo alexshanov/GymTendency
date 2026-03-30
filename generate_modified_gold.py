@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import re
 import argparse
 import pandas as pd
 
@@ -43,6 +44,22 @@ def generate_modified_gold(db_path=DB_PATH):
     
     print("Applying club aliases...")
     df['club'] = df['club'].map(lambda x: club_aliases.get(x, x))
+    
+    print("Stripping session suffixes from meet names...")
+    # The gold table SQL appends ' (SESSION)' to meet names for dedup.
+    # Session values can contain nested parens like '(Session 3 - Provincial 3, 4 & 5 (MAG))'
+    # so we use balanced paren matching instead of regex.
+    def strip_session_suffix(name):
+        if not isinstance(name, str) or not name.endswith(')'):
+            return name
+        depth = 0
+        for i in range(len(name) - 1, -1, -1):
+            if name[i] == ')': depth += 1
+            elif name[i] == '(': depth -= 1
+            if depth == 0:
+                return name[:i].rstrip()
+        return name
+    df['meet_name'] = df['meet_name'].apply(strip_session_suffix)
     
     # 3. Deduplicate (Aliases might have caused new duplicates)
     # We keep the row with the most non-null scores
